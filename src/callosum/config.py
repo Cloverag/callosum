@@ -31,7 +31,7 @@ class Settings(BaseSettings):
 
     # --- Ollama (default, free) ---
     ollama_host: str = "http://localhost:11434"
-    ollama_model: str = "kimi-k2.5:cloud"
+    ollama_model: str = "gpt-oss:120b-cloud"
     ollama_embedding_model: str = "bge-m3"
 
     # --- Anthropic (needs credits) ---

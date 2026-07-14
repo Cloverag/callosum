@@ -96,10 +96,52 @@ def structured(system: str, user: str, output: type[T]) -> T:
     _raise_for_ollama(response)
     content = response.json()["message"]["content"]
 
-    # Ollama constrains decoding to the schema, so this should always parse. When it
-    # doesn't, the failure is worth surfacing loudly rather than swallowing: a model
-    # that cannot hold the schema cannot be trusted to populate the graph either.
-    return output.model_validate_json(content)
+    # For local models Ollama compiles `format` into a grammar that constrains
+    # decoding, so the content is bare JSON. For *cloud* models the constraint is
+    # not enforced server-side, and what comes back varies run to run: bare JSON,
+    # ```json fences, or preamble text around the object. Parse defensively; if no
+    # candidate validates, fail loudly — a model that cannot hold the schema cannot
+    # be trusted to populate the graph.
+    return _parse_structured(content, output)
+
+
+def _parse_structured(content: str, output: type[T]) -> T:
+    """Find and validate the schema object inside possibly-messy model output.
+
+    Tries, in order: the whole content; then each balanced JSON object found by
+    raw_decode at successive '{' positions (this skips fences, preamble, and inner
+    objects that parse but don't validate). First candidate that both parses and
+    validates wins.
+    """
+    import json as _json
+
+    from pydantic import ValidationError
+
+    try:
+        return output.model_validate_json(content.strip())
+    except ValidationError:
+        pass
+
+    decoder = _json.JSONDecoder()
+    pos = content.find("{")
+    attempts = 0
+    while pos != -1 and attempts < 20:
+        try:
+            candidate, _ = decoder.raw_decode(content, pos)
+            if isinstance(candidate, dict):
+                try:
+                    return output.model_validate(candidate)
+                except ValidationError:
+                    pass
+        except _json.JSONDecodeError:
+            pass
+        pos = content.find("{", pos + 1)
+        attempts += 1
+
+    raise ValueError(
+        f"Model output contained no object matching {output.__name__}. "
+        f"First 300 chars: {content[:300]!r}"
+    )
 
 
 def text(system: str, user: str, effort: str = "high", max_tokens: int = 4000) -> str:
