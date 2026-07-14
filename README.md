@@ -1,8 +1,12 @@
-# Meridian — Institutional Memory
+# Callosum — Institutional Memory
 
 A continuously evolving AI knowledge layer for a startup's organizational memory. It
 captures documents, decisions, discussions, ownership and business context, then lets
 an LLM **retrieve and reason over** them instead of guessing.
+
+> Named for the *corpus callosum*, the fibre bundle that joins the brain's two
+> hemispheres. This system has two hemispheres too — a knowledge graph and a vector
+> store — and the bridge between them is the whole idea.
 
 The question the whole system exists to answer:
 
@@ -70,18 +74,18 @@ docker compose up -d                     # Postgres + Neo4j
 uv venv --python 3.12 && uv pip install -e .
 cp .env.example .env                     # add ANTHROPIC_API_KEY + VOYAGE_API_KEY
 
-meridian init
-meridian ingest-doc data/demo/board_meeting_12_transcript.txt --type transcript --sensitivity 1
-meridian ingest-doc data/demo/compensation_review_CONFIDENTIAL.txt --type transcript --sensitivity 3
+callosum init
+callosum ingest-doc data/demo/board_meeting_12_transcript.txt --type transcript --sensitivity 1
+callosum ingest-doc data/demo/compensation_review_CONFIDENTIAL.txt --type transcript --sensitivity 3
 
-meridian pending                         # what Claude proposed, with confidence scores
-meridian approve --all                   # commit to the graph
+callosum pending                         # what Claude proposed, with confidence scores
+callosum approve --all                   # commit to the graph
 
-meridian query "Why did we reject Pricing Model B?" --as Raj
-meridian query "What is Priya's compensation?" --as Marcus   # withheld — investor clearance
+callosum query "Why did we reject Pricing Model B?" --as Raj
+callosum query "What is Priya's compensation?" --as Marcus   # withheld — investor clearance
 ```
 
-Neo4j Browser: <http://localhost:7474> (`neo4j` / `meridian123`) → `MATCH (n) RETURN n`
+Neo4j Browser: <http://localhost:7474> (`neo4j` / `callosum123`) → `MATCH (n) RETURN n`
 
 ## Status
 

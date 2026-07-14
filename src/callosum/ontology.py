@@ -1,7 +1,7 @@
 """The graph ontology.
 
 Every entity and relationship type here traces back to a requirement in the
-Meridian PRD or the High-Value Use Cases doc (see reference/). Keep that
+Callosum PRD or the High-Value Use Cases doc (see reference/). Keep that
 traceability: if a type can't be justified by a use case, it doesn't belong.
 
 The two questions the ontology must answer, verbatim from the use-case doc:

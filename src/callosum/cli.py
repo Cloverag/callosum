@@ -1,4 +1,4 @@
-"""Meridian CLI — drive the whole pipeline from the terminal."""
+"""Callosum CLI — drive the whole pipeline from the terminal."""
 
 import uuid
 from pathlib import Path
@@ -8,8 +8,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from meridian import extract, ingest, store
-from meridian.retrieve import Principal, ask
+from callosum import extract, ingest, store
+from callosum.retrieve import Principal, ask
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 console = Console()
@@ -18,8 +18,8 @@ console = Console()
 # building a role hierarchy we don't need. The interesting pair is Raj (4) and
 # Marcus (1): same question, different answer, because Marcus is an investor.
 DEMO_PRINCIPALS = [
-    ("Raj Malhotra", "raj@meridian.inc", "founder", 4, None),
-    ("Priya Nair", "priya@meridian.inc", "exec", 3, None),
+    ("Raj Malhotra", "raj@callosum.inc", "founder", 4, None),
+    ("Priya Nair", "priya@callosum.inc", "exec", 3, None),
     ("Marcus Webb", "marcus@sequoia.com", "investor", 1, "Sequoia"),
 ]
 
@@ -92,7 +92,7 @@ def ingest_doc(
         if batch:
             batch_id = extract.submit_batch({str(cid): c.text for cid, c in zip(chunk_ids, chunks)})
             console.print(f"[green]✓[/] Batch submitted: [bold]{batch_id}[/]")
-            console.print("[dim]Collect with: meridian collect-batch <id>[/]")
+            console.print("[dim]Collect with: callosum collect-batch <id>[/]")
             driver.close()
             return
 
@@ -106,7 +106,7 @@ def ingest_doc(
                 )
 
     console.print(f"[green]✓[/] {queued} proposed changes queued for approval")
-    console.print("[dim]Review with: meridian pending[/]")
+    console.print("[dim]Review with: callosum pending[/]")
     driver.close()
 
 
@@ -140,7 +140,7 @@ def pending(limit: int = 20) -> None:
         )
 
     console.print(table)
-    console.print("[dim]Approve with: meridian approve <id>  |  meridian approve --all[/]")
+    console.print("[dim]Approve with: callosum approve <id>  |  callosum approve --all[/]")
 
 
 @app.command()
@@ -198,7 +198,7 @@ def query(
             (f"%{as_user}%",),
         ).fetchone()
         if not row:
-            console.print(f"[red]No principal matching '{as_user}'. Run: meridian init[/]")
+            console.print(f"[red]No principal matching '{as_user}'. Run: callosum init[/]")
             raise typer.Exit(1)
 
         principal = Principal(

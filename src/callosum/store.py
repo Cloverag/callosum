@@ -21,8 +21,8 @@ from neo4j import Driver, GraphDatabase
 from pgvector.psycopg import register_vector
 from psycopg.rows import dict_row
 
-from meridian.config import settings
-from meridian.ontology import Extraction
+from callosum.config import settings
+from callosum.ontology import Extraction
 
 # ---------------------------------------------------------------------------
 # Postgres
@@ -250,7 +250,7 @@ def apply_relationship(driver: Driver, payload: dict[str, Any]) -> None:
     relax that check, and never let an unvalidated string reach this function.
     """
     rel_type = payload["type"]
-    from meridian.ontology import RelationType
+    from callosum.ontology import RelationType
 
     if rel_type not in RelationType.__members__.values():
         raise ValueError(f"Refusing to write unknown relationship type: {rel_type!r}")

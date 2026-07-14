@@ -1,5 +1,5 @@
 [project]
-name = "meridian"
+name = "callosum"
 version = "0.1.0"
 description = "Institutional Memory: a graph + vector knowledge layer for board and company decisions"
 requires-python = ">=3.12,<3.13"
@@ -24,11 +24,11 @@ dependencies = [
 local = ["sentence-transformers>=3.3"]
 
 [project.scripts]
-meridian = "meridian.cli:app"
+callosum = "callosum.cli:app"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/meridian"]
+packages = ["src/callosum"]
