@@ -15,6 +15,22 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
+# Bump on any change to entity types, relation types, or their semantics. Stamped on
+# every proposed change and every quarantined failure, so a result can always be
+# attributed to the ontology that produced it — and so "re-extract everything under
+# ontology v4" stays a meaningful instruction.
+ONTOLOGY_VERSION = "1"
+
+
+class FailureReason(StrEnum):
+    """Why the evidence verifier refused an edge. These are the labels you will end
+    up plotting: failure rate by reason, by model, by relation type, by chunk length."""
+
+    QUOTE_NOT_FOUND = "quote_not_found"        # fabricated or paraphrased — the big one
+    QUOTE_EMPTY = "quote_empty"                # model offered no evidence at all
+    ENTITY_NOT_EXTRACTED = "entity_not_extracted"  # edge references an entity it never emitted
+    SELF_REFERENCE = "self_reference"          # source == target
+
 
 class EntityType(StrEnum):
     PERSON = "Person"              # founder, board member, investor, exec

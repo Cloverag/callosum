@@ -77,6 +77,10 @@ CREATE TABLE chunk (
     document_id  UUID NOT NULL REFERENCES document(id) ON DELETE CASCADE,
     ordinal      INT  NOT NULL,     -- position within the document
     text         TEXT NOT NULL,
+    -- True character span into document.raw_text. The invariant the whole provenance
+    -- chain rests on: raw_text[start_char:end_char] == chunk.text, exactly.
+    start_char   INT  NOT NULL,
+    end_char     INT  NOT NULL,
     -- Denormalised from document so the permission filter stays a single-table
     -- WHERE clause on the hot retrieval path.
     sensitivity  INT  NOT NULL REFERENCES sensitivity(level),
@@ -117,16 +121,67 @@ CREATE INDEX ON node_version (node_id, valid_to);
 CREATE TABLE proposed_change (
     id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     document_id  UUID REFERENCES document(id) ON DELETE CASCADE,
+    chunk_id     UUID REFERENCES chunk(id) ON DELETE CASCADE,
     kind         TEXT NOT NULL,     -- add_entity | add_relationship | supersede_decision
     payload      JSONB NOT NULL,    -- the exact graph mutation to apply
-    evidence     JSONB NOT NULL DEFAULT '[]'::jsonb,  -- chunk ids backing this claim
     confidence   REAL,              -- extractor's self-reported confidence
+
+    -- Evidence span: the exact characters in document.raw_text that justify this
+    -- claim. NOT a pointer to a paragraph — a pointer to the sentence. This is what
+    -- lets the UI highlight "We're not doing Model B." rather than the whole chunk.
+    quote        TEXT,
+    quote_start  INT,               -- offsets into document.raw_text
+    quote_end    INT,
+
+    -- Provenance. Without these the Kimi-vs-Opus comparison is not an experiment:
+    -- you cannot attribute a result to a model you did not record. Every edge in the
+    -- graph must be able to say which model, prompt and ontology produced it.
+    provider          TEXT,         -- ollama | anthropic
+    extractor_model   TEXT,         -- kimi-k2.5:cloud | claude-opus-4-8
+    prompt_version    TEXT,
+    ontology_version  TEXT,
+
     status       TEXT NOT NULL DEFAULT 'pending',  -- pending | approved | rejected
     reviewed_by  UUID REFERENCES principal(id),
     reviewed_at  TIMESTAMPTZ,
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX ON proposed_change (status, created_at);
+CREATE INDEX ON proposed_change (extractor_model, prompt_version);
+
+-- ---------------------------------------------------------------------------
+-- Quarantine. Edges the model proposed and the evidence verifier rejected.
+--
+-- These are NOT deleted, because the extraction process is the dataset. "Kimi
+-- fabricates a quote on 8% of APPROVED edges" and "failures cluster in chunks over
+-- 600 tokens" are findings, and you can only make them if you kept the failures.
+-- A dropped edge is a lost measurement.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE extraction_failure (
+    id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    document_id  UUID REFERENCES document(id) ON DELETE CASCADE,
+    chunk_id     UUID REFERENCES chunk(id) ON DELETE CASCADE,
+
+    source       TEXT,              -- the edge the model wanted to write
+    relation     TEXT,
+    target       TEXT,
+    quote        TEXT,              -- the quote it offered, which did not check out
+    confidence   REAL,              -- what it claimed, for calibration analysis
+
+    reason       TEXT NOT NULL,     -- see FailureReason in ontology.py
+    detail       TEXT,
+
+    provider          TEXT,
+    extractor_model   TEXT,
+    prompt_version    TEXT,
+    ontology_version  TEXT,
+
+    chunk_chars  INT,               -- for "do failures cluster in long chunks?"
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX ON extraction_failure (reason);
+CREATE INDEX ON extraction_failure (extractor_model, relation);
 
 -- ---------------------------------------------------------------------------
 -- Query audit log. Doubles as the evaluation dataset later: every question, the

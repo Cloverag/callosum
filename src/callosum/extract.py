@@ -7,10 +7,18 @@ have before requiring founder approval?"): none, for writes.
 """
 
 import json
+from dataclasses import dataclass, field
 
 from callosum.config import Provider, settings
+from callosum.ingest import locate
 from callosum.llm import structured
-from callosum.ontology import Extraction
+from callosum.ontology import Extraction, FailureReason, Relationship
+
+# Bump whenever SYSTEM_PROMPT changes. Stamped on every edge and every failure, so
+# "v3 inverted polarity 12% of the time, v4 got it to 3%" is a measurable claim
+# rather than a memory. This is the column that turns prompt engineering into
+# evaluation.
+PROMPT_VERSION = "1"
 
 # The extraction prompt. On the Anthropic path this is a cached prefix, so it must
 # stay byte-identical across chunks — no timestamps, no chunk ids, no per-document
@@ -179,34 +187,121 @@ Return entities and relationships as structured output. Emit nothing you cannot 
 """
 
 
-def extract(chunk_text: str) -> Extraction:
-    """Extract entities and relationships from one chunk, then verify the quotes."""
-    result = structured(SYSTEM_PROMPT, chunk_text, Extraction)
-    return verify_evidence(result, chunk_text)
+@dataclass
+class Failure:
+    """An edge the model proposed and the verifier refused. Kept, never dropped."""
+
+    source: str
+    relation: str
+    target: str
+    quote: str
+    confidence: float
+    reason: FailureReason
+    detail: str = ""
 
 
-def verify_evidence(extraction: Extraction, chunk_text: str) -> Extraction:
-    """Drop any relationship whose evidence quote is not actually in the source.
+@dataclass
+class VerifiedExtraction:
+    """The output of one chunk: what survived, what was quarantined, and where each
+    surviving claim physically lives in the source document."""
 
-    The prompt *asks* for verbatim quotes. This *enforces* it, and the distinction
-    matters more on a smaller model than on a frontier one. A model that paraphrases
-    under pressure — or fabricates a quote outright — produces an edge that looks
-    well-sourced and is not. That is the worst failure this system can have: a
-    confident, cited, wrong answer about who approved something.
+    entities: list = field(default_factory=list)
+    relationships: list[Relationship] = field(default_factory=list)
+    # relationship index -> (start, end) offsets, relative to the chunk
+    spans: dict[int, tuple[int, int]] = field(default_factory=dict)
+    failures: list[Failure] = field(default_factory=list)
 
-    Matching is whitespace-normalised and case-insensitive, because models reflow
-    quotes across line breaks. It is not fuzzy beyond that. A paraphrase is a
-    fabrication, and it gets cut.
+    @property
+    def total_proposed(self) -> int:
+        return len(self.relationships) + len(self.failures)
+
+
+def extract(chunk_text: str) -> VerifiedExtraction:
+    """Extract from one chunk, then verify every edge against the source text."""
+    raw = structured(SYSTEM_PROMPT, chunk_text, Extraction)
+    return verify(raw, chunk_text)
+
+
+def verify(extraction: Extraction, chunk_text: str) -> VerifiedExtraction:
+    """Check every proposed edge against the source. Survivors get a span; the rest
+    get quarantined with a reason.
+
+    The prompt *asks* for verbatim quotes. This *enforces* it — and the difference
+    between asking and enforcing is the project's actual contribution. A model that
+    paraphrases under pressure, or fabricates a quote outright, produces an edge that
+    *looks* well-sourced and is not. That is the worst failure this system can have:
+    a confident, cited, wrong claim about who approved something.
+
+    Failures are quarantined rather than discarded. The extraction process is the
+    dataset — you cannot report "Kimi fabricates quotes on 8% of APPROVED edges" if
+    you threw the 8% away.
+
+    Matching tolerates reflowed whitespace and case (models rewrap text) but nothing
+    more. A paraphrase is a fabrication and it does not get located.
     """
-    haystack = " ".join(chunk_text.split()).lower()
+    names = {e.name for e in extraction.entities}
 
-    kept = [
-        rel
-        for rel in extraction.relationships
-        if (needle := " ".join(rel.evidence.split()).lower()) and needle in haystack
-    ]
+    out = VerifiedExtraction(entities=extraction.entities)
 
-    return Extraction(entities=extraction.entities, relationships=kept)
+    for rel in extraction.relationships:
+        if not rel.evidence.strip():
+            out.failures.append(_fail(rel, FailureReason.QUOTE_EMPTY))
+            continue
+
+        if rel.source == rel.target:
+            out.failures.append(_fail(rel, FailureReason.SELF_REFERENCE))
+            continue
+
+        missing = [n for n in (rel.source, rel.target) if n not in names]
+        if missing:
+            out.failures.append(
+                _fail(
+                    rel,
+                    FailureReason.ENTITY_NOT_EXTRACTED,
+                    detail=f"not among extracted entities: {', '.join(missing)}",
+                )
+            )
+            continue
+
+        span = locate(rel.evidence, chunk_text)
+        if span is None:
+            out.failures.append(_fail(rel, FailureReason.QUOTE_NOT_FOUND))
+            continue
+
+        out.spans[len(out.relationships)] = span
+        out.relationships.append(rel)
+
+    return out
+
+
+def _fail(rel: Relationship, reason: FailureReason, detail: str = "") -> Failure:
+    return Failure(
+        source=rel.source,
+        relation=rel.type.value,
+        target=rel.target,
+        quote=rel.evidence,
+        confidence=rel.confidence,
+        reason=reason,
+        detail=detail,
+    )
+
+
+def stamp() -> dict[str, str]:
+    """Provenance for everything this module writes."""
+    from callosum.ontology import ONTOLOGY_VERSION
+
+    cfg = settings()
+    model = (
+        cfg.anthropic_extraction_model
+        if cfg.provider == Provider.ANTHROPIC
+        else cfg.ollama_model
+    )
+    return {
+        "provider": cfg.provider.value,
+        "extractor_model": model,
+        "prompt_version": PROMPT_VERSION,
+        "ontology_version": ONTOLOGY_VERSION,
+    }
 
 
 # ---------------------------------------------------------------------------
