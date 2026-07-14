@@ -20,11 +20,11 @@ class Settings(BaseSettings):
     voyage_api_key: str = ""
 
     # 5433, not 5432 — dodges any Postgres already running on the host.
-    postgres_dsn: str = "postgresql://meridian:meridian@localhost:5433/meridian"
+    postgres_dsn: str = "postgresql://callosum:callosum@localhost:5433/callosum"
 
     neo4j_uri: str = "bolt://localhost:7687"
     neo4j_user: str = "neo4j"
-    neo4j_password: str = "meridian123"
+    neo4j_password: str = "callosum123"
 
     chunk_tokens: int = 800
     chunk_overlap_tokens: int = 120

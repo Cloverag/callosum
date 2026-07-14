@@ -9,7 +9,7 @@ import docx
 import pypdf
 import voyageai
 
-from meridian.config import EMBEDDING_DIM, EMBEDDING_MODEL, settings
+from callosum.config import EMBEDDING_DIM, EMBEDDING_MODEL, settings
 
 
 @dataclass

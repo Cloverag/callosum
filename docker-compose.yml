@@ -1,27 +1,27 @@
 services:
   postgres:
     image: pgvector/pgvector:pg16
-    container_name: meridian-postgres
+    container_name: callosum-postgres
     environment:
-      POSTGRES_USER: meridian
-      POSTGRES_PASSWORD: meridian
-      POSTGRES_DB: meridian
+      POSTGRES_USER: callosum
+      POSTGRES_PASSWORD: callosum
+      POSTGRES_DB: callosum
     ports:
       - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./schema/postgres.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U meridian -d meridian"]
+      test: ["CMD-SHELL", "pg_isready -U callosum -d callosum"]
       interval: 5s
       timeout: 5s
       retries: 10
 
   neo4j:
     image: neo4j:5-community
-    container_name: meridian-neo4j
+    container_name: callosum-neo4j
     environment:
-      NEO4J_AUTH: neo4j/meridian123
+      NEO4J_AUTH: neo4j/callosum123
       NEO4J_PLUGINS: '["apoc"]'
       NEO4J_dbms_security_procedures_unrestricted: apoc.*
     ports:

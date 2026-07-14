@@ -20,8 +20,8 @@ import psycopg
 from neo4j import Driver
 from pydantic import BaseModel, Field
 
-from meridian.config import SYNTHESIS_MODEL, settings
-from meridian.ingest import embed
+from callosum.config import SYNTHESIS_MODEL, settings
+from callosum.ingest import embed
 
 
 @dataclass

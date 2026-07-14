@@ -1,4 +1,4 @@
-# Meridian — Architecture
+# Callosum — Architecture
 
 ## System overview
 

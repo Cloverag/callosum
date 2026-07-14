@@ -16,8 +16,8 @@ import anthropic
 from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
 from anthropic.types.messages.batch_create_params import Request
 
-from meridian.config import EXTRACTION_MODEL, settings
-from meridian.ontology import Extraction
+from callosum.config import EXTRACTION_MODEL, settings
+from callosum.ontology import Extraction
 
 # The cached prefix. Everything above the cache_control breakpoint must be
 # byte-identical across every request or the cache silently misses — so no
@@ -175,7 +175,7 @@ gets a stale answer.
 
 Input:
 > This document is confidential and proprietary. Distribution outside the board \
-> is prohibited. © 2026 Meridian Inc.
+> is prohibited. © 2026 Callosum Inc.
 
 Correct extraction: no entities, no relationships. Emit empty lists. Do not \
 manufacture an Organization from a copyright line.
