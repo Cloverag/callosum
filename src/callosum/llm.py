@@ -10,6 +10,7 @@ almost for free: same prompt, same schema, same corpus, same graph, different mo
 That comparison is a Phase 7 result.
 """
 
+import json
 from typing import Any, TypeVar
 
 import httpx
@@ -79,48 +80,93 @@ def structured(system: str, user: str, output: type[T]) -> T:
         return response.parsed_output
 
     schema = _inline_refs(output.model_json_schema())
-    response = httpx.post(
-        f"{cfg.ollama_host}/api/chat",
-        timeout=OLLAMA_TIMEOUT,
-        json={
-            "model": cfg.ollama_model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            "stream": False,
-            "format": schema,
-            "options": {"num_ctx": 16384},
-        },
-    )
-    _raise_for_ollama(response)
-    content = response.json()["message"]["content"]
 
-    # For local models Ollama compiles `format` into a grammar that constrains
-    # decoding, so the content is bare JSON. For *cloud* models the constraint is
-    # not enforced server-side, and what comes back varies run to run: bare JSON,
-    # ```json fences, or preamble text around the object. Parse defensively; if no
-    # candidate validates, fail loudly — a model that cannot hold the schema cannot
-    # be trusted to populate the graph.
-    return _parse_structured(content, output)
+    # Ollama enforces `format` as a decoding grammar for LOCAL models only. Cloud
+    # models receive it as, at best, a suggestion — on longer inputs they happily
+    # emit markdown tables instead. So the schema also goes into the prompt as an
+    # explicit instruction, we still pass `format` (it helps when honored), and a
+    # failed parse gets one repair round-trip before we give up.
+    json_instruction = (
+        "\n\n# Output format (mandatory)\n"
+        "Respond with a SINGLE JSON object and nothing else — no markdown, no "
+        "tables, no code fences, no commentary before or after. The object must "
+        f"validate against this JSON Schema:\n{json.dumps(schema)}"
+    )
+
+    def _call(messages: list[dict[str, str]]) -> str:
+        response = httpx.post(
+            f"{cfg.ollama_host}/api/chat",
+            timeout=OLLAMA_TIMEOUT,
+            json={
+                "model": cfg.ollama_model,
+                "messages": messages,
+                "stream": False,
+                "format": schema,
+                "options": {"num_ctx": 16384},
+            },
+        )
+        _raise_for_ollama(response)
+        return response.json()["message"]["content"]
+
+    messages = [
+        {"role": "system", "content": system + json_instruction},
+        {"role": "user", "content": user},
+    ]
+    content = _call(messages)
+
+    try:
+        return _parse_structured(content, output)
+    except ValueError:
+        # Repair round: the model already did the reasoning — make it re-emit its
+        # own output as the JSON it was asked for. One retry, then fail loudly.
+        repair = _call(
+            messages
+            + [
+                {"role": "assistant", "content": content},
+                {
+                    "role": "user",
+                    "content": (
+                        "Your previous reply was not a JSON object. Convert it into "
+                        "a single JSON object that validates against the schema you "
+                        "were given. Output ONLY the JSON object."
+                    ),
+                },
+            ]
+        )
+        return _parse_structured(repair, output)
 
 
 def _parse_structured(content: str, output: type[T]) -> T:
     """Find and validate the schema object inside possibly-messy model output.
 
-    Tries, in order: the whole content; then each balanced JSON object found by
-    raw_decode at successive '{' positions (this skips fences, preamble, and inner
-    objects that parse but don't validate). First candidate that both parses and
-    validates wins.
+    Tries the whole content first, then each balanced JSON object found by
+    raw_decode at successive '{' positions (skipping fences, preamble, and inner
+    objects). A candidate only counts if it shares at least one key with the target
+    model's fields — Pydantic ignores unknown keys and every Extraction field has a
+    default, so without this guard a stray inner dict like {"type": "Person"} would
+    "validate" as an EMPTY Extraction and silently discard the whole result. A
+    parser that can hallucinate an empty success is worse than one that crashes.
     """
     import json as _json
 
     from pydantic import ValidationError
 
+    fields = set(output.model_fields)
+
+    def try_candidate(candidate: Any) -> T | None:
+        if not isinstance(candidate, dict) or not (fields & candidate.keys()):
+            return None
+        try:
+            return output.model_validate(candidate)
+        except ValidationError:
+            return None
+
     try:
-        return output.model_validate_json(content.strip())
-    except ValidationError:
-        pass
+        parsed = _json.loads(content.strip())
+    except _json.JSONDecodeError:
+        parsed = None
+    if (result := try_candidate(parsed)) is not None:
+        return result
 
     decoder = _json.JSONDecoder()
     pos = content.find("{")
@@ -128,11 +174,8 @@ def _parse_structured(content: str, output: type[T]) -> T:
     while pos != -1 and attempts < 20:
         try:
             candidate, _ = decoder.raw_decode(content, pos)
-            if isinstance(candidate, dict):
-                try:
-                    return output.model_validate(candidate)
-                except ValidationError:
-                    pass
+            if (result := try_candidate(candidate)) is not None:
+                return result
         except _json.JSONDecodeError:
             pass
         pos = content.find("{", pos + 1)

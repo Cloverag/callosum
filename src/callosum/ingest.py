@@ -133,21 +133,46 @@ def _carry_overlap(
     return carried
 
 
+# Glyph equivalence classes: the same character in different encodings. Models
+# habitually emit typographic punctuation ('smart quotes') where the source has
+# ASCII, and vice versa. Treating those as mismatches would count faithful quotes
+# as fabrications and corrupt the failure statistics. This is normalization, not
+# fuzziness — a paraphrase still fails.
+_GLYPH_CLASSES = {
+    "'": "['‘’ʼ]",
+    "‘": "['‘’ʼ]",
+    "’": "['‘’ʼ]",
+    '"': "[\"“”]",
+    "“": "[\"“”]",
+    "”": "[\"“”]",
+    "-": "[-‐‑–—]",
+    "–": "[-‐‑–—]",
+    "—": "[-‐‑–—]",
+    "…": r"(?:…|\.\.\.)",
+}
+
+
+def _token_pattern(token: str) -> str:
+    return "".join(_GLYPH_CLASSES.get(ch, re.escape(ch)) for ch in token)
+
+
 def locate(quote: str, haystack: str) -> tuple[int, int] | None:
-    """Find a quote's exact character span, tolerating reflowed whitespace.
+    """Find a quote's exact character span, tolerating reflowed whitespace and
+    typographic-vs-ASCII punctuation.
 
-    Models reflow quotes across line breaks — the text is faithful but the bytes are
-    not. So we match on a whitespace-flexible regex rather than a raw substring, and
-    return offsets into the *original* string so the span still highlights correctly.
+    Models reflow quotes across line breaks and swap quote/dash glyphs — the text is
+    faithful but the bytes are not. So we match a whitespace-flexible, glyph-class
+    regex, and return offsets into the *original* string so the span highlights
+    correctly.
 
-    This is deliberately NOT fuzzy beyond whitespace and case. A paraphrase is a
-    fabrication, and it must not be located.
+    Deliberately NOT fuzzy beyond whitespace, case, and glyph equivalence. A
+    paraphrase is a fabrication, and it must not be located.
     """
     tokens = quote.split()
     if not tokens:
         return None
 
-    pattern = r"\s+".join(re.escape(t) for t in tokens)
+    pattern = r"\s+".join(_token_pattern(t) for t in tokens)
     match = re.search(pattern, haystack, flags=re.IGNORECASE)
     return (match.start(), match.end()) if match else None
 
