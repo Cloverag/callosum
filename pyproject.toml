@@ -4,7 +4,8 @@ version = "0.1.0"
 description = "Institutional Memory: a graph + vector knowledge layer for board and company decisions"
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "anthropic>=0.40",
+    "httpx>=0.27",       # Ollama (default provider)
+    "anthropic>=0.40",   # optional provider — kept live for the Phase 7 comparison
     "voyageai>=0.3",
     "neo4j>=5.25",
     "psycopg[binary]>=3.2",

@@ -7,9 +7,9 @@ from pathlib import Path
 
 import docx
 import pypdf
-import voyageai
 
-from callosum.config import EMBEDDING_DIM, EMBEDDING_MODEL, settings
+from callosum.config import settings
+from callosum.llm import embed  # re-exported: callers import it from here
 
 
 @dataclass
@@ -105,24 +105,4 @@ def _carry_overlap(current: list[str], overlap: int) -> tuple[list[str], int]:
     return carried, size
 
 
-def embed(texts: list[str], input_type: str = "document") -> list[list[float]]:
-    """Embed texts with Voyage. `input_type` must be 'document' when indexing and
-    'query' when searching — Voyage prepends a different instruction for each, and
-    mismatching them measurably degrades retrieval."""
-    if not texts:
-        return []
-
-    client = voyageai.Client(api_key=settings().voyage_api_key or None)
-    vectors: list[list[float]] = []
-
-    for i in range(0, len(texts), 128):
-        batch = texts[i : i + 128]
-        result = client.embed(batch, model=EMBEDDING_MODEL, input_type=input_type)
-        vectors.extend(result.embeddings)
-
-    if vectors and len(vectors[0]) != EMBEDDING_DIM:
-        raise ValueError(
-            f"{EMBEDDING_MODEL} returned {len(vectors[0])}-dim vectors but the "
-            f"chunk.embedding column is VECTOR({EMBEDDING_DIM}). Fix one or the other."
-        )
-    return vectors
+__all__ = ["Chunk", "load", "content_hash", "chunk", "embed"]
