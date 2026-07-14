@@ -1,4 +1,9 @@
-"""Document loading, chunking, and embedding."""
+"""Document loading, chunking, and embedding.
+
+Chunks carry true character spans into the source document. That is what lets an
+evidence quote resolve to `document.raw_text[start:end]` — an exact highlight, not
+"somewhere in this paragraph." Provenance is only as precise as the offsets you kept.
+"""
 
 import hashlib
 import re
@@ -16,6 +21,8 @@ from callosum.llm import embed  # re-exported: callers import it from here
 class Chunk:
     ordinal: int
     text: str
+    start_char: int  # inclusive offset into the document's raw_text
+    end_char: int    # exclusive
 
 
 def load(path: Path) -> str:
@@ -40,69 +47,109 @@ def content_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-# ~4 characters per token is the standard English approximation. We use it only to
-# *size* chunks, never to bill or budget — for real counts, call the API's
-# count_tokens (see extract.check_cache_prefix). tiktoken would be wrong here: it
-# is OpenAI's tokenizer and undercounts Claude by 15-20%.
+# ~4 characters per token, the standard English approximation. Used only to *size*
+# chunks, never to bill or budget. tiktoken would be wrong here anyway — it is
+# OpenAI's tokenizer and mismatches both of our providers.
 CHARS_PER_TOKEN = 4
 
 
-def chunk(text: str, target_tokens: int | None = None, overlap_tokens: int | None = None) -> list[Chunk]:
-    """Split text into overlapping chunks on paragraph boundaries.
+def chunk(
+    text: str, target_tokens: int | None = None, overlap_tokens: int | None = None
+) -> list[Chunk]:
+    """Split text into overlapping chunks on paragraph boundaries, preserving offsets.
 
-    We pack whole paragraphs rather than slicing at a fixed character offset. In a
-    board transcript a paragraph is usually one speaker's turn, and cutting Priya's
-    objection in half is how you lose the OPPOSED edge that the whole system exists
-    to record. Overlap carries trailing paragraphs forward so a decision stated at a
-    chunk boundary still has its rationale attached.
+    We pack whole paragraphs rather than slicing at a fixed offset. In a board
+    transcript a paragraph is usually one speaker's turn, and cutting Priya's
+    objection in half is how you lose the OPPOSED edge the system exists to record.
+    Overlap carries trailing paragraphs forward, so a decision stated at a chunk
+    boundary keeps its rationale attached.
+
+    Each chunk is a *contiguous span* of the original text — carried-over paragraphs
+    are adjacent to the ones that follow them — so `text[c.start_char:c.end_char]`
+    reproduces the chunk exactly. Every downstream offset depends on that invariant.
     """
     cfg = settings()
     target = (target_tokens or cfg.chunk_tokens) * CHARS_PER_TOKEN
     overlap = (overlap_tokens or cfg.chunk_overlap_tokens) * CHARS_PER_TOKEN
 
-    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
-    if not paragraphs:
+    # (start, end) spans of each paragraph in the ORIGINAL text — not stripped copies,
+    # so offsets stay true.
+    spans = [
+        (m.start(), m.end())
+        for m in re.finditer(r"[^\n]+(?:\n(?!\s*\n)[^\n]+)*", text)
+        if text[m.start() : m.end()].strip()
+    ]
+    if not spans:
         return []
 
     chunks: list[Chunk] = []
-    current: list[str] = []
-    size = 0
+    current: list[tuple[int, int]] = []
 
-    for para in paragraphs:
-        # A single paragraph longer than the target (a wall-of-text PDF page) gets
-        # hard-split on sentence boundaries rather than silently blowing the budget.
-        if len(para) > target:
-            for sentence in re.split(r"(?<=[.!?])\s+", para):
-                if size + len(sentence) > target and current:
-                    chunks.append(Chunk(len(chunks), "\n\n".join(current)))
-                    current, size = _carry_overlap(current, overlap)
-                current.append(sentence)
-                size += len(sentence)
+    def flush() -> None:
+        if not current:
+            return
+        start, end = current[0][0], current[-1][1]
+        chunks.append(Chunk(len(chunks), text[start:end], start, end))
+
+    def size_of(group: list[tuple[int, int]]) -> int:
+        return group[-1][1] - group[0][0] if group else 0
+
+    for span in spans:
+        para_len = span[1] - span[0]
+
+        # A single paragraph over budget (a wall-of-text PDF page) is split on
+        # sentence boundaries. Offsets still come from the original text.
+        if para_len > target:
+            for m in re.finditer(r"[^.!?]+(?:[.!?]+|$)", text[span[0] : span[1]]):
+                sub = (span[0] + m.start(), span[0] + m.end())
+                if current and size_of(current) + (sub[1] - sub[0]) > target:
+                    flush()
+                    current = _carry_overlap(current, overlap)
+                current.append(sub)
             continue
 
-        if size + len(para) > target and current:
-            chunks.append(Chunk(len(chunks), "\n\n".join(current)))
-            current, size = _carry_overlap(current, overlap)
+        if current and size_of(current) + para_len > target:
+            flush()
+            current = _carry_overlap(current, overlap)
 
-        current.append(para)
-        size += len(para)
+        current.append(span)
 
-    if current:
-        chunks.append(Chunk(len(chunks), "\n\n".join(current)))
-
+    flush()
     return chunks
 
 
-def _carry_overlap(current: list[str], overlap: int) -> tuple[list[str], int]:
+def _carry_overlap(
+    current: list[tuple[int, int]], overlap: int
+) -> list[tuple[int, int]]:
     """Keep trailing paragraphs from the previous chunk, up to the overlap budget."""
-    carried: list[str] = []
+    carried: list[tuple[int, int]] = []
     size = 0
-    for para in reversed(current):
-        if size + len(para) > overlap:
+    for span in reversed(current):
+        length = span[1] - span[0]
+        if size + length > overlap:
             break
-        carried.insert(0, para)
-        size += len(para)
-    return carried, size
+        carried.insert(0, span)
+        size += length
+    return carried
 
 
-__all__ = ["Chunk", "load", "content_hash", "chunk", "embed"]
+def locate(quote: str, haystack: str) -> tuple[int, int] | None:
+    """Find a quote's exact character span, tolerating reflowed whitespace.
+
+    Models reflow quotes across line breaks — the text is faithful but the bytes are
+    not. So we match on a whitespace-flexible regex rather than a raw substring, and
+    return offsets into the *original* string so the span still highlights correctly.
+
+    This is deliberately NOT fuzzy beyond whitespace and case. A paraphrase is a
+    fabrication, and it must not be located.
+    """
+    tokens = quote.split()
+    if not tokens:
+        return None
+
+    pattern = r"\s+".join(re.escape(t) for t in tokens)
+    match = re.search(pattern, haystack, flags=re.IGNORECASE)
+    return (match.start(), match.end()) if match else None
+
+
+__all__ = ["Chunk", "load", "content_hash", "chunk", "locate", "embed"]

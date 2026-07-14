@@ -121,7 +121,7 @@ def ingest_doc(
             return
 
         chunk_ids = store.insert_chunks(
-            conn, document_id=doc_id, texts=[c.text for c in chunks],
+            conn, document_id=doc_id, chunks=chunks,
             embeddings=vectors, sensitivity=sensitivity,
         )
 
@@ -139,16 +139,26 @@ def ingest_doc(
             driver.close()
             return
 
-        queued = 0
+        stamp = extract.stamp()
+        queued = quarantined = 0
         with console.status("Extracting entities and relationships...") as status:
             for i, (cid, c) in enumerate(zip(chunk_ids, chunks, strict=True), 1):
                 status.update(f"Extracting chunk {i}/{len(chunks)}...")
-                result = extract.extract(c.text)
-                queued += store.queue_proposals(
-                    conn, document_id=doc_id, chunk_id=cid, extraction=result
+                verified = extract.extract(c.text)
+                q, bad = store.queue_proposals(
+                    conn, document_id=doc_id, chunk_id=cid,
+                    chunk_start=c.start_char, chunk_text=c.text,
+                    verified=verified, stamp=stamp,
                 )
+                queued += q
+                quarantined += bad
 
     console.print(f"[green]✓[/] {queued} proposed changes queued for approval")
+    if quarantined:
+        console.print(
+            f"[yellow]⚠ {quarantined} edge(s) quarantined[/] — evidence quote not found "
+            "in source. Inspect with: [dim]callosum failures[/]"
+        )
     console.print("[dim]Review with: callosum pending[/]")
     driver.close()
 
@@ -284,19 +294,67 @@ def collect_batch(batch_id: str) -> None:
         console.print("[yellow]No results yet — batch may still be processing.[/]")
         return
 
-    queued = 0
+    stamp = extract.stamp()
+    queued = quarantined = 0
     with store.pg() as conn:
-        for chunk_id, extraction in results.items():
+        for chunk_id, raw_extraction in results.items():
             row = conn.execute(
-                "SELECT document_id FROM chunk WHERE id = %s", (uuid.UUID(chunk_id),)
+                "SELECT document_id, text, start_char FROM chunk WHERE id = %s",
+                (uuid.UUID(chunk_id),),
             ).fetchone()
-            if row:
-                queued += store.queue_proposals(
-                    conn, document_id=row["document_id"],
-                    chunk_id=uuid.UUID(chunk_id), extraction=extraction,
-                )
+            if not row:
+                continue
+            verified = extract.verify(raw_extraction, row["text"])
+            q, bad = store.queue_proposals(
+                conn, document_id=row["document_id"], chunk_id=uuid.UUID(chunk_id),
+                chunk_start=row["start_char"], chunk_text=row["text"],
+                verified=verified, stamp=stamp,
+            )
+            queued += q
+            quarantined += bad
 
-    console.print(f"[green]✓[/] {queued} proposed changes queued from {len(results)} chunks")
+    console.print(f"[green]✓[/] {queued} queued, {quarantined} quarantined "
+                  f"from {len(results)} chunks")
+
+
+@app.command()
+def failures() -> None:
+    """Inspect the quarantine — edges the evidence verifier refused.
+
+    The extraction process is the dataset. This is where you find out that Kimi
+    fabricates a quote on one edge in twelve, or that failures cluster in the longest
+    chunks. Those are the numbers that go in the evaluation chapter.
+    """
+    with store.pg() as conn:
+        rows = store.failure_stats(conn)
+
+    if not rows:
+        console.print("[green]No quarantined edges.[/] Either extraction is clean or "
+                      "nothing has been ingested yet.")
+        return
+
+    table = Table(title="Quarantined edges — proposed, then refused by the verifier")
+    table.add_column("model", style="dim")
+    table.add_column("prompt", justify="center")
+    table.add_column("relation")
+    table.add_column("reason", style="yellow")
+    table.add_column("n", justify="right")
+    table.add_column("claimed conf", justify="right")
+    table.add_column("avg chars", justify="right")
+
+    for r in rows:
+        table.add_row(
+            r["extractor_model"], r["prompt_version"], r["relation"] or "—",
+            r["reason"], str(r["n"]),
+            str(r["avg_claimed_confidence"]) if r["avg_claimed_confidence"] else "—",
+            str(r["avg_chunk_chars"]) if r["avg_chunk_chars"] else "—",
+        )
+
+    console.print(table)
+    console.print(
+        "[dim]High claimed-confidence + quote_not_found = confident fabrication. "
+        "That is the number to put on a slide.[/]"
+    )
 
 
 if __name__ == "__main__":

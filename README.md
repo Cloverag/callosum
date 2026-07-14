@@ -49,11 +49,25 @@ about pricing does not load the salary discussion — not because we drop it aft
 but because we never selected it.
 
 **2. The LLM never writes to the graph.** It *proposes*, into `proposed_change`. A human
-approves, and only then does memory mutate, with a version row appended. Every proposed
-relationship carries a **verbatim quote** from the source text; no quote, no edge.
+approves, and only then does memory mutate, with a version row appended.
 
 This is the project's answer to PRD Open Question #3 — *"How much autonomy should AI have
 before requiring founder approval?"* Our answer: **none for writes.**
+
+**3. No edge exists without a verified evidence span.** Every proposed relationship must
+carry a verbatim quote, and `verify()` checks the quote is *literally present* in the
+source (whitespace- and case-tolerant, nothing more — a paraphrase is a fabrication). A
+surviving edge stores the exact character offsets of its evidence, so the UI highlights
+*"We're not doing Model B."*, not a whole paragraph. **This is the project's core
+contribution: verified knowledge-graph construction.** The graph is not "what the LLM
+said" — it is "claims backed by machine-checked provenance."
+
+Rejected edges are **quarantined, not dropped** (`extraction_failure`, with a typed
+reason). The extraction process is the dataset: *"Kimi fabricates a quote on 8% of
+`APPROVED` edges"* is a finding, and you can only make it if you kept the failures.
+Every edge and every failure is stamped with its `provider`, `extractor_model`,
+`prompt_version`, and `ontology_version` — so a result can always be attributed to the
+model, prompt, and ontology that produced it.
 
 ## Stack
 
@@ -94,7 +108,8 @@ callosum init
 callosum ingest-doc data/demo/board_meeting_12_transcript.txt --type transcript --sensitivity 1
 callosum ingest-doc data/demo/compensation_review_CONFIDENTIAL.txt --type transcript --sensitivity 3
 
-callosum pending                         # what Claude proposed, with confidence scores
+callosum pending                         # proposed edges, lowest confidence first
+callosum failures                        # quarantined edges — the evaluation table in embryo
 callosum approve --all                   # commit to the graph
 
 callosum query "Why did we reject Pricing Model B?" --as Raj
@@ -102,6 +117,20 @@ callosum query "What is Priya's compensation?" --as Marcus   # withheld — inve
 ```
 
 Neo4j Browser: <http://localhost:7474> (`neo4j` / `callosum123`) → `MATCH (n) RETURN n`
+
+## Tests
+
+```bash
+pytest              # fast, deterministic — offsets, quote location, verifier/quarantine
+pytest -m llm       # regression tests against the live model (polarity, supersedes)
+```
+
+The LLM regression tests assert on a **recall floor** (these edges must appear) and a
+**forbidden set** (the inverted-polarity edge must *never* appear), not exact graph
+equality — extraction is non-deterministic, and an exact-match test would flake until
+you learned to ignore it. `test_polarity_not_inverted` is the one that matters: if a
+prompt edit ever makes the model say Priya *opposed* the rejection she argued for, CI
+fails instead of a founder getting a confidently wrong answer.
 
 ## Status
 

@@ -22,7 +22,6 @@ from pgvector.psycopg import register_vector
 from psycopg.rows import dict_row
 
 from callosum.config import settings
-from callosum.ontology import Extraction
 
 # ---------------------------------------------------------------------------
 # Postgres
@@ -86,20 +85,22 @@ def insert_chunks(
     conn: psycopg.Connection,
     *,
     document_id: uuid.UUID,
-    texts: list[str],
+    chunks: list,  # list[ingest.Chunk] — carries text + char offsets
     embeddings: list[list[float]],
     sensitivity: int,
 ) -> list[uuid.UUID]:
-    """Write chunks + embeddings. Postgres mints the UUIDs the graph will reuse."""
+    """Write chunks + embeddings, preserving char offsets. Postgres mints the UUIDs
+    the graph will reuse."""
     ids: list[uuid.UUID] = []
-    for ordinal, (text, vector) in enumerate(zip(texts, embeddings, strict=True)):
+    for c, vector in zip(chunks, embeddings, strict=True):
         row = conn.execute(
             """
-            INSERT INTO chunk (document_id, ordinal, text, sensitivity, embedding)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO chunk (document_id, ordinal, text, start_char, end_char,
+                               sensitivity, embedding)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
-            (document_id, ordinal, text, sensitivity, vector),
+            (document_id, c.ordinal, c.text, c.start_char, c.end_char, sensitivity, vector),
         ).fetchone()
         ids.append(row["id"])
     return ids
@@ -110,44 +111,63 @@ def queue_proposals(
     *,
     document_id: uuid.UUID,
     chunk_id: uuid.UUID,
-    extraction: Extraction,
-) -> int:
-    """Park an extraction in the approval queue. Nothing reaches the graph yet.
+    chunk_start: int,
+    chunk_text: str,
+    verified,  # extract.VerifiedExtraction
+    stamp: dict[str, str],
+) -> tuple[int, int]:
+    """Park verified claims in the approval queue and quarantine the rejects.
 
-    The evidence quote the extractor was forced to attach travels with the proposal,
-    so the founder reviewing it can see the sentence the claim rests on rather than
-    taking the model's word for it.
+    Returns (queued, quarantined). Nothing reaches the graph here.
+
+    Evidence spans are converted from chunk-relative to document-absolute offsets, so
+    a reviewer (or the frontend) can highlight the exact sentence in the original
+    document rather than being handed a paragraph and told to go looking.
     """
-    count = 0
+    queued = 0
 
-    for entity in extraction.entities:
+    for entity in verified.entities:
         conn.execute(
             """
-            INSERT INTO proposed_change (document_id, kind, payload, evidence, confidence)
-            VALUES (%s, 'add_entity', %s, %s, %s)
+            INSERT INTO proposed_change
+                (document_id, chunk_id, kind, payload, confidence,
+                 provider, extractor_model, prompt_version, ontology_version)
+            VALUES (%s, %s, 'add_entity', %s, %s, %s, %s, %s, %s)
             """,
             (
                 document_id,
+                chunk_id,
                 json.dumps({
                     "name": entity.name,
                     "type": entity.type.value,
                     "attributes": entity.attributes,
                     "chunk_id": str(chunk_id),
                 }),
-                json.dumps([str(chunk_id)]),
-                1.0,  # an entity that appears in the text is not a judgment call
+                # An entity that literally appears in the text is not a judgment call.
+                # The judgment — and therefore the uncertainty — lives in the edges.
+                1.0,
+                stamp["provider"], stamp["extractor_model"],
+                stamp["prompt_version"], stamp["ontology_version"],
             ),
         )
-        count += 1
+        queued += 1
 
-    for rel in extraction.relationships:
+    for i, rel in enumerate(verified.relationships):
+        local = verified.spans.get(i)
+        abs_start = chunk_start + local[0] if local else None
+        abs_end = chunk_start + local[1] if local else None
+
         conn.execute(
             """
-            INSERT INTO proposed_change (document_id, kind, payload, evidence, confidence)
-            VALUES (%s, 'add_relationship', %s, %s, %s)
+            INSERT INTO proposed_change
+                (document_id, chunk_id, kind, payload, confidence,
+                 quote, quote_start, quote_end,
+                 provider, extractor_model, prompt_version, ontology_version)
+            VALUES (%s, %s, 'add_relationship', %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 document_id,
+                chunk_id,
                 json.dumps({
                     "source": rel.source,
                     "type": rel.type.value,
@@ -155,13 +175,53 @@ def queue_proposals(
                     "quote": rel.evidence,
                     "chunk_id": str(chunk_id),
                 }),
-                json.dumps([str(chunk_id)]),
                 rel.confidence,
+                rel.evidence,
+                abs_start,
+                abs_end,
+                stamp["provider"], stamp["extractor_model"],
+                stamp["prompt_version"], stamp["ontology_version"],
             ),
         )
-        count += 1
+        queued += 1
 
-    return count
+    for failure in verified.failures:
+        conn.execute(
+            """
+            INSERT INTO extraction_failure
+                (document_id, chunk_id, source, relation, target, quote, confidence,
+                 reason, detail, provider, extractor_model, prompt_version,
+                 ontology_version, chunk_chars)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                document_id, chunk_id,
+                failure.source, failure.relation, failure.target,
+                failure.quote, failure.confidence,
+                failure.reason.value, failure.detail,
+                stamp["provider"], stamp["extractor_model"],
+                stamp["prompt_version"], stamp["ontology_version"],
+                len(chunk_text),
+            ),
+        )
+
+    return queued, len(verified.failures)
+
+
+def failure_stats(conn: psycopg.Connection) -> list[dict[str, Any]]:
+    """The quarantine, aggregated. This is the Phase 7 evaluation table in embryo:
+    fabrication rate by model, by prompt version, by relation type."""
+    return conn.execute(
+        """
+        SELECT extractor_model, prompt_version, relation, reason,
+               count(*) AS n,
+               round(avg(confidence)::numeric, 2) AS avg_claimed_confidence,
+               round(avg(chunk_chars)::numeric) AS avg_chunk_chars
+        FROM extraction_failure
+        GROUP BY extractor_model, prompt_version, relation, reason
+        ORDER BY n DESC
+        """
+    ).fetchall()
 
 
 def pending(conn: psycopg.Connection, limit: int = 50) -> list[dict[str, Any]]:

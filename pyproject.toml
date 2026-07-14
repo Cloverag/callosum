@@ -23,6 +23,14 @@ dependencies = [
 [project.optional-dependencies]
 # Local embeddings, if you ever want to run without the Voyage API.
 local = ["sentence-transformers>=3.3"]
+dev = ["pytest>=8.3"]
+
+[tool.pytest.ini_options]
+markers = [
+    "llm: hits the live model (slow, non-deterministic, costs on the paid provider). Run with -m llm.",
+]
+# Default run excludes the llm-marked tests, so `pytest` stays fast and deterministic.
+addopts = "-m 'not llm'"
 
 [project.scripts]
 callosum = "callosum.cli:app"
