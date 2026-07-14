@@ -1,0 +1,34 @@
+[project]
+name = "meridian"
+version = "0.1.0"
+description = "Institutional Memory: a graph + vector knowledge layer for board and company decisions"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "anthropic>=0.40",
+    "voyageai>=0.3",
+    "neo4j>=5.25",
+    "psycopg[binary]>=3.2",
+    "pgvector>=0.3",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pypdf>=5.1",
+    "python-docx>=1.1",
+    "typer>=0.15",
+    "rich>=13.9",
+]
+
+[project.optional-dependencies]
+# Local embeddings, if you ever want to run without the Voyage API.
+local = ["sentence-transformers>=3.3"]
+
+[project.scripts]
+meridian = "meridian.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/meridian"]

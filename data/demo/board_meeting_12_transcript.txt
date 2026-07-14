@@ -1,0 +1,51 @@
+Meridian Inc — Board Meeting 12
+Date: 2026-03-04
+Attendees: Raj Malhotra (CEO, co-founder), Priya Nair (CFO), Marcus Webb (Sequoia, board), Elena Duarte (Accel, board), Tom Fischer (independent director)
+
+---
+
+RAJ: Let's start with the pricing question. We've been going back and forth on this for two months. Priya, you costed out Pricing Model B — the usage-based tier. Walk us through it.
+
+PRIYA: I did. Model B replaces our flat per-seat pricing with metered usage. The headline is that at our current volume it takes blended gross margin from 71% down to 58%. That's not a rounding error, that's thirteen points. Our infrastructure cost scales with usage but our current contracts don't let us pass that through. I can't recommend it in its current form.
+
+MARCUS: I want to push back on that framing. The margin hit is real, I'm not disputing Priya's numbers. But every usage-based company looks bad on margin in year one. Stripe looked terrible on margin in year one. Snowflake looked terrible. You take the margin hit to buy expansion revenue, and net revenue retention is what the Series C buyer is actually going to underwrite. We're optimizing for the wrong metric.
+
+PRIYA: Marcus, that works if you have the runway to absorb it. We have fourteen months. If margin compresses that hard and the Series C slips two quarters, we're raising a bridge at a bad price.
+
+ELENA: I'm with Priya on the timing. I like Model B as a concept. I don't like it in Q2 of a year where we need to show the Series C market a clean margin story. Can we revisit after the raise?
+
+MARCUS: Revisiting after the raise means never. You'll have new investors with new opinions.
+
+RAJ: Noted, Marcus, and I don't disagree with you on the long-term logic. But I'm not betting the company on it this quarter. We're not doing Model B. We'll stay on per-seat through the Series C and revisit in Q1 next year with real expansion data behind it. That's my call.
+
+TOM: For the minutes — is that a formal rejection or a deferral?
+
+RAJ: Rejection for this fiscal year. Priya, write it up for the board pack with the margin analysis attached so the record is clear on why.
+
+PRIYA: Will do. I'll have it in the pack by Friday.
+
+---
+
+RAJ: Next item — the hiring freeze. We put it in place in March when the Series B was still uncertain.
+
+PRIYA: The B closed. Twenty-two million, wired last Tuesday.
+
+RAJ: Right. So the freeze comes off. We're resuming engineering hiring immediately. I want six engineers by end of Q3 — four backend, two on the platform team.
+
+ELENA: Any concern about burn?
+
+PRIYA: At six heads we're still inside the plan we showed you. Burn goes to $840K a month, runway stays above eighteen months post-B.
+
+RAJ: Then we're agreed. Freeze is lifted. Priya owns the headcount plan.
+
+---
+
+RAJ: Last thing — international. Elena, you raised this.
+
+ELENA: I did. I think international expansion is the obvious next lever, and I don't think we've done the work. Which market, what does localization actually cost, is there a regulatory story. I'd like to see a memo before we commit anything.
+
+RAJ: Fair. Tom, can you own an international expansion memo for the next board meeting?
+
+TOM: I can. Give me until the June meeting.
+
+RAJ: Done. That's the meeting.
