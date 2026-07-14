@@ -59,21 +59,37 @@ before requiring founder approval?"* Our answer: **none for writes.**
 
 - **Postgres 16 + pgvector** — raw documents, chunk embeddings, RBAC, version history
 - **Neo4j 5** — the knowledge graph
-- **Claude Opus 4.8** — entity/relationship extraction and grounded synthesis
-- **Voyage** — 1024-dim embeddings
-- Python 3.12, FastAPI, Typer
+- Python 3.12, Typer
 
-Extraction quality *is* graph quality — a missed `OPPOSED` edge is a wrong answer — so
-Opus runs on both extraction and synthesis. Cost is controlled with prompt caching and
-the Batch API, not with a weaker model.
+**The LLM provider is pluggable**, and that is deliberate. Extraction quality *is* graph
+quality — a model that drops the `OPPOSED` edge produces a confidently wrong answer that
+no retrieval trick recovers — so *which model does the extracting* is a research
+variable, not an implementation detail.
+
+| `PROVIDER` | Extraction + synthesis | Embeddings | Cost |
+|---|---|---|---|
+| `ollama` (default) | Kimi K2.5 (cloud) | bge-m3 (local, 1024-dim) | free |
+| `anthropic` | Claude Opus 4.8 | voyage-3 (1024-dim) | paid |
+
+Both are 1024-dim, so the `chunk.embedding VECTOR(1024)` column is unchanged either way.
+Phase 7 runs the same corpus through both and measures the difference.
+
+Guardrail that matters more on the smaller model: **every extracted relationship carries
+a verbatim quote, and `verify_evidence()` discards any edge whose quote is not literally
+present in the source text.** A paraphrase is treated as a fabrication. Hallucinated
+edges fail loudly instead of entering the graph looking well-sourced.
 
 ## Quickstart
 
 ```bash
 docker compose up -d                     # Postgres + Neo4j
 uv venv --python 3.12 && uv pip install -e .
-cp .env.example .env                     # add ANTHROPIC_API_KEY + VOYAGE_API_KEY
+cp .env.example .env
 
+ollama signin                            # once — for the cloud chat model
+ollama pull bge-m3                       # local embeddings, free
+
+callosum doctor                          # check provider + both stores before a long run
 callosum init
 callosum ingest-doc data/demo/board_meeting_12_transcript.txt --type transcript --sensitivity 1
 callosum ingest-doc data/demo/compensation_review_CONFIDENTIAL.txt --type transcript --sensitivity 3

@@ -15,13 +15,11 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
-import anthropic
 import psycopg
 from neo4j import Driver
 from pydantic import BaseModel, Field
 
-from callosum.config import SYNTHESIS_MODEL, settings
-from callosum.ingest import embed
+from callosum.llm import embed, structured, text as generate
 
 
 @dataclass
@@ -99,16 +97,7 @@ Extract entity names as a document would write them — "Pricing Model B", not
 
 
 def plan(question: str) -> Plan:
-    client = anthropic.Anthropic(api_key=settings().anthropic_api_key or None)
-    response = client.messages.parse(
-        model=SYNTHESIS_MODEL,
-        max_tokens=1024,
-        output_config={"effort": "low"},  # routing is not the hard part
-        system=PLANNER_PROMPT,
-        messages=[{"role": "user", "content": question}],
-        output_format=Plan,
-    )
-    return response.parsed_output
+    return structured(PLANNER_PROMPT, question, Plan)
 
 
 # ---------------------------------------------------------------------------
@@ -298,20 +287,10 @@ def ask(
             seen.add(ev.chunk_id)
 
     context = _render(graph_facts, evidence, withheld)
-
-    client = anthropic.Anthropic(api_key=settings().anthropic_api_key or None)
-    response = client.messages.create(
-        model=SYNTHESIS_MODEL,
-        max_tokens=4000,
-        thinking={"type": "adaptive"},
-        output_config={"effort": "high"},
-        system=ANSWER_PROMPT,
-        messages=[{"role": "user", "content": f"{context}\n\nQuestion: {question}"}],
-    )
-    text = next((b.text for b in response.content if b.type == "text"), "")
+    answer_text = generate(ANSWER_PROMPT, f"{context}\n\nQuestion: {question}")
 
     answer = Answer(
-        text=text,
+        text=answer_text,
         evidence=evidence,
         graph_facts=graph_facts,
         withheld=withheld,

@@ -8,11 +8,54 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from callosum import extract, ingest, store
+from callosum import extract, ingest, llm, store
 from callosum.retrieve import Principal, ask
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 console = Console()
+
+
+@app.command()
+def doctor() -> None:
+    """Check the configured provider and stores are reachable before a long run."""
+    try:
+        info = llm.health()
+    except RuntimeError as exc:
+        console.print(f"[red]✗[/] {exc}")
+        raise typer.Exit(1)
+
+    console.print(f"[bold]Provider:[/] {info['provider']}  →  {info['model']}")
+
+    if info["provider"] == "ollama":
+        ok = info["model_present"] and info["embedding_present"]
+        if not info["model_present"]:
+            console.print(f"[red]✗[/] Chat model missing. Run: ollama pull {info['model']}")
+        if not info["embedding_present"]:
+            console.print(
+                f"[red]✗[/] Embedding model missing. Run: ollama pull {info['embedding_model']}"
+            )
+        if ok:
+            console.print(f"[green]✓[/] Ollama models present ({info['embedding_model']} for embeddings)")
+    elif not info["key_set"]:
+        console.print("[red]✗[/] ANTHROPIC_API_KEY is not set")
+        raise typer.Exit(1)
+
+    try:
+        with store.pg() as conn:
+            n = conn.execute("SELECT count(*) AS n FROM document").fetchone()["n"]
+        console.print(f"[green]✓[/] Postgres reachable ({n} documents)")
+    except Exception as exc:
+        console.print(f"[red]✗[/] Postgres: {exc}")
+        raise typer.Exit(1)
+
+    try:
+        driver = store.neo()
+        driver.verify_connectivity()
+        console.print("[green]✓[/] Neo4j reachable")
+        driver.close()
+    except Exception as exc:
+        console.print(f"[red]✗[/] Neo4j: {exc}")
+        raise typer.Exit(1)
 
 # Three roles, three clearances. Enough to prove the RBAC boundary without
 # building a role hierarchy we don't need. The interesting pair is Raj (4) and
