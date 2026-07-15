@@ -18,7 +18,12 @@ from callosum.ontology import Extraction, FailureReason, Relationship
 # "v3 inverted polarity 12% of the time, v4 got it to 3%" is a measurable claim
 # rather than a memory. This is the column that turns prompt engineering into
 # evaluation.
-PROMPT_VERSION = "1"
+#
+# v2: forbid ellipsis-elided quotes. v1 data showed the model stitching fragments
+# with "..." on exactly the highest-value edges (final decision calls) — and in one
+# case stitching words from TWO DIFFERENT SPEAKERS into a single attribution. See
+# docs/findings.md, 2026-07-15.
+PROMPT_VERSION = "2"
 
 # The extraction prompt. On the Anthropic path this is a cached prefix, so it must
 # stay byte-identical across chunks — no timestamps, no chunk ids, no per-document
@@ -107,6 +112,12 @@ direct quote from the chunk you were given — not a paraphrase, not a summary. 
 you cannot quote text that supports the edge, do not write the edge. This is the \
 single most important rule, and it is enforced downstream: an edge whose quote does \
 not appear in the source text is automatically discarded.
+   **The quote must be ONE contiguous span, from ONE speaker.** Never join separate \
+sentences or turns with "..." or by omission. If the support for an edge is spread \
+across several statements, choose the single strongest contiguous span and quote \
+only that. Stitched quotes are rejected outright — and worse, a quote stitched from \
+two speakers attributes one person's words to another, which is precisely the kind \
+of error this system exists to prevent.
 2. **Name entities exactly as the text names them.** Write "Pricing Model B", not \
 "pricing model b" or "the B pricing model". Downstream resolution merges duplicates \
 by exact name; inconsistent naming defeats it.

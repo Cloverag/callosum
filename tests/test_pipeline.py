@@ -65,6 +65,30 @@ def test_locate_rejects_paraphrase():
     assert locate("Priya disliked the pricing", "PRIYA: I can't recommend it.") is None
 
 
+def test_locate_rejects_stitched_quote():
+    """The failure that actually occurred on the first real ingest: the model stitched
+    two non-adjacent sentences into one quote, in one case across two speakers —
+    attributing one person's words to another. A stitched quote is not a contiguous
+    span and must not locate. (docs/findings.md, 2026-07-15)"""
+    hay = (
+        "RAJ: We're not doing Model B. We'll stay on per-seat.\n"
+        "TOM: For the minutes?\n"
+        "RAJ: Rejection for this fiscal year."
+    )
+    # Stitched across a gap -> rejected.
+    assert locate("We're not doing Model B. Rejection for this fiscal year.", hay) is None
+    # The correct contiguous span still locates.
+    assert locate("We're not doing Model B.", hay) is not None
+
+
+def test_locate_tolerates_typographic_glyphs():
+    """Curly quotes and em-dashes are encoding variants, not fabrications. The model
+    emits them where the source has ASCII; treating that as a mismatch would inflate
+    the fabrication rate (it turned 1 real quarantine into 17 before this fix)."""
+    hay = "RAJ: We're not doing it — that's my call."
+    assert locate("We’re not doing it — that’s my call.", hay) is not None
+
+
 def test_locate_empty_quote():
     assert locate("", "anything") is None
 

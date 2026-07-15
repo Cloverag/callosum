@@ -243,9 +243,29 @@ def pending(conn: psycopg.Connection, limit: int = 50) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
-def neo() -> Driver:
+def neo(wait: float = 60.0) -> Driver:
+    """Connect to Neo4j, waiting for it to come up if necessary.
+
+    A fresh container takes 20-30s to accept Bolt connections; the driver itself
+    does not retry the initial handshake. Without this, any command run right after
+    `docker compose up` dies with a ConnectionReset mid-handshake.
+    """
+    import time
+
+    from neo4j.exceptions import ServiceUnavailable
+
     cfg = settings()
-    return GraphDatabase.driver(cfg.neo4j_uri, auth=(cfg.neo4j_user, cfg.neo4j_password))
+    driver = GraphDatabase.driver(cfg.neo4j_uri, auth=(cfg.neo4j_user, cfg.neo4j_password))
+
+    deadline = time.monotonic() + wait
+    while True:
+        try:
+            driver.verify_connectivity()
+            return driver
+        except (ServiceUnavailable, OSError):
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(2.0)
 
 
 CONSTRAINTS = [
