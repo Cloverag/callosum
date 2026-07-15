@@ -108,3 +108,28 @@ contributed only the 1-hop `ABOUT` edge, because the SUPPORTED/OPPOSED/APPROVED 
 hang off the *Decision* node, two hops from the *Topic* the planner extracted. This is
 the concrete case for the deferred multi-hop traversal (#12) — the graph's relational
 payoff needs >1 hop to surface on this question shape.
+
+## 2026-07-15 (run 4) — clean end-to-end on fresh data. Milestone.
+
+Full reset, prompt v2. Both golden queries correct:
+- Q1 (Raj, clearance 4): complete decision answer — rejected for the 13-point margin
+  hit and Series C narrative; Priya/Elena supported, Marcus opposed, Raj made the
+  call; action item captured.
+- Q2 (Marcus, clearance 1): "none of the accessible sources contain any information
+  about Priya's compensation… one source was not retrieved due to clearance
+  restrictions." The RBAC edge-gating fix holds on a graph it had never seen. No leak.
+
+**New observation — fabrication is stochastic, not a fixed set.** Run 3 quarantined
+one WORKS_AT edge; run 4 quarantined MADE_IN (0.90) and ATTENDED (0.96) — different
+edges, same document, same model, same prompt. The ATTENDED at 0.96 came from the
+comp doc, which only has two people present, so it invented an attendance at high
+confidence. Implication for the eval: you cannot enumerate and patch "the" fabricated
+edges, because they differ run to run. Runtime verification is not a nicety here — it
+is the only thing that catches a failure you cannot predict. This strengthens the
+confidence-anti-correlated-with-correctness result: 0.90–0.96 claimed on invented facts.
+
+**Still true from run 3:** Q1's polarity came from the vector passages; the graph
+contributed only the 1-hop ABOUT edge. The person→decision edges are 2 hops from the
+Topic the planner searched. Vector RAG is carrying this question. Multi-hop traversal
+is the next build — it is what makes the graph, not the vectors, answer the relational
+questions the thesis claims are its advantage.
