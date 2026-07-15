@@ -161,6 +161,19 @@ def graph_search(
 
     The chunk ids coming back are the bridge in action: a graph hit hands us the
     exact passages that justify it, which we then pull from Postgres as citations.
+
+    RBAC on the graph side, fail-closed. Every edge is gated by the sensitivity of
+    the chunk it was *extracted from* (`r.chunk_id` → that Chunk's sensitivity). An
+    edge whose source chunk the caller may not read is never returned — not the
+    relation, not the endpoint names, and above all not `r.quote`, which can embed
+    confidential text verbatim (a benign WORKS_AT edge carried "$185K base" and
+    leaked a salary to an investor before this gate existed; see docs/findings.md).
+
+    Filtering the edge by its source chunk also transitively hides entities that only
+    appear in confidential documents: such an entity's only edges come from
+    confidential chunks, so all of them are dropped. The `MATCH` (not OPTIONAL) means
+    an edge with a missing or unreadable source chunk simply does not appear —
+    fail-closed is the only safe default for an access-control filter.
     """
     if not entities:
         return [], []
@@ -174,6 +187,10 @@ def graph_search(
             MATCH (e:Entity)
             WHERE e.name IN $names
             MATCH (e)-[r]-(other:Entity)
+            // The edge's own source chunk must be readable by the caller.
+            // MATCH, not OPTIONAL: no readable source chunk => edge is withheld.
+            MATCH (src:Chunk {id: r.chunk_id})
+            WHERE src.sensitivity <= $clearance
             OPTIONAL MATCH (c:Chunk)-[:MENTIONS]->(e)
             WHERE c.sensitivity <= $clearance
             RETURN e.name   AS subject,

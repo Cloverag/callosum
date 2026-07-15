@@ -73,3 +73,38 @@ score.
 
 **Also fixed:** `neo()` now waits for the Bolt handshake (a fresh container needs
 ~20-30s; `init` was racing the boot and dying with ConnectionReset).
+
+## 2026-07-15 (run 3) — RBAC leak through graph edge quotes. THE finding.
+
+First clean end-to-end run (prompt v2). Q1 (Raj) produced a full, correct decision
+answer. Q2 exposed a real security hole, which is the most valuable result so far.
+
+**The leak.** Marcus (investor, clearance 1) asked "What is Priya's compensation?"
+The vector side correctly withheld the confidential comp doc ("1 source withheld").
+But the answer still stated "$185K base" — leaked through the GRAPH.
+
+**Mechanism.** A `Priya —WORKS_AT→ Meridian Inc` edge — a benign relation — was
+extracted from the sensitivity-3 comp chunk, and its verbatim evidence quote embedded
+"She's at $185K base". `graph_search` filtered the vector chunks by clearance but
+returned edge quotes with no check on the sensitivity of the chunk each edge came
+from. RBAC was enforced on one store and not the other.
+
+**Why it matters (thesis).** In a hybrid graph+vector system the permission filter
+must be applied identically to both stores, and **edge provenance quotes are
+themselves a leakage channel** — the relation type can be harmless while its evidence
+span carries the secret. Filtering chunks is not enough; you must filter edges by the
+sensitivity of their source chunk. Most GraphRAG systems have no RBAC at all and so
+never encounter this; ours did because it enforces access, and that is the point.
+
+**Fix.** `graph_search` now gates every edge on its source chunk, fail-closed:
+`MATCH (src:Chunk {id: r.chunk_id}) WHERE src.sensitivity <= $clearance` (MATCH, not
+OPTIONAL — an edge with no readable source chunk is withheld). This transitively
+hides confidential-only entities too, since all their edges originate in confidential
+chunks. Verified: Marcus's traversal from Priya no longer returns any salary edge;
+Raj's still does; the end-to-end answer to Marcus is a clean refusal with disclosure.
+
+**Note on Q1.** Raj's excellent answer came mostly from the vector passages; the graph
+contributed only the 1-hop `ABOUT` edge, because the SUPPORTED/OPPOSED/APPROVED edges
+hang off the *Decision* node, two hops from the *Topic* the planner extracted. This is
+the concrete case for the deferred multi-hop traversal (#12) — the graph's relational
+payoff needs >1 hop to surface on this question shape.
