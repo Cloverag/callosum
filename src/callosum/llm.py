@@ -234,6 +234,13 @@ def embed(texts: list[str], input_type: str = "document") -> list[list[float]]:
     if not texts:
         return []
 
+    # An empty or whitespace-only string makes bge-m3 emit a NaN vector, which Ollama
+    # then fails to JSON-encode ("unsupported value: NaN", HTTP 500) — taking down the
+    # whole call. Substitute a single space: the resulting vector is meaningless, but
+    # callers that pass empty text (e.g. a planner that returned no search_query) get a
+    # harmless zero-signal embedding instead of a crash. Real inputs are never empty.
+    texts = [t if t and t.strip() else " " for t in texts]
+
     cfg = settings()
 
     if cfg.provider == Provider.ANTHROPIC:

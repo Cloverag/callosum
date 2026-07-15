@@ -133,3 +133,88 @@ contributed only the 1-hop ABOUT edge. The person→decision edges are 2 hops fr
 Topic the planner searched. Vector RAG is carrying this question. Multi-hop traversal
 is the next build — it is what makes the graph, not the vectors, answer the relational
 questions the thesis claims are its advantage.
+
+## 2026-07-15 (run 5) — multi-hop traversal. The graph finally does what vectors can't.
+
+`graph_search` extended from 1-hop to bounded 2-hop (`max_hops=2`, capped at 3). Full
+reset, prompt v2, gpt-oss:120b-cloud. **This is the run where the graph's relational
+payoff appears — the whole reason the system is hybrid.**
+
+**What changed in the answer.** On "Why did we reject Pricing Model B?", the planner
+still seeds on the *Topic* ("Pricing Model B"). At 1 hop that reached only the ABOUT
+edge and stopped (runs 3–4). At 2 hops the traversal crosses the Decision node and out
+to the people, and the graph facts now include the positions directly:
+
+  - `path: Pricing Model B ←ABOUT— Reject Pricing Model B ←APPROVED— Raj Malhotra`
+  - `path: … ←SUPPORTED— Priya Nair`
+  - `path: … ←OPPOSED— Marcus Webb`
+  - `Write pricing decision pack —DERIVED_FROM→ Reject Pricing Model B`
+
+The synthesized answer cites `[Graph]` for who-approved / who-opposed / who-made-the-
+call, i.e. the relational structure is now sourced from the graph rather than inferred
+from prose. **The vector-vs-hybrid comparison the thesis rests on now exists as a
+concrete artifact** — the `path:` chains are relationships no single vector chunk
+contains (person and topic are never in the same sentence; only the decision links
+them).
+
+**Honest scope note.** The supporting *text passages* [1]–[3] are still vector-
+retrieved; the graph contributes the *facts and their provenance quotes*, not new
+citation text (the edge source-chunks dedup against the vector hits). That is the
+correct division of labour, not a shortfall: the graph says *who/what/how-related*, the
+vector store supplies *the words*. The eval should measure them on that split (relational
+recall from the graph; passage grounding from vectors), not as interchangeable retrievers.
+
+**Security — the wider traversal did not reopen the run-3 leak.** RBAC is now gated at
+the *path* level, fail-closed: a path is returned only if every edge on it comes from a
+readable chunk (`sum(CASE WHEN src.sensitivity <= clearance) = edge_count`); one
+confidential hop withholds the entire path. Multi-hop is more chances to leak per query,
+so the gate is on the path, not a post-filter. Q2 confirms it empirically: Marcus
+(clearance 1) asked for Priya's compensation and got a clean refusal — no salary reached
+him through any 2-hop path. Manual audit of the new Cypher (injection, null chunk_id,
+node-name exposure, aggregate correctness) found no leak; see session notes.
+
+**Caveat for the limitations section (not a leak).** `-[*1..3]-` expands before
+`LIMIT 100`, so traversal cost grows with graph size before truncation. Fine on the
+demo corpus; a real deployment wants relationship-type pruning or a hop budget keyed to
+the planner. Note it; don't fix it until an eval on a larger corpus shows it bites.
+
+## 2026-07-15 (run 6) — building the eval exposed why it can't share a graph with extraction.
+
+Built the Phase 7 harness (`callosum eval`): every gold question run under hybrid and
+vector-only, scored per stratum, graph-fact recall as the mechanism metric. Two findings
+came out of the first attempt, and the second is the important one.
+
+**(a) Empty-query embedding crash (fixed).** The graph-ablation forces vector search on
+every question. A question the planner routes graph-only returns an empty `search_query`;
+embedding an empty string makes bge-m3 emit a NaN vector that Ollama can't serialise
+(HTTP 500, "unsupported value: NaN"), which aborted the whole run. Fixed three ways:
+`embed()` substitutes a space for empty input; `ask()` falls back to the question text
+when `search_query` is blank; `evaluate()` records a per-question error and continues
+instead of losing the run. Lesson: any ablation that forces a path the planner meant to
+skip must supply that path a valid input.
+
+**(b) THE finding — a stochastically-extracted graph makes the retrieval eval
+non-reproducible.** This run's extraction quarantined the `ABOUT` and `APPROVED` edges
+(both claimed 0.90). `ABOUT` connects the *topic* the planner seeds on to the *decision*
+— without it, the 2-hop traversal from "Pricing Model B" cannot reach the people, so Q1
+produced **no `path:` facts and answered entirely from vectors**, unlike run 5 on the
+same corpus and prompt. Comp-doc proposals also swung 36 → 19 run-to-run. Had the eval
+scored against this graph, hybrid's graph-fact recall would read ~0% on the pricing
+stratum — measuring *extraction luck, not retrieval capability*.
+
+This forces a methodological split the thesis must state explicitly. There are two
+contributions and they cannot be measured on the same artifact:
+  1. **Extraction quality** — quarantine / fabrication stats. Stochastic by nature; the
+     variance is itself the result (runs 1–6).
+  2. **Retrieval advantage** (hybrid vs vector) — must run against a **fixed, curated
+     gold graph**, or extraction noise confounds every number. You do not evaluate a
+     retriever on a knowledge base that randomly rewrites itself between runs. Seeding
+     the known-correct edges deterministically and saying so is rigorous, not cheating —
+     it isolates the variable under test.
+
+RBAC held regardless of the graph shuffle: Marcus got a benign `OWNS` edge and a clean
+refusal on salary. Fail-closed does not depend on which edges extraction happened to keep.
+
+**Next:** a deterministic eval-graph seed (`seed-eval`) — the gold entities + edges +
+chunk sensitivities written straight to the stores, bypassing the LLM — so `callosum
+eval` measures retrieval on a stable graph. Extraction keeps its own separate scorecard.

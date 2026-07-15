@@ -7,6 +7,7 @@ regardless of how good the model is.
 
 from callosum.extract import verify
 from callosum.ingest import chunk, locate
+from callosum.retrieve import _render_chain
 from callosum.ontology import (
     Entity,
     EntityType,
@@ -93,6 +94,68 @@ def test_locate_empty_quote():
     assert locate("", "anything") is None
 
 
+# --- multi-hop chain rendering ----------------------------------------------
+
+
+def test_render_chain_respects_edge_direction():
+    """The money-shot the graph produces and vectors can't: a person connected to a
+    decision through a meeting. Arrow direction must reflect each edge's real
+    orientation, not the order we happened to walk the path."""
+    names = ["Marcus", "Board Meeting 12", "Reject Model B"]
+    rels = ["ATTENDED", "MADE_IN"]
+    # Marcus -ATTENDED-> Meeting  (start == first node, forward)
+    # Decision -MADE_IN-> Meeting (start == last node, so against our walk => backward)
+    starts = ["Marcus", "Reject Model B"]
+    chain = _render_chain(names, rels, starts)
+    assert chain == "path: Marcus —ATTENDED→ Board Meeting 12 ←MADE_IN— Reject Model B"
+
+
+def test_render_chain_all_forward():
+    names = ["Raj", "Reject Model B", "Pricing Model B"]
+    rels = ["APPROVED", "ABOUT"]
+    starts = ["Raj", "Reject Model B"]
+    chain = _render_chain(names, rels, starts)
+    assert chain == "path: Raj —APPROVED→ Reject Model B —ABOUT→ Pricing Model B"
+
+
+# --- gold graph / gold questions consistency --------------------------------
+
+
+def test_gold_edges_reference_defined_entities():
+    """Every seeded edge must connect entities the seed also creates — a dangling
+    endpoint would MATCH nothing in Neo4j and the edge would silently not be written."""
+    from callosum.evaluate import (
+        GOLD_CONFIDENTIAL_EDGES,
+        GOLD_CONFIDENTIAL_ENTITIES,
+        GOLD_EDGES,
+        GOLD_ENTITIES,
+    )
+    names = {n for n, _, _ in GOLD_ENTITIES} | {n for n, _, _ in GOLD_CONFIDENTIAL_ENTITIES}
+    for src, _rel, tgt, _q in GOLD_EDGES + GOLD_CONFIDENTIAL_EDGES:
+        assert src in names, f"edge source {src!r} is not a defined gold entity"
+        assert tgt in names, f"edge target {tgt!r} is not a defined gold entity"
+
+
+def test_every_expected_fact_is_a_seeded_edge():
+    """The eval's expected graph facts must be reachable in the seeded graph. If a gold
+    question expects an edge the seed never writes, the eval can never pass it — that is
+    a gold-set bug, not a system failure, and this test catches it before a run."""
+    from pathlib import Path
+
+    from callosum.evaluate import GOLD_CONFIDENTIAL_EDGES, GOLD_EDGES, load_gold
+
+    seeded = [
+        (src.lower(), rel.value.lower(), tgt.lower())
+        for src, rel, tgt, _q in GOLD_EDGES + GOLD_CONFIDENTIAL_EDGES
+    ]
+    gold = load_gold(Path(__file__).resolve().parent.parent / "eval" / "gold.jsonl")
+    for item in gold:
+        for want in item.expect_facts:
+            s, r, t = want["subject"].lower(), want["rel"].lower(), want["target"].lower()
+            ok = any(s in es and r == er and t in et for es, er, et in seeded)
+            assert ok, f"{item.id}: expected fact {want} matches no seeded gold edge"
+
+
 # --- verifier / quarantine --------------------------------------------------
 
 
@@ -157,6 +220,56 @@ def test_verifier_quarantines_empty_quote():
     )
     v = verify(_ext([rel]), "anything at all")
     assert v.failures[0].reason == FailureReason.QUOTE_EMPTY
+
+
+# --- eval scorer ------------------------------------------------------------
+
+
+def _answer(text, facts=None):
+    from callosum.retrieve import Answer
+    return Answer(text=text, evidence=[], graph_facts=facts or [], withheld=0, latency_ms=0)
+
+
+def test_answer_correct_requires_all_expected_strings():
+    from callosum.evaluate import GoldItem, _answer_correct
+    item = GoldItem("M1", "multi_hop", "q", "Raj", ["Marcus", "Priya"], [], [])
+    assert _answer_correct(_answer("Marcus opposed, Priya supported"), item)
+    assert not _answer_correct(_answer("Only Marcus is mentioned"), item)
+
+
+def test_answer_correct_forbidden_string_is_automatic_fail():
+    """The RBAC negative test: the secret must never appear, whatever else is said."""
+    from callosum.evaluate import GoldItem, _answer_correct
+    item = GoldItem("X1", "rbac", "q", "Marcus", [], ["185"], [])
+    assert _answer_correct(_answer("I cannot share that."), item)
+    assert not _answer_correct(_answer("Her base is $185K."), item)
+    # A forbidden hit fails even when an expected string is also present.
+    item2 = GoldItem("X", "rbac", "q", "M", ["Priya"], ["185"], [])
+    assert not _answer_correct(_answer("Priya earns $185K."), item2)
+
+
+def test_graph_fact_recall_matches_on_tokens_not_glyphs():
+    from callosum.evaluate import GoldItem, _graph_fact_recall
+    item = GoldItem(
+        "R1", "relational", "q", "Raj", ["Marcus"], [],
+        [{"subject": "Marcus", "rel": "OPPOSED", "target": "Reject Pricing Model B"}],
+    )
+    # Rendered with em-dash arrows — must still match on tokens.
+    hit = _answer("", ["Marcus Webb —OPPOSED→ Reject Pricing Model B  (evidence: \"...\")"])
+    assert _graph_fact_recall(hit, item) == 1.0
+    miss = _answer("", ["Priya Nair —SUPPORTED→ Reject Pricing Model B"])
+    assert _graph_fact_recall(miss, item) == 0.0
+
+
+def test_graph_fact_recall_is_fractional():
+    from callosum.evaluate import GoldItem, _graph_fact_recall
+    item = GoldItem(
+        "M1", "multi_hop", "q", "Raj", [], [],
+        [{"subject": "Marcus", "rel": "OPPOSED", "target": "Reject Pricing Model B"},
+         {"subject": "Priya", "rel": "SUPPORTED", "target": "Reject Pricing Model B"}],
+    )
+    one_of_two = _answer("", ["Marcus Webb —OPPOSED→ Reject Pricing Model B"])
+    assert _graph_fact_recall(one_of_two, item) == 0.5
 
 
 def test_nothing_is_ever_silently_dropped():

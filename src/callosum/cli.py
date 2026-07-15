@@ -94,6 +94,11 @@ def ingest_doc(
     doc_type: str = typer.Option("transcript", "--type"),
     sensitivity: int = typer.Option(2, "--sensitivity", min=0, max=4),
     batch: bool = typer.Option(False, "--batch", help="Use the Batch API (50% cheaper, async)"),
+    no_extract: bool = typer.Option(
+        False, "--no-extract",
+        help="Load + chunk + embed only; skip LLM extraction. For the eval, whose graph "
+             "is seeded deterministically (callosum seed-eval).",
+    ),
 ) -> None:
     """Ingest one document: load → chunk → embed → extract → queue for approval."""
     text = ingest.load(path)
@@ -131,6 +136,14 @@ def ingest_doc(
                 driver, chunk_id=cid, document_id=doc_id,
                 ordinal=c.ordinal, sensitivity=sensitivity,
             )
+
+        if no_extract:
+            console.print(
+                f"[green]✓[/] {len(chunks)} chunk(s) embedded and stored "
+                "[dim](--no-extract: graph left for callosum seed-eval)[/]"
+            )
+            driver.close()
+            return
 
         if batch:
             batch_id = extract.submit_batch({str(cid): c.text for cid, c in zip(chunk_ids, chunks)})
@@ -315,6 +328,88 @@ def collect_batch(batch_id: str) -> None:
 
     console.print(f"[green]✓[/] {queued} queued, {quarantined} quarantined "
                   f"from {len(results)} chunks")
+
+
+@app.command()
+def seed_eval() -> None:
+    """Seed the fixed gold graph for the retrieval eval, bypassing the LLM.
+
+    Run after ingesting the demo docs and INSTEAD of `approve --all`. Writes the
+    known-correct edges (Raj APPROVED, Marcus OPPOSED, …) directly, so `callosum eval`
+    measures retrieval against a stable graph rather than whatever extraction produced
+    this run. Extraction quality is measured separately — see `callosum failures`.
+    """
+    from callosum import evaluate as ev
+
+    driver = store.neo()
+    try:
+        with store.pg() as conn:
+            edges, confidential = ev.seed_graph(conn, driver)
+    except ValueError as exc:
+        console.print(f"[red]✗[/] {exc}")
+        raise typer.Exit(1)
+    finally:
+        driver.close()
+
+    console.print(f"[green]✓[/] Seeded gold graph: {edges} board edges"
+                  + (f" + {confidential} confidential edge(s)" if confidential else ""))
+    console.print("[dim]This graph is a declared gold standard — see docs/findings.md. "
+                  "Now run: callosum eval[/]")
+
+
+@app.command()
+def eval(
+    gold_path: Path = typer.Option(Path("eval/gold.jsonl"), "--gold", help="Stratified gold set (JSONL)"),
+    out: Path = typer.Option(Path("eval/results.md"), "--out", help="Where to write the results table"),
+) -> None:
+    """Phase 7: run every gold question under hybrid AND vector-only, scored per stratum.
+
+    This runs two full retrievals per question (2× LLM calls each), so it is a real run,
+    not a unit test — expect it to take a minute on the cloud model. The output is the
+    thesis's central table: lookup ties, multi-hop separates.
+    """
+    from callosum import evaluate as ev
+
+    if not gold_path.exists():
+        console.print(f"[red]No gold set at {gold_path}[/]")
+        raise typer.Exit(1)
+
+    gold = ev.load_gold(gold_path)
+    console.print(f"[dim]Loaded {len(gold)} gold questions across "
+                  f"{len(set(g.stratum for g in gold))} strata[/]\n")
+
+    info = llm.health()
+    provider_note = f"{info['provider']} · {info['model']}"
+
+    driver = store.neo()
+    with store.pg() as conn:
+        with console.status("Running hybrid + vector-only over the gold set..."):
+            results, scores = ev.evaluate(conn, driver, gold)
+    driver.close()
+
+    table = Table(title="Phase 7 — hybrid vs vector-only, by stratum")
+    table.add_column("stratum")
+    table.add_column("n", justify="right")
+    table.add_column("vector-only", justify="right")
+    table.add_column("hybrid", justify="right")
+    table.add_column("graph-fact recall", justify="right")
+    for s in ev.STRATUM_ORDER:
+        sc = scores.get(s)
+        if not sc or sc.n == 0:
+            continue
+        gr = sc.graph_fact_recall
+        table.add_row(
+            s, str(sc.n),
+            f"{sc.vector_correct}/{sc.n}",
+            f"{sc.hybrid_correct}/{sc.n}",
+            "—" if gr is None else f"{gr*100:.0f}%",
+        )
+    console.print(table)
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(ev.render_markdown(results, scores, provider_note), encoding="utf-8")
+    console.print(f"\n[green]✓[/] Wrote {out}")
+    console.print("[dim]Read it by row: lookup should tie, multi_hop should separate.[/]")
 
 
 @app.command()
