@@ -36,3 +36,40 @@ watch the quarantine table after larger ingests.
 it, Raj APPROVED it — correct on the interleaved 3-topic transcript, not just the
 4-line regression snippet. The predicted worst failure mode has not materialized on
 gpt-oss:120b. Keep the regression tests anyway; one clean run is not a distribution.
+
+## 2026-07-15 (run 2) — first full end-to-end ingest, gpt-oss:120b-cloud, prompt v1
+
+**93 edges committed to the graph. Pipeline ran end to end** (ingest → verify →
+quarantine → approve → Neo4j) for the first time. Two board documents, 57 + 36
+proposed edges, 4 quarantined.
+
+**The two golden edges were quarantined, and the reason is a genuine win.** Raj
+APPROVED and Marcus OPPOSED the pricing rejection — the highest-value edges in the
+demo — were refused with `quote_not_found`. Cause: the model stitched non-adjacent
+sentences into one quote.
+
+  - Raj: "We're not doing Model B. Rejection for this fiscal year." — two of Raj's
+    turns, with Tom's interjection between them. Not contiguous.
+  - Priya (on the hiring freeze): "The B closed... So the freeze comes off." —
+    **stitched across two speakers**: Priya said "The B closed", Raj said "the
+    freeze comes off". This attributes Raj's words to Priya. This is exactly the
+    failure the system exists to prevent, and the verifier caught it.
+
+Priya SUPPORTED and Elena SUPPORTED the rejection *did* land (single contiguous
+quotes), so the decision is partially represented but missing its final-call and
+opposition edges. Under our contract that is correct behaviour: a missing edge beats
+a misattributed one. Fix is recall-side, not enforcement-side.
+
+**Response: prompt v2** forbids ellipsis-elided and cross-speaker quotes explicitly.
+Enforcement already handled this (locate() rejects non-contiguous spans); v2 aims to
+get the model to emit the correct contiguous span so the golden edges survive rather
+than being quarantined. Re-ingest under v2 will show whether recall recovers.
+
+**Calibration note for the eval chapter:** all four quarantined edges carried
+claimed confidence 0.90–0.97. The model was *most* confident on exactly the claims
+whose evidence did not hold up. Self-reported confidence is anti-correlated with
+correctness here — which is the entire argument for verification over trusting the
+score.
+
+**Also fixed:** `neo()` now waits for the Bolt handshake (a fresh container needs
+~20-30s; `init` was racing the boot and dying with ConnectionReset).
