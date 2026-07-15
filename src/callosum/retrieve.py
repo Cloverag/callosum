@@ -155,72 +155,120 @@ def vector_search(
 
 
 def graph_search(
-    driver: Driver, entities: list[str], principal: Principal
+    driver: Driver, entities: list[str], principal: Principal, max_hops: int = 2
 ) -> tuple[list[str], list[uuid.UUID]]:
-    """Traverse from named entities. Returns (human-readable facts, supporting chunk ids).
+    """Traverse from named entities, up to `max_hops` away. Returns (facts, chunk ids).
 
-    The chunk ids coming back are the bridge in action: a graph hit hands us the
-    exact passages that justify it, which we then pull from Postgres as citations.
+    This is the half of the system that vectors cannot do. "Why did we reject Pricing
+    Model B?" needs to connect the *decision* to the *people who took positions on it*
+    — and person→decision is two hops from the topic (Person -POSITION-> Decision
+    -ABOUT-> Topic). A one-hop search off "Pricing Model B" finds the ABOUT edge and
+    stops; the founder's real question ("who opposed it, who made the call") lives one
+    hop further out. Bounded multi-hop is what turns the graph from a lookup table into
+    a reasoning surface — and it is the comparison the thesis rests on.
 
-    RBAC on the graph side, fail-closed. Every edge is gated by the sensitivity of
-    the chunk it was *extracted from* (`r.chunk_id` → that Chunk's sensitivity). An
-    edge whose source chunk the caller may not read is never returned — not the
-    relation, not the endpoint names, and above all not `r.quote`, which can embed
-    confidential text verbatim (a benign WORKS_AT edge carried "$185K base" and
-    leaked a salary to an investor before this gate existed; see docs/findings.md).
+    RBAC is enforced per edge, fail-closed, over the WHOLE path. Every relationship on
+    a returned path is gated by the sensitivity of the chunk it was *extracted from*
+    (`r.chunk_id` → that Chunk's sensitivity). `all(... WHERE exists { readable src })`
+    means a path is returned only if *every* edge on it is readable: one confidential
+    hop withholds the entire path — not the relation, not the endpoint names, and above
+    all not `r.quote`, which can embed confidential text verbatim (a benign WORKS_AT
+    edge carried "$185K base" and leaked a salary to an investor before edge-gating
+    existed; see docs/findings.md). Multi-hop widens the blast radius — a two-hop path
+    is two chances to leak — so the gate is on the path, not a post-filter.
 
-    Filtering the edge by its source chunk also transitively hides entities that only
-    appear in confidential documents: such an entity's only edges come from
-    confidential chunks, so all of them are dropped. The `MATCH` (not OPTIONAL) means
-    an edge with a missing or unreadable source chunk simply does not appear —
-    fail-closed is the only safe default for an access-control filter.
+    `r.chunk_id IS NOT NULL` guards edges with no recorded source: an edge we cannot
+    attribute to a readable chunk is treated as unreadable. Fail-closed is the only
+    safe default for an access-control filter.
     """
     if not entities:
         return [], []
 
+    # max_hops is interpolated into the query (Neo4j cannot parameterise the bound of
+    # a variable-length pattern), so it must never be attacker-influenced text. It is
+    # an int argument set by us; clamp it to a sane range and hard-fail anything else.
+    if not isinstance(max_hops, int) or not 1 <= max_hops <= 3:
+        raise ValueError(f"max_hops must be an int in 1..3, got {max_hops!r}")
+
     facts: list[str] = []
+    seen_facts: set[str] = set()
     chunk_ids: list[uuid.UUID] = []
 
+    # Every edge on a returned path must be readable, or the whole path is withheld.
+    # We express this by unwinding the path's edges, left-joining each to its source
+    # chunk, and keeping the path only if the count of *readable* source chunks equals
+    # the number of edges. A missing chunk (OPTIONAL MATCH -> null) or one above the
+    # caller's clearance fails the count, so it fails closed. This avoids nesting an
+    # EXISTS subquery inside a list predicate, which is brittle across Neo4j 5.x points.
+    cypher = f"""
+        MATCH (seed:Entity)
+        WHERE seed.name IN $names
+        MATCH path = (seed)-[rels*1..{max_hops}]-(other:Entity)
+        WITH path, rels
+        UNWIND rels AS r
+        OPTIONAL MATCH (src:Chunk {{id: r.chunk_id}})
+        WITH path, rels,
+             count(r) AS edge_count,
+             sum(CASE WHEN src IS NOT NULL AND src.sensitivity <= $clearance
+                      THEN 1 ELSE 0 END) AS readable_edges
+        WHERE readable_edges = edge_count
+        RETURN [n IN nodes(path)         | n.name]           AS node_names,
+               [r IN relationships(path) | type(r)]          AS rel_types,
+               [r IN relationships(path) | startNode(r).name] AS rel_starts,
+               [r IN relationships(path) | r.quote]          AS rel_quotes,
+               [r IN relationships(path) | r.chunk_id]       AS rel_chunks,
+               length(path)                                  AS hops
+        ORDER BY hops ASC
+        LIMIT 100
+    """
+
     with driver.session() as session:
-        result = session.run(
-            """
-            MATCH (e:Entity)
-            WHERE e.name IN $names
-            MATCH (e)-[r]-(other:Entity)
-            // The edge's own source chunk must be readable by the caller.
-            // MATCH, not OPTIONAL: no readable source chunk => edge is withheld.
-            MATCH (src:Chunk {id: r.chunk_id})
-            WHERE src.sensitivity <= $clearance
-            OPTIONAL MATCH (c:Chunk)-[:MENTIONS]->(e)
-            WHERE c.sensitivity <= $clearance
-            RETURN e.name   AS subject,
-                   e.type   AS subject_type,
-                   type(r)  AS rel,
-                   startNode(r).name = e.name AS outgoing,
-                   other.name AS object,
-                   other.type AS object_type,
-                   r.quote  AS quote,
-                   collect(DISTINCT c.id) AS chunks
-            LIMIT 100
-            """,
-            names=entities,
-            clearance=principal.clearance,
-        )
+        result = session.run(cypher, names=entities, clearance=principal.clearance)
 
         for record in result:
-            if record["outgoing"]:
-                fact = f"{record['subject']} —{record['rel']}→ {record['object']}"
-            else:
-                fact = f"{record['object']} —{record['rel']}→ {record['subject']}"
-            if record["quote"]:
-                fact += f'  (evidence: "{record["quote"]}")'
-            facts.append(fact)
+            names = record["node_names"]
+            rels = record["rel_types"]
+            starts = record["rel_starts"]
+            quotes = record["rel_quotes"]
+            chunks = record["rel_chunks"]
 
-            for cid in record["chunks"]:
-                if cid:
-                    chunk_ids.append(uuid.UUID(cid))
+            # Decompose the path into atomic, deduplicated edge facts. The same edge
+            # shows up on many paths; the LLM should see it once.
+            for i, rel in enumerate(rels):
+                a, b = names[i], names[i + 1]
+                subject, obj = (a, b) if starts[i] == a else (b, a)
+                fact = f"{subject} —{rel}→ {obj}"
+                if quotes[i]:
+                    fact += f'  (evidence: "{quotes[i]}")'
+                if fact not in seen_facts:
+                    seen_facts.add(fact)
+                    facts.append(fact)
+                if chunks[i]:
+                    chunk_ids.append(uuid.UUID(chunks[i]))
+
+            # For genuine multi-hop paths, also surface the chain itself — this is the
+            # connection a vector search cannot make, and the thing worth showing the
+            # LLM (and the examiner) as the graph earning its keep.
+            if len(rels) >= 2:
+                chain = _render_chain(names, rels, starts)
+                if chain not in seen_facts:
+                    seen_facts.add(chain)
+                    facts.append(chain)
 
     return facts, chunk_ids
+
+
+def _render_chain(names: list[str], rels: list[str], starts: list[str]) -> str:
+    """Render a path as a directed chain, e.g.
+    `path: Marcus —ATTENDED→ Board Meeting 12 ←MADE_IN— Reject Model B`."""
+    out = names[0]
+    for i, rel in enumerate(rels):
+        a, b = names[i], names[i + 1]
+        if starts[i] == a:            # edge points a -> b, same as our walk direction
+            out += f" —{rel}→ {b}"
+        else:                          # edge points b -> a, against our walk direction
+            out += f" ←{rel}— {b}"
+    return "path: " + out
 
 
 def fetch_chunks(
@@ -279,21 +327,38 @@ Rules:
 
 
 def ask(
-    conn: psycopg.Connection, driver: Driver, question: str, principal: Principal
+    conn: psycopg.Connection, driver: Driver, question: str, principal: Principal,
+    *, use_graph: bool = True,
 ) -> Answer:
+    """Answer a question for a principal.
+
+    `use_graph=False` ablates the knowledge graph entirely — retrieval falls back to
+    pure vector search. This is not a runtime feature; it exists so the Phase 7 eval
+    can run the identical question under hybrid and vector-only conditions and measure
+    what the graph actually contributes per question type. The whole thesis is that the
+    two conditions tie on lookup and diverge on multi-hop; this switch is how we show it.
+    """
     started = time.monotonic()
 
     p = plan(question)
 
     graph_facts: list[str] = []
     graph_chunk_ids: list[uuid.UUID] = []
-    if p.needs_graph:
+    if use_graph and p.needs_graph:
         graph_facts, graph_chunk_ids = graph_search(driver, p.entities, principal)
 
     evidence: list[Evidence] = []
     withheld = 0
-    if p.needs_vector:
-        evidence, withheld = vector_search(conn, p.search_query, principal)
+    # In the ablation (use_graph=False) vector always runs — otherwise a question the
+    # planner routed graph-only would hand vector-only an empty context for the wrong
+    # reason, and the comparison would flatter the graph. Vector-only must genuinely
+    # get its best shot at every question.
+    if p.needs_vector or not use_graph:
+        # A graph-routed question can come back with an empty search_query; fall back to
+        # the raw question so the ablation still searches for something real (and so we
+        # never embed an empty string). The question is always a usable query.
+        query_text = p.search_query.strip() or question
+        evidence, withheld = vector_search(conn, query_text, principal)
 
     # The merge: graph-discovered passages joined with semantically-similar ones,
     # deduplicated on chunk id. Both halves have already been permission-filtered.
