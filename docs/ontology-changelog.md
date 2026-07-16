@@ -7,6 +7,25 @@ can actually make. Changes are evidence-driven: a type is added only when the co
 produces a relationship that cannot be represented without losing semantics, never because
 it "seems useful."
 
+## v3 — 2026-07-16
+
+**Added:** `ALIAS_OF`
+
+**Definition:** a reviewed, directed claim that a source spelling denotes a canonical
+entity: `"R. Malhotra" —ALIAS_OF→ "Rajesh Malhotra"`. The spelling remains its own
+node, so source text, evidence, and the reviewer decision remain inspectable.
+
+**Reason:** Meeting 14 contains two explicitly supported spellings for Rajesh Malhotra
+and a distinct Raj Patel. Exact-name merging cannot join the true aliases; automatic
+normalization would dangerously merge the different Raj. `ALIAS_OF` expresses the
+reviewable identity assertion without overloading `ABOUT` or rewriting source text.
+
+**Policy:** extraction may only propose an alias when one contiguous source quote makes
+the identity explicit. It follows the normal pending-change and human-approval path.
+Same-name or merely similar names must remain unlinked unless a reviewer approves an
+evidence-backed proposal. No alias edge changes document clearance; retrieval still
+requires every traversed edge to resolve to a readable provenance chunk.
+
 ## v2 — 2026-10-14
 
 **Added:** `REQUESTED`

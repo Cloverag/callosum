@@ -155,6 +155,23 @@ def test_every_expected_fact_is_a_seeded_edge():
             assert ok, f"{item.id}: expected fact {want} matches no seeded gold edge"
 
 
+def test_aliases_and_conflicting_forecasts_keep_distinct_provenance():
+    """R8/R9 must add evidence-backed links, never destructive name or value merges."""
+    from callosum.evaluate import GOLD_GROUPS
+
+    edges_by_title = {title: edges for title, _ents, edges, _conf in GOLD_GROUPS}
+    aliases = edges_by_title["board_meeting_14_transcript"]
+    assert ("Raj", RelationType.ALIAS_OF, "Rajesh Malhotra",
+            "Raj, short for Rajesh Malhotra") in aliases
+    assert not any(src == "Raj Patel" and rel == RelationType.ALIAS_OF for src, rel, _tgt, _q in aliases)
+
+    finance = edges_by_title["finance_fy27_forecast"]
+    sales = edges_by_title["sales_fy27_forecast"]
+    assert finance[0][0] == "Finance FY27 ARR forecast"
+    assert sales[0][0] == "Sales FY27 ARR forecast"
+    assert finance[0][0] != sales[0][0]
+
+
 # --- verifier / quarantine --------------------------------------------------
 
 

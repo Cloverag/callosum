@@ -1,0 +1,8 @@
+Meridian Inc — Board Meeting 15
+Date: 2026-12-10
+Attendees: Raj Malhotra (CEO), Priya Nair (CFO), Marcus Webb (board), Elena Duarte (board)
+
+RAJ: We have a conflict in the FY27 ARR forecast. The Finance FY27 Forecast says $12.0M; the Sales FY27 Forecast says $11.6M.
+PRIYA: Both documents are current, but they use different assumptions about the Northwind usage ramp. Finance includes the contractual minimum; Sales excludes the expansion until usage is evidenced.
+MARCUS: Do not pick one number for the minutes. Record both estimates, their owners, their dates, and the assumptions that differ.
+ELENA: Agreed. Until the forecast methods are reconciled, the board has no approved FY27 ARR target.

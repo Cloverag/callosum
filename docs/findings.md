@@ -515,3 +515,28 @@ not proceed. This was a local-provider availability failure, not an evaluation r
 `.venv\\Scripts\\callosum.exe`) to independently reproduce the pinned baseline. That
 environment limitation does not block beginning R8; R9 remains sequentially blocked behind
 completed R8.
+
+## 2026-07-16 (R8/R9 benchmark implementation) — aliases and conflicts are preserved
+
+Meeting 14 supplies two explicit aliases for Rajesh Malhotra (`Raj` and `R. Malhotra`) and
+the negative control Raj Patel. Ontology v3 adds `ALIAS_OF`: it is a source-backed,
+reviewable edge, not an automatic rewrite or name merge. The normal proposal/approval path
+therefore remains the only production write path, and a same-name person cannot be silently
+collapsed.
+
+The extraction prompt is version 3 and ontology version 3 for this benchmark. Both changes
+are additive; a live extraction comparison must report those versions rather than attribute
+any difference to alias handling alone.
+
+Meeting 15 and its two independently dated supporting forecasts add a conflict benchmark.
+Finance reports FY27 ARR of `$12.0M`; Sales reports `$11.6M`. Both metric-to-document edges
+retain their own source chunks. Gold questions require an answer to present both figures and
+sources, and treat a claimed approved target as a failure. The record deliberately has no
+edge selecting a winner.
+
+The deterministic suite validates the gold graph, expected-fact reachability, alias negative
+control, and distinct forecast provenance (`25 passed, 5 deselected`). A live run has not
+been recorded because Ollama remains unavailable locally, so no precision/recall, GER, or
+conflict-recall number is claimed. Run the expanded `scripts/eval.sh` after restoring
+Ollama, review the CSV/report against `eval-baseline-v2`, then change R8/R9 from
+implementation-complete to accepted only if their remaining exit criteria pass.

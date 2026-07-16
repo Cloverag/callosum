@@ -23,7 +23,7 @@ from callosum.ontology import Extraction, FailureReason, Relationship
 # with "..." on exactly the highest-value edges (final decision calls) — and in one
 # case stitching words from TWO DIFFERENT SPEAKERS into a single attribution. See
 # docs/findings.md, 2026-07-15.
-PROMPT_VERSION = "2"
+PROMPT_VERSION = "3"
 
 # The extraction prompt. On the Anthropic path this is a cached prefix, so it must
 # stay byte-identical across chunks — no timestamps, no chunk ids, no per-document
@@ -91,6 +91,9 @@ stronger than `SUPPORTED`; use it only when the text indicates formal approval, 
 sign-off, a carried vote, or a founder making a final call.
 - `OWNS` — Person → ActionItem, or Person → Topic. Accountability.
 - `WORKS_AT` — Person → Organization.
+- `ALIAS_OF` — Person → Person. Use only when one contiguous source sentence explicitly
+states that two spellings identify the same person. Do not infer it from similar names.
+It is reviewable identity evidence, not an automatic merge.
 
 Decision-centric:
 - `MADE_IN` — Decision → Meeting. Where it happened.
