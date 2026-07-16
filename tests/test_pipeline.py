@@ -122,18 +122,16 @@ def test_render_chain_all_forward():
 
 
 def test_gold_edges_reference_defined_entities():
-    """Every seeded edge must connect entities the seed also creates — a dangling
-    endpoint would MATCH nothing in Neo4j and the edge would silently not be written."""
-    from callosum.evaluate import (
-        GOLD_CONFIDENTIAL_EDGES,
-        GOLD_CONFIDENTIAL_ENTITIES,
-        GOLD_EDGES,
-        GOLD_ENTITIES,
-    )
-    names = {n for n, _, _ in GOLD_ENTITIES} | {n for n, _, _ in GOLD_CONFIDENTIAL_ENTITIES}
-    for src, _rel, tgt, _q in GOLD_EDGES + GOLD_CONFIDENTIAL_EDGES:
-        assert src in names, f"edge source {src!r} is not a defined gold entity"
-        assert tgt in names, f"edge target {tgt!r} is not a defined gold entity"
+    """Every seeded edge must connect entities the seed also creates (across ALL
+    document groups — cross-document edges like SUPERSEDES reference an entity defined in
+    a different group). A dangling endpoint would MATCH nothing and be silently dropped."""
+    from callosum.evaluate import GOLD_GROUPS
+
+    names = {n for _t, ents, _e, _c in GOLD_GROUPS for n, _et, _a in ents}
+    for _title, _ents, edges, _conf in GOLD_GROUPS:
+        for src, _rel, tgt, _q in edges:
+            assert src in names, f"edge source {src!r} is not a defined gold entity"
+            assert tgt in names, f"edge target {tgt!r} is not a defined gold entity"
 
 
 def test_every_expected_fact_is_a_seeded_edge():
@@ -142,11 +140,12 @@ def test_every_expected_fact_is_a_seeded_edge():
     a gold-set bug, not a system failure, and this test catches it before a run."""
     from pathlib import Path
 
-    from callosum.evaluate import GOLD_CONFIDENTIAL_EDGES, GOLD_EDGES, load_gold
+    from callosum.evaluate import GOLD_GROUPS, load_gold
 
     seeded = [
         (src.lower(), rel.value.lower(), tgt.lower())
-        for src, rel, tgt, _q in GOLD_EDGES + GOLD_CONFIDENTIAL_EDGES
+        for _t, _ents, edges, _c in GOLD_GROUPS
+        for src, rel, tgt, _q in edges
     ]
     gold = load_gold(Path(__file__).resolve().parent.parent / "eval" / "gold.jsonl")
     for item in gold:

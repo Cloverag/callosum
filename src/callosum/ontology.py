@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 # every proposed change and every quarantined failure, so a result can always be
 # attributed to the ontology that produced it — and so "re-extract everything under
 # ontology v4" stays a meaningful instruction.
-ONTOLOGY_VERSION = "1"
+ONTOLOGY_VERSION = "2"  # see docs/ontology-changelog.md — v2 added REQUESTED (2026-10-14)
 
 
 class FailureReason(StrEnum):
@@ -52,6 +52,16 @@ class RelationType(StrEnum):
     APPROVED = "APPROVED"
     OWNS = "OWNS"                  # Person -> ActionItem | Topic
     WORKS_AT = "WORKS_AT"          # Person -> Organization
+
+    # Actor -> Proposal / Decision / Topic / ActionItem. Deliberately general: an
+    # actor (person, organization, customer, regulator) that formally requested
+    # something — a customer asking for a pricing model, a CEO requesting a budget
+    # review, a board requesting a security audit. Added in ontology v2 because
+    # Meeting 13 introduced a customer-driven decision (Northwind asking for
+    # usage-based pricing) that no existing relation could carry without losing the
+    # semantics — forcing it into SUPPORTED would wrongly equate a customer's request
+    # with a director's vote. See docs/ontology-changelog.md.
+    REQUESTED = "REQUESTED"
 
     # Decision -> everything else
     MADE_IN = "MADE_IN"            # Decision -> Meeting

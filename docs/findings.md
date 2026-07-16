@@ -439,3 +439,57 @@ partly artefacts of scale. The precision problem will get HARDER and the recall 
 EASIER as documents are added. That is the single strongest reason the next work is
 corpus expansion, not code: it is the only way to measure whether grounding holds when
 there is genuinely more than one thing a mention could link to.
+
+## 2026-07-16 (corpus + ontology) — Board Meeting 13, temporal reasoning, and ontology v2.
+
+Added the second document (`data/demo/board_meeting_13_transcript.txt`): seven months
+after Meeting 12, the board REVERSES the pricing rejection. This is the temporal /
+decision-evolution stress case — the answer to "is Model B rejected?" now lives in an edge
+in a *different* document (`Adopt Usage-Based Pricing —SUPERSEDES→ Reject Pricing Model B`).
+Written so the extractor must INFER the supersede from natural language ("reversing our
+decision from March"), not match the ontology keyword. Four `temporal` gold questions,
+including the cross-hop "*why* was it reversed?" (Northwind's request + Series C + the
+supersede — a genuine multi-hop join).
+
+**Ontology v2 — evidence-driven, not feature creep.** Meeting 13 introduced a customer-
+driven decision (Northwind, the largest account, formally asking for usage-based pricing)
+that no existing relation could represent without distortion — `SUPPORTED` would equate a
+customer's commercial request with a director's vote. Added `REQUESTED` (defined generally:
+any actor formally requesting a proposal/action/decision), bumped `ONTOLOGY_VERSION` → 2,
+and logged it in `docs/ontology-changelog.md`. This is the freeze rule working: the corpus
+produced a relationship the ontology could not carry, so the ontology evolved — versioned,
+so a future "recall 89% (v1) → 93% (v2)" is an attributable claim. The change is additive
+and backwards-compatible.
+
+**Document-aware seeding.** `seed_graph` no longer keys on sensitivity (which two board
+meetings now share) — it attaches each group's edges to a chunk of the document they came
+from, matched by title. All entities are seeded before any edges so cross-document edges
+(M13's decision superseding M12's) find both endpoints. This is the right abstraction as
+the corpus grows.
+
+**The corpus is now a capability matrix, not a pile of transcripts** (each document exists
+to stress ONE capability — a cleaner experimental design than "more data"):
+
+| Meeting | Capability under test |
+|---|---|
+| 12 | Polarity reasoning (SUPPORTED / OPPOSED / APPROVED on one decision) |
+| 13 | Temporal reasoning & decision evolution (SUPERSEDES across documents) |
+| 14 | Entity grounding — aliases: "Raj" / "Rajesh" / "R. Malhotra" for one person |
+| 15 | Conflicting evidence & provenance — Finance says 12M, Sales says 11.6M |
+| 16 | Context-dependent references — "that proposal", "the previous motion" |
+
+**Then stop generating synthetic data.** After M16, the honest next step is *messier* real
+or realistic documents (typos, inconsistent speaker names, interrupted dialogue, unnamed
+references) — that is where systems like this actually get tested. Synthetic data proves
+the capability exists; messy data proves it survives contact with reality.
+
+**Run 12 (M13 wired in) — confirmed.** `temporal` stratum 4/4, **graph-fact recall 100%**:
+the cross-document `SUPERSEDES` reasoning works — the answer to "is Model B still rejected?"
+requires an edge in a different document, and the graph delivers it. `multi_hop` moved from
+vector 1/2 to **hybrid 2/2** — the graph won a stratum on answer text, not just recall.
+Ablation over 13 graph questions: **exact-match 31% → grounding 100%.** Grounding recall
+dipped to **85% (11/13), GER 15%** — the predicted corpus-scale effect: more entities give
+the linker more ways to mis-link. Traversal 100%; precision steady at 50% (N1 still
+false-positives). Net: the temporal capability is demonstrated and the graph's advantage is
+now visible on answer-correctness, while grounding recall/precision under scale becomes the
+next thing to watch — which is exactly what the capability matrix (M14 aliases) is for.
