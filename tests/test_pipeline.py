@@ -172,6 +172,33 @@ def test_aliases_and_conflicting_forecasts_keep_distinct_provenance():
     assert finance[0][0] != sales[0][0]
 
 
+def test_messy_document_fixtures_load_for_every_supported_format():
+    """R11 keeps a real fixture for each loader rather than testing only clean TXT."""
+    from pathlib import Path
+
+    from callosum.ingest import load
+
+    root = Path(__file__).resolve().parent.parent / "data" / "demo"
+    fixtures = {
+        "messy_operations_notes.txt": "northwind min spend",
+        "messy_customer_email.md": "$11.6M",
+        "messy_customer_call.vtt": "not final",
+        "messy_operational_risk_memo.docx": "OCR-cleaned scan",
+        "messy_board_appendix.pdf": "No board-approved FY27 target",
+    }
+    for name, expected in fixtures.items():
+        assert expected.lower() in load(root / name).lower(), name
+
+
+def test_messy_restricted_fixture_is_explicitly_confidential():
+    """The R11 corpus keeps restricted content visible to the RBAC test setup."""
+    from pathlib import Path
+
+    text = (Path(__file__).resolve().parent.parent / "data" / "demo" /
+            "messy_restricted_email.md").read_text(encoding="utf-8")
+    assert "CONFIDENTIAL" in text and "$210K" in text
+
+
 # --- verifier / quarantine --------------------------------------------------
 
 

@@ -540,3 +540,23 @@ been recorded because Ollama remains unavailable locally, so no precision/recall
 conflict-recall number is claimed. Run the expanded `scripts/eval.sh` after restoring
 Ollama, review the CSV/report against `eval-baseline-v2`, then change R8/R9 from
 implementation-complete to accepted only if their remaining exit criteria pass.
+
+## 2026-07-16 (R10/R11 benchmark implementation) — coreference abstention and messy inputs
+
+Meeting 16 separates one explicit reference from one ambiguous one. “That proposal” is
+explicitly tied to the Pricing rollout plan and retains a source-backed `DERIVED_FROM` edge.
+“The prior motion” deliberately has two plausible antecedents; its gold case is marked
+`should_not_ground`, so a fabricated link is measured as a false positive rather than
+treated as a helpful answer. This is a benchmark limit, not a new automatic coreference
+stage.
+
+R11 adds intentionally imperfect TXT, Markdown email, VTT transcript, DOCX memo, and PDF
+appendix fixtures plus a restricted Markdown email. Deterministic loader tests confirm text
+extraction from every supported format and retain the existing fail-closed RBAC scenario.
+The expanded evaluation script ingests all fixtures with explicit document types and
+sensitivities.
+
+The generated DOCX passed structural ingestion tests, but visual DOCX rendering could not
+run because LibreOffice/`soffice` is unavailable in this local environment. The PDF fixture
+was generated with a simple single-page layout; its text is validated by the same loader
+test. No live extraction or document-type metrics are claimed until Ollama is restored.
