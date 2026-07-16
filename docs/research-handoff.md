@@ -4,6 +4,8 @@
 Meridian product work. It records what is reproducible today and what requires a live,
 reviewed experiment before the research track or P0 can be authorized.
 
+Use [the R8-R12 evaluation review template](templates/r8-r12-evaluation-review.md) to record the reviewed live run.
+
 ## Reproduce the evaluated baseline
 
 The named baseline is the annotated `eval-baseline-v2` tag at commit `932f15a`. It covers
