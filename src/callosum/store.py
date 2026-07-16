@@ -285,6 +285,20 @@ def ensure_constraints(driver: Driver) -> None:
             session.run(stmt)
 
 
+def entity_names(driver: Driver) -> list[str]:
+    """Every entity name in the graph — the vocabulary the planner resolves against.
+
+    Passed to the planner so it can map a question's phrasing ("usage-based pricing")
+    onto the canonical node name ("Pricing Model B"); without that mapping the exact-match
+    seed in graph_search never fires and multi-hop recall is zero (findings run 8). Names
+    are not the secret — the RBAC gate is downstream on edges/quotes/chunks — so returning
+    all of them to an internal planner leaks nothing a readable edge wouldn't already.
+    """
+    with driver.session() as session:
+        result = session.run("MATCH (e:Entity) RETURN e.name AS name ORDER BY name")
+        return [r["name"] for r in result]
+
+
 def upsert_chunk_node(driver: Driver, *, chunk_id: uuid.UUID, document_id: uuid.UUID,
                       ordinal: int, sensitivity: int) -> None:
     """The graph half of the bridge. Text stays in Postgres; only the handle lives here."""

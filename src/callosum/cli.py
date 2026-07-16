@@ -406,9 +406,35 @@ def eval(
         )
     console.print(table)
 
+    gt = ev.grounding_traversal(results)
+    if gt:
+        stage = Table(title="Entity grounding vs traversal (the multi-hop bottleneck)")
+        stage.add_column("stage")
+        stage.add_column("accuracy", justify="right")
+        trav = "—" if gt["traversal_acc"] is None else f"{gt['traversal_acc']*100:.0f}%"
+        stage.add_row("entity grounding (correct seed)", f"{gt['grounding_acc']*100:.0f}% "
+                      f"({gt['grounded']}/{gt['n']})")
+        stage.add_row("grounding error rate (GER)", f"{gt['ger']*100:.0f}%")
+        if gt["grounding_precision"] is not None:
+            stage.add_row("grounding precision (negatives)", f"{gt['grounding_precision']*100:.0f}% "
+                          f"({gt['n_neg'] - gt['false_positives']}/{gt['n_neg']})")
+        stage.add_row("traversal (given grounding)", trav)
+        console.print(stage)
+
+        ablation = Table(title="Ablation — grounding on vs off (same graph engine)")
+        ablation.add_column("configuration")
+        ablation.add_column("graph-fact recall", justify="right")
+        ablation.add_row("exact match only (no grounding)", f"{gt['recall_ungrounded']*100:.0f}%")
+        ablation.add_row("planner grounding", f"{gt['recall_grounded']*100:.0f}%")
+        console.print(ablation)
+        console.print("[dim]Only the grounding stage changes between rows — the delta is its "
+                      "measured contribution.[/]")
+
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(ev.render_markdown(results, scores, provider_note), encoding="utf-8")
-    console.print(f"\n[green]✓[/] Wrote {out}")
+    csv_path = out.with_suffix(".csv")
+    ev.write_csv(results, csv_path, info["model"])
+    console.print(f"\n[green]✓[/] Wrote {out} and appended {csv_path}")
     console.print("[dim]Read it by row: lookup should tie, multi_hop should separate.[/]")
 
 

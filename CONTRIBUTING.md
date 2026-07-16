@@ -1,0 +1,108 @@
+# Contributing to Callosum
+
+Welcome — this guide is for collaborators (hi Devguru 👋) picking up work on Callosum.
+It tells you what the system is, what is **open** for contribution, what is **frozen**,
+and where to start.
+
+## What Callosum is (in one paragraph)
+
+An institutional-memory system: it ingests organizational documents (board transcripts,
+memos), extracts a **verified knowledge graph** of people, decisions, meetings and
+topics, and answers questions over a **hybrid graph + vector** store with RBAC and a
+human-in-the-loop approval step. The thesis contribution is *verified* extraction — no
+edge exists unless its verbatim evidence quote is found in the source — plus a
+reproducible, stratified evaluation. The name: the *corpus callosum* bridges the two
+hemispheres of the brain, like this system bridges the graph and the vector store.
+
+The original product spec, use-cases, and HTML mockup live in `reference/` — that PRD is
+the source of truth for scope and the ontology.
+
+## Getting it running
+
+```bash
+docker compose up -d                 # Postgres+pgvector (:5433) + Neo4j (:7474/:7687)
+uv venv && uv pip install -e .       # Python 3.12 env + the callosum CLI
+.venv/bin/callosum doctor            # checks provider + both stores are reachable
+bash scripts/demo.sh                 # full end-to-end: ingest → approve → two golden queries
+```
+
+Provider defaults to **Ollama** (free): `gpt-oss:120b-cloud` for extraction/synthesis and
+local `bge-m3` for embeddings. Neo4j Browser at http://localhost:7474 (neo4j / callosum123)
+is the demo money-shot.
+
+Run the tests before and after any change:
+
+```bash
+.venv/bin/pytest -q                  # 24 fast deterministic tests (no LLM, no DB)
+```
+
+## The one rule: FROZEN core vs OPEN areas
+
+The backend pipeline has been evaluated and is **architecturally frozen**. Do not modify
+the frozen modules without a *measured* shortcoming against the evaluation baseline
+(`callosum eval` → `eval/results.md`). "It felt cleaner" is not a reason; "GER rose from
+0% to X% and here is the run" is.
+
+**🔒 FROZEN — do not change without an eval result to justify it:**
+
+| Module | Responsibility |
+|---|---|
+| `src/callosum/ingest.py` | chunking, char offsets, `locate()` quote verification |
+| `src/callosum/extract.py` | extraction + the evidence `verify()` / quarantine |
+| `src/callosum/retrieve.py` | planner, canonical grounding, 2-hop traversal, **RBAC gate** |
+| `src/callosum/store.py` | Postgres + Neo4j writes, the shared-UUID bridge |
+| `schema/postgres.sql` | the tables and the RBAC clearance model |
+
+The RBAC gate in `retrieve.py` is security-critical and fail-closed — a real leak was
+found and fixed there. Do not touch it without review.
+
+**🟢 OPEN — this is where you come in:**
+
+1. **Frontend (P6) — the biggest gap, best fit for the mockup work.**
+   Nothing is built yet. Turn the `reference/` HTML mockup into a real UI:
+   - **Founder chat** — ask a question, render the grounded answer + inline citations +
+     the "N sources withheld" notice. Backend is ready: `callosum.retrieve.ask()`.
+   - **Approval queue** — the human-in-the-loop screen: list `proposed_change` rows,
+     approve/reject each. Backend is ready: `callosum pending` / `callosum approve`.
+   - **Graph viewer** — visualize the Neo4j graph (or embed Neo4j Browser).
+   Suggested stack: a thin FastAPI layer over the existing functions + any frontend you
+   like. Keep it a separate `web/` package so it never imports into the frozen core.
+
+2. **Evaluation dataset + gold questions — highest-value non-code work.**
+   Everything currently rides on ONE board transcript, which is the biggest risk to the
+   thesis (single-corpus overfitting). Add realistic, varied documents under `data/`:
+   - a **hiring** decision, a **fundraising** discussion, and importantly a
+     **superseding** decision (decision B overrides A — exercises the `SUPERSEDES` edge)
+   - for each, add gold questions to `eval/gold.jsonl`, binned by `stratum`
+     (`lookup` / `relational` / `multi_hop`), and **trace each back to a PRD use-case**
+     (that traceability is worth marks). See the existing entries for the schema.
+
+3. **PRD ↔ implementation traceability.** Verify every `EntityType` / `RelationType` in
+   `src/callosum/ontology.py` maps to a requirement in the PRD, and write the
+   requirements→system mapping doc under `docs/`.
+
+4. **Approval-workflow UX.** Design what a founder sees when reviewing proposed edges —
+   a product/design problem, not a backend one.
+
+## Good first tasks
+
+- Add one new document to `data/` + 3 gold questions to `eval/gold.jsonl`, then run
+  `callosum eval` and confirm the new questions score. (Gets you through the whole loop.)
+- Scaffold `web/` with a FastAPI endpoint wrapping `retrieve.ask()` and a single chat page.
+- Write the PRD→ontology traceability table in `docs/`.
+
+## Workflow
+
+- **Branch and open a PR** — do not push to `master`. Master is the maintainer's record.
+- Run `pytest -q` before pushing; add tests for anything you add under `web/` or the eval.
+- Keep the frozen core untouched unless your PR includes an eval run that justifies it.
+- The evaluation is the source of truth. New features are justified by a measured gap
+  against the baseline, not by intuition. See `docs/findings.md` for the running log and
+  the freeze boundary.
+
+## Where to read more
+
+- `docs/findings.md` — the evaluation log and the project's research narrative (V1→V2→V3).
+  Read this first; it explains *why* the system is shaped the way it is.
+- `docs/architecture.md` — the architecture and diagrams.
+- `reference/` — the original PRD, use-cases, and mockup.
