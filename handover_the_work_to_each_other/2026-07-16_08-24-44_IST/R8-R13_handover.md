@@ -183,3 +183,46 @@ record format, ownership, security/review gates, acceptance criteria, and delive
 Keep product code isolated from the frozen Callosum core. Commit documentation and tests
 separately from any product implementation.
 ```
+
+## Follow-up completed: 2026-07-16
+
+### Candidate RBAC integration test
+
+- Added `tests/test_candidate_rbac_integration.py`, deliberately gated behind
+  `CALLOSUM_RUN_INTEGRATION=1` and the `integration` pytest marker.
+- The test creates uniquely named sensitivity-1 and sensitivity-3 documents/chunks in live
+  Postgres, mirrors their IDs into live Neo4j, and proves that the full candidate route
+  returns only the public entity at clearance 1 and both at clearance 3.
+- It also calls the Neo4j candidate helper with both IDs at clearance 1 and proves the
+  restricted name remains hidden. The test cleans up its own records; it never resets
+  Docker volumes.
+- Verified locally: `1 passed, 38 deselected` with
+  `CALLOSUM_RUN_INTEGRATION=1 .venv\Scripts\pytest.exe -m integration -q`.
+
+### Gold traceability and realistic corpus
+
+- Every `eval/gold.jsonl` record now has a `source_documents` array naming real demo-file
+  stems. `eval/gold-traceability.md` documents the contract.
+- Added two realistic noisy email records plus seeded, source-backed `messy_email` cases:
+  vendor-security questionnaire ownership (Priya) and SOC 2 evidence-request ownership
+  (Nisha). They explicitly distinguish operational follow-up from a board resolution.
+- The evaluator now displays source documents in its per-question report. Deterministic
+  tests reject missing source provenance or a source with no fixture.
+
+### DOCX visual QA restored
+
+- Installed LibreOffice 26.2.4 locally and added `scripts/render_docx_qa.ps1` plus
+  `docs/docx-visual-qa.md`.
+- The script rendered `messy_operational_risk_memo.docx` to PDF successfully. A 150-DPI
+  PNG visual review confirmed a one-page layout with readable text and no clipping,
+  overlap, or unexpected page break.
+- The renderer emits a benign LibreOffice library-prefix warning in this environment but
+  returns exit code 0 and produces the expected PDF; treat a missing PDF or non-zero exit
+  as QA failure.
+
+### Final verification for this follow-up
+
+- Deterministic suite: `34 passed, 1 skipped, 5 deselected` via `.venv\Scripts\pytest.exe -q`.
+- Live integration suite: passed as above.
+- The live Ollama evaluation gate is still unresolved; none of these changes authorize
+  R8-R13 acceptance or P0.

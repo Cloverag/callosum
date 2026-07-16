@@ -43,6 +43,8 @@ $CLI ingest-doc data/demo/messy_customer_email.md --type email --sensitivity 1 -
 $CLI ingest-doc data/demo/messy_customer_call.vtt --type transcript --sensitivity 1 --no-extract
 $CLI ingest-doc data/demo/messy_operational_risk_memo.docx --type memo --sensitivity 1 --no-extract
 $CLI ingest-doc data/demo/messy_board_appendix.pdf --type appendix --sensitivity 1 --no-extract
+$CLI ingest-doc data/demo/messy_board_followup_email.md --type email --sensitivity 1 --no-extract
+$CLI ingest-doc data/demo/messy_audit_followup_email.md --type email --sensitivity 1 --no-extract
 $CLI ingest-doc data/demo/messy_restricted_email.md --type email --sensitivity 3 --no-extract
 $CLI ingest-doc "$COMP" --type transcript --sensitivity 3 --no-extract
 
