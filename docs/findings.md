@@ -599,3 +599,55 @@ single-page PDF and 150-DPI PNG. Visual inspection found readable title/body tex
 clipping, overlap, or unexpected page break. `scripts/render_docx_qa.ps1` and
 `docs/docx-visual-qa.md` make that QA repeatable. These checks strengthen implementation
 evidence only; live R8-R12 acceptance metrics remain pending an available Ollama provider.
+
+## 2026-07-16 (R8-R13 LIVE RUN) — the expanded benchmark, finally measured.
+
+The R8-R13 handoff was blocked on an available Ollama; a working provider was used to run
+`scripts/eval.sh` on a clean environment (fresh volumes). **29 questions, 11 strata, 16
+documents** (Meetings 12-16, finance/sales forecasts, 8 messy docs incl. .docx/.pdf/.vtt,
+comp), gold graph seeded (32 board + 1 confidential edges), ontology v3, candidate
+grounding. Provider: ollama / gpt-oss:120b-cloud + bge-m3. Full rows appended to
+`eval/results.csv`; review record in `docs/reviews/2026-07-16-r8-r13-live-run.md`.
+
+**Two-stage summary (vs eval-baseline-v2):**
+
+| Metric | baseline v2 | this run | delta |
+|---|---:|---:|---:|
+| Grounding accuracy (correct seed) | 85% | **71% (15/21)** | −14 |
+| GER | 15% | **29%** | +14 |
+| Grounding precision (negatives) | 50% | **33% (1/3)** | −17 |
+| Traversal (given grounding) | 100% | **100%** | 0 |
+| Ablation (grounding on) | 100% | **83%** | −17 |
+| Ablation (exact-match only) | 31% | **48%** | +17 |
+
+**Per-stratum graph-fact recall:** relational 100 · multi_hop 50 · temporal 75 · aliases
+**100** · conflict 100 · coreference **0** · messy_email 100 · grounding_adv 88. RBAC 2/2.
+
+**What generalized (the win — it is NOT overfit to Meeting 12):**
+- **Aliases (M14) 100% recall.** The candidate-grounding + `ALIAS_OF` (v3) design resolves
+  alias spellings correctly on the full corpus. This is the capability my simpler
+  name-grounding fix would not have covered as cleanly.
+- **Messy documents work.** `.docx`, `.pdf`, `.vtt`, `.md` all ingested and answered
+  (messy_email 100%); RBAC held (restricted email + comp withheld correctly).
+- **Traversal 100%.** The graph engine is still never the failure — the bottleneck is
+  consistently the grounding stage, across every capability.
+
+**What the scale exposed (the honest gaps — these are the real R8-R13 findings):**
+- **Grounding PRECISION is the headline weakness: 50% → 33%.** With more entities, the
+  linker forces more false matches (N1 "dynamic pricing engine" → Pricing Model B again,
+  plus a second negative). Precision degrades with corpus size exactly as predicted;
+  recall (71%) also dips. This is the strongest argument for the abstention work to
+  continue — candidate scoping helped recall on aliases but has not fixed precision.
+- **Coreference (M16) does NOT work: 0% recall.** "it" grounded to `Board Meeting 16`
+  instead of the referenced plan. There is no coreference stage; contextual references
+  fail the same way role references did. The hybrid answer-correctness on this stratum is
+  lenient string-matching, not resolution — read the recall, not the answer column.
+- **Conflict (M15): both sources retrieved (recall 100%) but synthesis inconsistent**
+  (hybrid 1/2). The graph surfaces both forecasts with provenance; the answer layer does
+  not reliably present the disagreement. Retrieval is right; presentation is the gap.
+
+**Provider note:** bge-m3 NaN recurred (2 calls), degraded gracefully to graph-only.
+
+**Status:** metrics recorded, NOT accepted. Per the R8-R13 handoff, acceptance requires a
+reviewer decision — see the review record's Decision fields, left open for the reviewer.
+This run supplies the live evidence the handoff required; it does not authorize P0.
