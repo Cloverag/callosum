@@ -43,7 +43,7 @@ from callosum.ontology import EntityType, RelationType
 from callosum.retrieve import Answer, Principal, ask, graph_search, plan
 
 STRATUM_ORDER = ["lookup", "relational", "multi_hop", "temporal",
-                 "aliases", "conflict", "grounding_adv", "grounding_neg", "rbac"]
+                 "aliases", "conflict", "coreference", "grounding_adv", "grounding_neg", "rbac"]
 
 
 # ---------------------------------------------------------------------------
@@ -176,6 +176,18 @@ GOLD_M15_EDGES = [
     ("Sales FY27 Forecast", RelationType.ABOUT, "FY27 ARR forecast", "the Sales FY27 Forecast says $11.6M"),
 ]
 
+# --- Board Meeting 16 (sensitivity 1) — context-dependent references -----------
+GOLD_M16_ENTITIES = [
+    ("Board Meeting 16", EntityType.MEETING, {}),
+    ("Pricing rollout plan", EntityType.ACTION_ITEM, {"owner": "Priya Nair"}),
+    ("International expansion motion", EntityType.DECISION, {"status": "deferred"}),
+]
+GOLD_M16_EDGES = [
+    ("Pricing rollout plan", RelationType.DERIVED_FROM, "Adopt Usage-Based Pricing", "That proposal means the pricing rollout plan Priya circulated yesterday."),
+    ("Priya Nair", RelationType.OWNS, "Pricing rollout plan", "Priya owns that pricing rollout plan."),
+    ("International expansion motion", RelationType.MADE_IN, "Board Meeting 16", "The international expansion motion stays deferred."),
+]
+
 # (document title -> entities, edges). Title is the file stem, as ingest.upsert_document
 # stores it. Confidential group last; its edge count is reported separately.
 GOLD_GROUPS = [
@@ -185,6 +197,7 @@ GOLD_GROUPS = [
     ("finance_fy27_forecast", GOLD_FINANCE_ENTITIES + [("Finance FY27 Forecast", EntityType.DOCUMENT, {})], GOLD_FINANCE_EDGES, False),
     ("sales_fy27_forecast", GOLD_SALES_ENTITIES + [("Sales FY27 Forecast", EntityType.DOCUMENT, {})], GOLD_SALES_EDGES, False),
     ("board_meeting_15_transcript", GOLD_M15_ENTITIES, GOLD_M15_EDGES, False),
+    ("board_meeting_16_transcript", GOLD_M16_ENTITIES, GOLD_M16_EDGES, False),
     ("compensation_review_CONFIDENTIAL", GOLD_CONFIDENTIAL_ENTITIES, GOLD_CONFIDENTIAL_EDGES, True),
 ]
 

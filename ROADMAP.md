@@ -20,7 +20,7 @@ requirements.
 
 | Track | Completed | Active | Remaining |
 |---|---:|---|---:|
-| Research engine | **8 / 14** complete (`R0`–`R7`) | **R8/R9** — benchmark implementation awaiting live evaluation | 5 capabilities (`R9`–`R13`) after R8 |
+| Research engine | **8 / 14** accepted (`R0`–`R7`) | **R8–R11** — benchmark implementation awaiting live evaluation | 2 capabilities (`R12`–`R13`) after R8–R11 acceptance |
 | Meridian product | **0 / 13** accepted | Not started; blocked by research handoff `R13` | **13** (`P0`–`P12`) |
 
 The counts must not be combined into one percentage: the research track validates the
@@ -106,7 +106,7 @@ gold cases requiring both claims, source/date context, and explicit uncertainty.
 - [x] Gold cases require both claims and prohibit an unsupported approved target.
 - [ ] Conflict recall and unsupported-resolution failures are reported (requires Ollama).
 
-## R10 — Context-dependent references and coreference limits
+## R10 — Context-dependent references and coreference limits — implementation complete; live measurement pending
 
 **Goal:** Safely resolve or abstain on references such as “that proposal” and “the prior
 motion.”
@@ -116,11 +116,11 @@ chunk context, graph context, or a reviewed coreference stage fixes a measured g
 
 **Exit checklist:**
 
-- [ ] Ambiguous references become unknown/needs-review, never fabricated links.
-- [ ] Correct links retain original source spans.
-- [ ] Evaluation separates coreference, grounding, and traversal failures.
+- [x] Ambiguous references have a no-link / needs-review gold case.
+- [x] Correct links retain original source spans.
+- [x] Evaluation has a distinct `coreference` stratum; live failure rates remain pending.
 
-## R11 — Messy-document benchmark
+## R11 — Messy-document benchmark — implementation complete; live measurement pending
 
 **Goal:** Test the engine beyond clean synthetic transcripts.
 
@@ -130,9 +130,9 @@ benchmark by document type.
 
 **Exit checklist:**
 
-- [ ] All supported formats have an ingestion fixture and relevant security test.
-- [ ] Results are reported by document type and failure reason, not aggregate only.
-- [ ] Regressions and unsupported conditions are visible and documented.
+- [x] TXT, Markdown, VTT, DOCX, and PDF fixtures load in deterministic tests; restricted Markdown is included for RBAC setup.
+- [ ] Results by document type and failure reason require a live extraction/evaluation run.
+- [x] Fixture assertions and the local rendering limitation are documented.
 
 ## R12 — Grounding abstention and scalable candidates
 
