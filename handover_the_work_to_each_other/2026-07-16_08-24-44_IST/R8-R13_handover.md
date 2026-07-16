@@ -117,3 +117,69 @@ be retained.
   without measured evidence and a reviewed exception.
 - Treat any uncommitted changes as belonging to the current user until inspected.
 - Refer to `AGENTS.md`, `ROADMAP.md`, and `docs/research-handoff.md` before continuing.
+
+## Ordered continuation prompts
+
+Use these tasks in order. Do not begin P0 unless the R13 handoff is explicitly approved.
+
+### Task 1 - Restore the evaluation environment
+
+```text
+Work in C:\Users\devgu\OneDrive\Desktop\callosum.
+
+Restore the live evaluation environment without changing application code. Start Ollama,
+ensure bge-m3 is available, run `callosum doctor`, and report the exact provider/model
+status. Check Docker Postgres and Neo4j health. Do not run destructive scripts yet. Record
+commands and results in a new timestamped handover note.
+```
+
+### Task 2 - Reproduce the clean benchmark
+
+```text
+In the Callosum repository, run the documented clean evaluation baseline for R8-R12. First
+confirm local data may be deleted because `scripts/eval.sh` resets Docker volumes. Run the
+script, then run pytest. Append results only; never overwrite eval/results.csv. Report
+commit SHA, provider/model, corpus, pass/fail by stratum, grounding metrics, latency, and
+any errors. Do not modify frozen core code.
+```
+
+### Task 3 - Analyze R8-R11
+
+```text
+Analyze the newest evaluation rows against the eval-baseline-v2 tag. Assess R8 aliases, R9
+conflicting evidence, R10 coreference, and R11 document-type/messy-input behavior. State
+each exit criterion as pass, fail, or inconclusive, with exact evidence. Update
+`docs/findings.md` and `ROADMAP.md` only when supported by the recorded run. Do not claim
+formal acceptance without explicit review.
+```
+
+### Task 4 - Analyze R12
+
+```text
+Evaluate R12 grounding candidates and abstention against eval-baseline-v2. Report candidate
+recall, grounding accuracy, GER, false positives/precision, latency, traversal impact, and
+RBAC outcomes. Confirm low-clearance users cannot receive private entity names through
+candidate selection. Add or improve deterministic tests only if a concrete gap is found. Do
+not weaken retrieval RBAC or provenance.
+```
+
+### Task 5 - Complete the R13 approval package
+
+```text
+Review `docs/research-handoff.md`, `ROADMAP.md`, `AGENTS.md`, `PRD.md`,
+`CONTRIBUTING.md`, `docs/findings.md`, and `eval/results.csv` after the live R8-R12 run.
+Reconcile any contradictions. Produce a concise R13 decision record stating whether the
+research handoff is approved, which baseline/tag is authoritative, remaining risks, and
+whether P0 is formally authorized. Do not authorize P0 if any required measurement or
+review is missing.
+```
+
+### Task 6 - Begin P0 only after authorization
+
+```text
+Begin Meridian P0 only if ROADMAP.md explicitly records approved R13 handoff and P0
+authorization. Create the product contract and delivery controls required by P0: decision
+record format, ownership, security/review gates, acceptance criteria, and delivery sequence.
+Keep product code isolated from the frozen Callosum core. Commit documentation and tests
+separately from any product implementation.
+```
