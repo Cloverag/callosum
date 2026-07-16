@@ -43,7 +43,7 @@ from callosum.ontology import EntityType, RelationType
 from callosum.retrieve import Answer, Principal, ask, graph_search, grounded_plan, plan
 
 STRATUM_ORDER = ["lookup", "relational", "multi_hop", "temporal",
-                 "aliases", "conflict", "coreference", "grounding_adv", "grounding_neg", "rbac"]
+                 "aliases", "conflict", "coreference", "messy_email", "grounding_adv", "grounding_neg", "rbac"]
 
 
 # ---------------------------------------------------------------------------
@@ -188,6 +188,23 @@ GOLD_M16_EDGES = [
     ("International expansion motion", RelationType.MADE_IN, "Board Meeting 16", "The international expansion motion stays deferred."),
 ]
 
+# --- Messy follow-up emails (sensitivity 1) - operational records, not resolutions ---
+GOLD_MESSY_BOARD_EMAIL_ENTITIES = [
+    ("Vendor security questionnaire", EntityType.ACTION_ITEM, {"owner": "Priya Nair"}),
+]
+GOLD_MESSY_BOARD_EMAIL_EDGES = [
+    ("Priya Nair", RelationType.OWNS, "Vendor security questionnaire",
+     "Priya owns the vendor-security questionnaire"),
+]
+GOLD_MESSY_AUDIT_EMAIL_ENTITIES = [
+    ("Nisha Shah", EntityType.PERSON, {"role": "security operations"}),
+    ("SOC 2 evidence request", EntityType.ACTION_ITEM, {"owner": "Nisha Shah"}),
+]
+GOLD_MESSY_AUDIT_EMAIL_EDGES = [
+    ("Nisha Shah", RelationType.OWNS, "SOC 2 evidence request",
+     "Nisha owns the SOC 2 evidence request"),
+]
+
 # (document title -> entities, edges). Title is the file stem, as ingest.upsert_document
 # stores it. Confidential group last; its edge count is reported separately.
 GOLD_GROUPS = [
@@ -198,6 +215,8 @@ GOLD_GROUPS = [
     ("sales_fy27_forecast", GOLD_SALES_ENTITIES + [("Sales FY27 Forecast", EntityType.DOCUMENT, {})], GOLD_SALES_EDGES, False),
     ("board_meeting_15_transcript", GOLD_M15_ENTITIES, GOLD_M15_EDGES, False),
     ("board_meeting_16_transcript", GOLD_M16_ENTITIES, GOLD_M16_EDGES, False),
+    ("messy_board_followup_email", GOLD_MESSY_BOARD_EMAIL_ENTITIES, GOLD_MESSY_BOARD_EMAIL_EDGES, False),
+    ("messy_audit_followup_email", GOLD_MESSY_AUDIT_EMAIL_ENTITIES, GOLD_MESSY_AUDIT_EMAIL_EDGES, False),
     ("compensation_review_CONFIDENTIAL", GOLD_CONFIDENTIAL_ENTITIES, GOLD_CONFIDENTIAL_EDGES, True),
 ]
 
@@ -280,6 +299,7 @@ class GoldItem:
     # A good linker must ABSTAIN, not force a match — grounding one of these to a real
     # node is a false positive. This is what makes grounding *precision* measurable.
     should_not_ground: bool = False
+    source_documents: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -332,6 +352,7 @@ def load_gold(path: Path) -> list[GoldItem]:
                 expect_facts=d.get("expect_facts", []),
                 expect_entities=d.get("expect_entities", []),
                 should_not_ground=d.get("should_not_ground", False),
+                source_documents=d.get("source_documents", []),
             )
         )
     return items
@@ -590,13 +611,14 @@ def render_markdown(
                      "The delta is the measured contribution of the grounding stage.\n")
 
     lines.append("\n## Per-question detail\n")
-    lines.append("| id | stratum | as | grounded | grounded to | vector | hybrid | graph facts | recall | question |")
-    lines.append("|---|---|---|---|---|---|---|---|---|---|")
+    lines.append("| id | stratum | sources | as | grounded | grounded to | vector | hybrid | graph facts | recall | question |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|---|")
     tick = lambda b: "✓" if b else "✗"  # noqa: E731
     for r in results:
+        sources = ", ".join(r.item.source_documents) or "-"
         if r.error:
             lines.append(
-                f"| {r.item.id} | {r.item.stratum} | {r.item.as_user} | — | — | "
+                f"| {r.item.id} | {r.item.stratum} | {sources} | {r.item.as_user} | — | — | "
                 f"ERR | ERR | — | — | {r.item.question} (errored: {r.error[:60]}) |"
             )
             continue
@@ -606,7 +628,7 @@ def render_markdown(
         # rows this is the whole point — did "pay-per-use proposal" reach "Pricing Model B"?
         to = ", ".join(r.grounded_to) if (r.item.expect_facts and r.grounded_to) else "—"
         lines.append(
-            f"| {r.item.id} | {r.item.stratum} | {r.item.as_user} | {gnd} | {to} | "
+            f"| {r.item.id} | {r.item.stratum} | {sources} | {r.item.as_user} | {gnd} | {to} | "
             f"{tick(r.vector_correct)} | {tick(r.hybrid_correct)} | {r.hybrid_graph_facts} | "
             f"{gr} | {r.item.question} |"
         )

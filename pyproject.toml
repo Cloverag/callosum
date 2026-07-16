@@ -28,6 +28,7 @@ dev = ["pytest>=8.3"]
 [tool.pytest.ini_options]
 markers = [
     "llm: hits the live model (slow, non-deterministic, costs on the paid provider). Run with -m llm.",
+    "integration: requires live local Postgres and Neo4j. Run with CALLOSUM_RUN_INTEGRATION=1 pytest -m integration.",
 ]
 # Default run excludes the llm-marked tests, so `pytest` stays fast and deterministic.
 addopts = "-m 'not llm'"

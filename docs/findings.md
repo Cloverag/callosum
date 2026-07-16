@@ -577,3 +577,25 @@ clearance predicate. It passed (`30 passed, 5 deselected`). Ollama is unavailabl
 so candidate recall, precision, latency, and downstream traversal effects are not claimed.
 The R13 handoff is documented in `docs/research-handoff.md`; its approval and P0 remain
 blocked on the clean live evaluation rather than being inferred from implementation work.
+
+## 2026-07-16 (R11/R12 hardening) - live candidate RBAC, traceable gold, and DOCX visual QA
+
+R12 now has an opt-in live-store integration test (`CALLOSUM_RUN_INTEGRATION=1 pytest -m
+integration`). It creates isolated sensitivity-1 and sensitivity-3 chunks in Postgres and
+matching `Chunk`/`MENTIONS` nodes in Neo4j, mocks only the embedding provider, and proves the
+complete candidate route returns the public name at clearance 1 and both names at clearance
+3. It also passes the restricted chunk UUID directly to the Neo4j helper and confirms the
+private name remains hidden. The fixture cleans up its unique records and does not reset
+shared database volumes.
+
+Gold records now carry machine-readable `source_documents` fields, checked against real
+fixtures and rendered in the evaluation report. Two realistic, deliberately non-resolution
+email records add a `messy_email` stratum: a vendor-security questionnaire follow-up and an
+SOC 2 evidence request. Their source-backed ownership facts are seeded document-by-document;
+`eval/gold-traceability.md` describes the review contract.
+
+LibreOffice 26.2.4 was installed locally and used to render the DOCX risk-memo fixture to a
+single-page PDF and 150-DPI PNG. Visual inspection found readable title/body text with no
+clipping, overlap, or unexpected page break. `scripts/render_docx_qa.ps1` and
+`docs/docx-visual-qa.md` make that QA repeatable. These checks strengthen implementation
+evidence only; live R8-R12 acceptance metrics remain pending an available Ollama provider.

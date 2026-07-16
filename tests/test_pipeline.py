@@ -291,6 +291,33 @@ def test_messy_restricted_fixture_is_explicitly_confidential():
     assert "CONFIDENTIAL" in text and "$210K" in text
 
 
+def test_every_gold_item_declares_existing_source_documents():
+    """Gold expectations must point a reviewer to real corpus fixtures."""
+    from pathlib import Path
+
+    from callosum.evaluate import load_gold
+
+    root = Path(__file__).resolve().parent.parent
+    fixtures = {path.stem for path in (root / "data" / "demo").iterdir() if path.is_file()}
+    gold = load_gold(root / "eval" / "gold.jsonl")
+    assert gold
+    for item in gold:
+        assert item.source_documents, f"{item.id} has no source trace"
+        assert set(item.source_documents) <= fixtures, item.id
+
+
+def test_messy_email_gold_cases_are_seeded_with_document_provenance():
+    from callosum.evaluate import GOLD_GROUPS, load_gold
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    groups = {title for title, _entities, _edges, _confidential in GOLD_GROUPS}
+    items = {item.id: item for item in load_gold(root / "eval" / "gold.jsonl")}
+    assert {"messy_board_followup_email", "messy_audit_followup_email"} <= groups
+    assert items["D1"].source_documents == ["messy_board_followup_email"]
+    assert items["D2"].source_documents == ["messy_audit_followup_email"]
+
+
 # --- verifier / quarantine --------------------------------------------------
 
 
@@ -405,6 +432,23 @@ def test_graph_fact_recall_is_fractional():
     )
     one_of_two = _answer("", ["Marcus Webb —OPPOSED→ Reject Pricing Model B"])
     assert _graph_fact_recall(one_of_two, item) == 0.5
+
+
+def test_evaluation_report_renders_gold_source_documents():
+    from callosum.evaluate import GoldItem, QuestionResult, StratumScore, render_markdown
+
+    item = GoldItem(
+        "D1", "messy_email", "Who owns it?", "Raj", [], [], [],
+        source_documents=["messy_board_followup_email"],
+    )
+    normal = QuestionResult(item, True, True, 0.0, 0, False, [], 0.0, False, 1, 1)
+    errored = QuestionResult(item, False, False, 0.0, 0, False, [], 0.0, False, 0, 0,
+                             error="provider unavailable")
+    scores = {"messy_email": StratumScore("messy_email", n=1, vector_correct=1,
+                                           hybrid_correct=1)}
+    report = render_markdown([normal, errored], scores, "test")
+    assert "| id | stratum | sources |" in report
+    assert report.count("messy_board_followup_email") == 2
 
 
 def test_nothing_is_ever_silently_dropped():
