@@ -18,6 +18,33 @@ from callosum.ontology import (
 )
 
 
+def test_doctor_error_is_ascii_safe_on_legacy_windows_console(monkeypatch):
+    """The health-error path must not crash while trying to print an error."""
+    import pytest
+    import typer
+    import callosum.cli as cli
+
+    messages = []
+
+    class Console:
+        def print(self, message):
+            messages.append(message)
+
+    monkeypatch.setattr(cli, "console", Console())
+    monkeypatch.setattr(
+        cli.llm,
+        "health",
+        lambda: (_ for _ in ()).throw(RuntimeError("Ollama unavailable: check \u2717")),
+    )
+
+    with pytest.raises(typer.Exit) as exited:
+        cli.doctor()
+
+    assert exited.value.exit_code == 1
+    assert messages == [r"[red]ERROR[/] Ollama unavailable: check \u2717"]
+    assert messages[0].isascii()
+
+
 # --- chunk offsets ----------------------------------------------------------
 
 

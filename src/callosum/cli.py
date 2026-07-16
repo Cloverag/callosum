@@ -15,46 +15,61 @@ app = typer.Typer(no_args_is_help=True, add_completion=False)
 console = Console()
 
 
+def _terminal_safe(value: object) -> str:
+    """Render CLI status text on legacy Windows consoles without encoding failures."""
+    return str(value).encode("ascii", errors="backslashreplace").decode("ascii")
+
+
 @app.command()
 def doctor() -> None:
     """Check the configured provider and stores are reachable before a long run."""
     try:
         info = llm.health()
     except RuntimeError as exc:
-        console.print(f"[red]✗[/] {exc}")
+        console.print(f"[red]ERROR[/] {_terminal_safe(exc)}")
         raise typer.Exit(1)
 
-    console.print(f"[bold]Provider:[/] {info['provider']}  →  {info['model']}")
+    console.print(
+        f"[bold]Provider:[/] {_terminal_safe(info['provider'])} -> "
+        f"{_terminal_safe(info['model'])}"
+    )
 
     if info["provider"] == "ollama":
         ok = info["model_present"] and info["embedding_present"]
         if not info["model_present"]:
-            console.print(f"[red]✗[/] Chat model missing. Run: ollama pull {info['model']}")
+            console.print(
+                f"[red]ERROR[/] Chat model missing. Run: "
+                f"ollama pull {_terminal_safe(info['model'])}"
+            )
         if not info["embedding_present"]:
             console.print(
-                f"[red]✗[/] Embedding model missing. Run: ollama pull {info['embedding_model']}"
+                f"[red]ERROR[/] Embedding model missing. Run: "
+                f"ollama pull {_terminal_safe(info['embedding_model'])}"
             )
         if ok:
-            console.print(f"[green]✓[/] Ollama models present ({info['embedding_model']} for embeddings)")
+            console.print(
+                f"[green]OK[/] Ollama models present "
+                f"({_terminal_safe(info['embedding_model'])} for embeddings)"
+            )
     elif not info["key_set"]:
-        console.print("[red]✗[/] ANTHROPIC_API_KEY is not set")
+        console.print("[red]ERROR[/] ANTHROPIC_API_KEY is not set")
         raise typer.Exit(1)
 
     try:
         with store.pg() as conn:
             n = conn.execute("SELECT count(*) AS n FROM document").fetchone()["n"]
-        console.print(f"[green]✓[/] Postgres reachable ({n} documents)")
+        console.print(f"[green]OK[/] Postgres reachable ({n} documents)")
     except Exception as exc:
-        console.print(f"[red]✗[/] Postgres: {exc}")
+        console.print(f"[red]ERROR[/] Postgres: {_terminal_safe(exc)}")
         raise typer.Exit(1)
 
     try:
         driver = store.neo()
         driver.verify_connectivity()
-        console.print("[green]✓[/] Neo4j reachable")
+        console.print("[green]OK[/] Neo4j reachable")
         driver.close()
     except Exception as exc:
-        console.print(f"[red]✗[/] Neo4j: {exc}")
+        console.print(f"[red]ERROR[/] Neo4j: {_terminal_safe(exc)}")
         raise typer.Exit(1)
 
 # Three roles, three clearances. Enough to prove the RBAC boundary without
