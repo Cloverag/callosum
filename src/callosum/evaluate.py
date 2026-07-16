@@ -42,7 +42,8 @@ from callosum import store
 from callosum.ontology import EntityType, RelationType
 from callosum.retrieve import Answer, Principal, ask, graph_search, plan
 
-STRATUM_ORDER = ["lookup", "relational", "multi_hop", "grounding_adv", "grounding_neg", "rbac"]
+STRATUM_ORDER = ["lookup", "relational", "multi_hop", "temporal",
+                 "grounding_adv", "grounding_neg", "rbac"]
 
 
 # ---------------------------------------------------------------------------
@@ -61,7 +62,13 @@ STRATUM_ORDER = ["lookup", "relational", "multi_hop", "grounding_adv", "groundin
 # stochastic LLM step in between. Say so in the thesis: the eval graph is a gold
 # standard, declared as such.
 
-GOLD_ENTITIES = [
+# The gold graph is grouped by SOURCE DOCUMENT. Each edge is attached to a chunk of the
+# document it actually came from (document-aware seeding), so as the corpus grows the
+# evaluator never leans on "sensitivity == board" to place an edge — document identity is
+# the correct key. Meeting 12 is polarity; Meeting 13 is temporal / decision evolution.
+
+# --- Board Meeting 12 (sensitivity 1) — the pricing REJECTION -----------------
+GOLD_M12_ENTITIES = [
     ("Raj Malhotra", EntityType.PERSON, {"role": "CEO, co-founder"}),
     ("Priya Nair", EntityType.PERSON, {"role": "CFO"}),
     ("Marcus Webb", EntityType.PERSON, {"role": "Sequoia, board"}),
@@ -70,9 +77,7 @@ GOLD_ENTITIES = [
     ("Board Meeting 12", EntityType.MEETING, {}),
     ("Write pricing decision pack", EntityType.ACTION_ITEM, {"owner": "Priya Nair"}),
 ]
-
-# All sourced from the board transcript (sensitivity 1 — an investor may read it).
-GOLD_EDGES = [
+GOLD_M12_EDGES = [
     ("Reject Pricing Model B", RelationType.ABOUT, "Pricing Model B",
      "Pricing Model B — the usage-based tier"),
     ("Reject Pricing Model B", RelationType.MADE_IN, "Board Meeting 12",
@@ -87,11 +92,49 @@ GOLD_EDGES = [
      "write it up for the board pack with the margin analysis attached"),
 ]
 
-# Sourced from the compensation review (sensitivity 3 — founder/exec only). This edge
-# exists solely to exercise the graph-side RBAC gate: its quote embeds a salary, so if
-# the path gate ever failed open, an investor asking about Priya would receive "$185K"
-# through this edge — which is precisely the leak fixed in run 3. Seeding it makes the
-# X1 rbac case a real test of the graph gate, not only the vector filter.
+# --- Board Meeting 13 (sensitivity 1) — the REVERSAL, seven months later ------
+# The decision that SUPERSEDES the March rejection, plus the customer that drove it
+# (REQUESTED, ontology v2), the metric/document reference, and Tom's workstream. This is
+# the temporal-reasoning stress case: the answer to "is Model B rejected?" now depends on
+# an edge in a *different* document.
+GOLD_M13_ENTITIES = [
+    ("Elena Duarte", EntityType.PERSON, {"role": "Accel, board"}),
+    ("Tom Fischer", EntityType.PERSON, {"role": "independent director"}),
+    ("Adopt Usage-Based Pricing", EntityType.DECISION, {"status": "approved"}),
+    ("Board Meeting 13", EntityType.MEETING, {}),
+    ("Northwind", EntityType.ORGANIZATION, {"role": "largest customer"}),
+    ("March Board Deck", EntityType.DOCUMENT, {}),
+    ("gross margin", EntityType.METRIC, {"value": "66%", "period": "next year"}),
+    ("Germany Expansion", EntityType.TOPIC, {}),
+]
+GOLD_M13_EDGES = [
+    ("Adopt Usage-Based Pricing", RelationType.SUPERSEDES, "Reject Pricing Model B",
+     "I'm comfortable reversing our decision from March"),
+    ("Adopt Usage-Based Pricing", RelationType.ABOUT, "Pricing Model B",
+     "usage-based is our forward pricing model"),
+    ("Adopt Usage-Based Pricing", RelationType.MADE_IN, "Board Meeting 13",
+     "Board Meeting 13"),
+    ("Raj Malhotra", RelationType.APPROVED, "Adopt Usage-Based Pricing",
+     "usage-based is our forward pricing model. That's my call."),
+    ("Marcus Webb", RelationType.SUPPORTED, "Adopt Usage-Based Pricing",
+     "I supported this a year ago and I support it now"),
+    ("Priya Nair", RelationType.SUPPORTED, "Adopt Usage-Based Pricing",
+     "With that floor and the Series C closed, I can get behind it. I'm a yes."),
+    ("Elena Duarte", RelationType.SUPPORTED, "Adopt Usage-Based Pricing",
+     "so I'm supportive of the direction"),
+    ("Northwind", RelationType.REQUESTED, "Pricing Model B",
+     "Our single largest account has formally asked to move to a usage-based contract"),
+    ("gross margin", RelationType.REPORTED_IN, "March Board Deck",
+     "Appendix C in the March board deck projected gross margin at 71%"),
+    ("Tom Fischer", RelationType.OWNS, "Germany Expansion",
+     "Tom owns the Germany expansion workstream through Q2"),
+]
+
+# --- Compensation review (sensitivity 3) — founder/exec only ------------------
+# This edge exists solely to exercise the graph-side RBAC gate: its quote embeds a salary,
+# so if the path gate ever failed open, an investor asking about Priya would receive
+# "$185K" through it — the leak fixed in run 3. It makes the X1 rbac case a real test of
+# the graph gate, not only the vector filter.
 GOLD_CONFIDENTIAL_ENTITIES = [
     ("Meridian Inc", EntityType.ORGANIZATION, {}),
 ]
@@ -100,32 +143,41 @@ GOLD_CONFIDENTIAL_EDGES = [
      "Priya Nair, CFO, is at $185K base"),
 ]
 
+# (document title -> entities, edges). Title is the file stem, as ingest.upsert_document
+# stores it. Confidential group last; its edge count is reported separately.
+GOLD_GROUPS = [
+    ("board_meeting_12_transcript", GOLD_M12_ENTITIES, GOLD_M12_EDGES, False),
+    ("board_meeting_13_transcript", GOLD_M13_ENTITIES, GOLD_M13_EDGES, False),
+    ("compensation_review_CONFIDENTIAL", GOLD_CONFIDENTIAL_ENTITIES, GOLD_CONFIDENTIAL_EDGES, True),
+]
+
 
 def seed_graph(conn: psycopg.Connection, driver: Driver) -> tuple[int, int]:
     """Write the gold graph directly, bypassing the LLM. Returns (edges, confidential).
 
-    Requires the demo documents to already be ingested (chunks + embeddings in Postgres,
-    Chunk nodes in Neo4j) — the seed attaches its edges to those real chunks so the
-    sensitivity gate and citations work unchanged. It only replaces the *approval* step,
-    not ingestion. MERGE-based writes make it idempotent: re-seeding is a no-op.
+    Document-aware: each group's edges are attached to a chunk of the document they came
+    from (matched by title), so an edge's provenance chunk is correct even when several
+    documents share a sensitivity level. Requires the documents to already be ingested
+    (chunks + embeddings in Postgres, Chunk nodes in Neo4j). A group whose document is not
+    present is skipped — the seed only replaces the *approval* step, not ingestion.
+    ALL entities are seeded before ANY edges, so cross-document edges (e.g. Meeting 13's
+    decision SUPERSEDES Meeting 12's) find both endpoints. MERGE-based, so re-seeding is
+    a no-op.
     """
-    board = conn.execute(
-        """
-        SELECT c.id FROM chunk c JOIN document d ON d.id = c.document_id
-        WHERE c.sensitivity = 1 ORDER BY c.ordinal LIMIT 1
-        """
-    ).fetchone()
-    if not board:
-        raise ValueError(
-            "No sensitivity-1 chunk found. Ingest the board transcript first "
-            "(scripts/eval.sh does this)."
-        )
-    board_chunk = str(board["id"])
+    def chunk_for(title: str) -> str | None:
+        row = conn.execute(
+            "SELECT c.id FROM chunk c JOIN document d ON d.id = c.document_id "
+            "WHERE d.title = %s ORDER BY c.ordinal LIMIT 1",
+            (title,),
+        ).fetchone()
+        return str(row["id"]) if row else None
 
-    comp = conn.execute(
-        "SELECT c.id FROM chunk c WHERE c.sensitivity = 3 ORDER BY c.ordinal LIMIT 1"
-    ).fetchone()
-    comp_chunk = str(comp["id"]) if comp else None
+    chunks = {title: chunk_for(title) for title, _, _, _ in GOLD_GROUPS}
+    if not chunks.get("board_meeting_12_transcript"):
+        raise ValueError(
+            "board_meeting_12_transcript not ingested. Run scripts/eval.sh, which ingests "
+            "the documents before seeding."
+        )
 
     def put_entity(name: str, etype: EntityType, attrs: dict, chunk_id: str) -> None:
         store.apply_entity(driver, {
@@ -138,22 +190,27 @@ def seed_graph(conn: psycopg.Connection, driver: Driver) -> tuple[int, int]:
             "quote": quote, "chunk_id": chunk_id,
         })
 
-    # Entities before edges: apply_relationship MATCHes both endpoints, so the nodes
-    # must exist first.
-    for name, etype, attrs in GOLD_ENTITIES:
-        put_entity(name, etype, attrs, board_chunk)
-    for src, rel, tgt, quote in GOLD_EDGES:
-        put_edge(src, rel, tgt, quote, board_chunk)
+    # Pass 1: all entities (a cross-document edge needs both endpoints to already exist).
+    for title, entities, _edges, _conf in GOLD_GROUPS:
+        cid = chunks.get(title)
+        if not cid:
+            continue
+        for name, etype, attrs in entities:
+            put_entity(name, etype, attrs, cid)
 
-    confidential = 0
-    if comp_chunk:
-        for name, etype, attrs in GOLD_CONFIDENTIAL_ENTITIES:
-            put_entity(name, etype, attrs, comp_chunk)
-        for src, rel, tgt, quote in GOLD_CONFIDENTIAL_EDGES:
-            put_edge(src, rel, tgt, quote, comp_chunk)
-            confidential += 1
+    # Pass 2: all edges, each stamped with its own document's chunk.
+    total = confidential = 0
+    for title, _entities, edges, is_conf in GOLD_GROUPS:
+        cid = chunks.get(title)
+        if not cid:
+            continue
+        for src, rel, tgt, quote in edges:
+            put_edge(src, rel, tgt, quote, cid)
+            total += 1
+            if is_conf:
+                confidential += 1
 
-    return len(GOLD_EDGES), confidential
+    return total, confidential
 
 
 @dataclass

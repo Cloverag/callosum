@@ -1,0 +1,37 @@
+Meridian Inc — Board Meeting 13
+Date: 2026-10-14
+Attendees: Raj Malhotra (CEO, co-founder), Priya Nair (CFO), Marcus Webb (Sequoia, board), Elena Duarte (Accel, board), Tom Fischer (independent director)
+
+---
+
+RAJ: First item, and it's the big one. We're reopening pricing. Back in March we rejected Pricing Model B — the usage-based tier — and I said we'd revisit in Q1 with real expansion data. Two things changed faster than I expected. Priya, set it up.
+
+PRIYA: Two things. First, the Series C term sheet is signed — sixty million at a valuation that already prices in the margin story, so the clean-margin argument I made in March no longer binds us. Second, Northwind. Our single largest account has formally asked to move to a usage-based contract, and they've said flat per-seat is a dealbreaker for renewal. This is a customer pulling us, not us pushing.
+
+PRIYA: One caveat on the numbers so we're honest with ourselves. Appendix C in the March board deck projected gross margin at 71%. With the Northwind mix we're now forecasting 66% for next year. It's better than the 58% I modeled for full Model B in March, but it is still down five points from where the deck had us.
+
+MARCUS: I supported this a year ago and I support it now — this is the expansion-revenue case I made in March, and now there's a marquee customer proving the demand. If anything I think we're moving too slowly. If Northwind is asking today, new-logos-in-Q1 is already late. I'd want to be live this quarter.
+
+PRIYA: I'm not going to pretend I've flipped completely — the margin math hasn't changed, usage-based still compresses gross margin. But we negotiated a minimum-spend floor into the Northwind contract, so they commit to a monthly minimum regardless of usage. With that floor and the Series C closed, I can get behind it. I'm a yes.
+
+ELENA: My March objection was timing, and that's gone once the round closes, so I'm supportive of the direction. But I would oppose migrating existing enterprise contracts this quarter — new logos only. Repricing the installed base while we're mid-raise is the kind of self-inflicted wound I don't want.
+
+RAJ: I hear you both. Marcus, I'm not going faster than the floor and the migration plan allow — Elena's right that we don't touch the installed base yet. New logos and Northwind in Q1, existing accounts later. Given everything we've seen since March, I'm comfortable reversing our decision from March. The rejection no longer reflects where this company stands — usage-based is our forward pricing model. That's my call.
+
+TOM: For the minutes — this formally reverses the Meeting 12 decision?
+
+RAJ: Yes. Link the two in the record so nobody reads the March minutes and thinks we're still on per-seat. Priya, you own the rollout plan — the tiers, the floor mechanic, and the migration path for existing accounts.
+
+PRIYA: I'll have a draft rollout plan for the next meeting.
+
+---
+
+RAJ: Second item — Tom, the international memo. You owned that from Meeting 12.
+
+TOM: I did, and it's in the pack. Short version: Germany is the first market, localization runs about four hundred thousand for year one, and there's a data-residency requirement we'd have to build for. My recommendation is we don't start it until the pricing migration is done. One disruption at a time.
+
+RAJ: Sensible. We hold international until the usage-based rollout is stable. Tom owns the Germany expansion workstream through Q2 — keep the memo warm and come back to us then.
+
+TOM: Understood.
+
+RAJ: That's the meeting. Feels like we're finally on the front foot.
