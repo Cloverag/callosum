@@ -560,3 +560,20 @@ The generated DOCX passed structural ingestion tests, but visual DOCX rendering 
 run because LibreOffice/`soffice` is unavailable in this local environment. The PDF fixture
 was generated with a simple single-page layout; its text is validated by the same loader
 test. No live extraction or document-type metrics are claimed until Ollama is restored.
+
+
+## 2026-07-16 (R12 implementation) - permission-scoped candidates and enforceable abstention
+
+Run 10 exposed a grounding false positive (precision 50% on two negative questions), and
+run 12 exposed 15% GER at a larger corpus size. R12 replaces the full graph vocabulary in
+the planner prompt with canonical names reached from the caller's clearance-filtered vector
+hits. The Neo4j candidate lookup independently repeats `Chunk.sensitivity <= clearance`; a
+private graph name cannot enter the prompt through this stage. The planner now has an
+explicit empty-list abstention policy, and names emitted outside the supplied list are
+discarded before traversal.
+
+The deterministic suite covers the output guard, empty abstention result, and repeated
+clearance predicate. It passed (`30 passed, 5 deselected`). Ollama is unavailable locally,
+so candidate recall, precision, latency, and downstream traversal effects are not claimed.
+The R13 handoff is documented in `docs/research-handoff.md`; its approval and P0 remain
+blocked on the clean live evaluation rather than being inferred from implementation work.

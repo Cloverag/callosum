@@ -7,7 +7,7 @@ regardless of how good the model is.
 
 from callosum.extract import verify
 from callosum.ingest import chunk, locate
-from callosum.retrieve import _render_chain
+from callosum.retrieve import Plan, _render_chain
 from callosum.ontology import (
     Entity,
     EntityType,
@@ -116,6 +116,71 @@ def test_render_chain_all_forward():
     starts = ["Raj", "Reject Model B"]
     chain = _render_chain(names, rels, starts)
     assert chain == "path: Raj —APPROVED→ Reject Model B —ABOUT→ Pricing Model B"
+
+
+def test_plan_discards_names_outside_permission_scoped_candidates(monkeypatch):
+    """A model cannot smuggle a graph name past the candidate/RBAC boundary."""
+    import callosum.retrieve as retrieve
+
+    monkeypatch.setattr(
+        retrieve,
+        "structured",
+        lambda *_args, **_kwargs: Plan(
+            entities=["Pricing Model B", "Restricted Compensation Plan"],
+            needs_graph=True,
+            needs_vector=True,
+            search_query="pricing",
+        ),
+    )
+    result = retrieve.plan("Why was pricing rejected?", ["Pricing Model B"])
+    assert result.entities == ["Pricing Model B"]
+
+
+def test_plan_keeps_an_explicit_abstention(monkeypatch):
+    import callosum.retrieve as retrieve
+
+    monkeypatch.setattr(
+        retrieve,
+        "structured",
+        lambda *_args, **_kwargs: Plan(
+            entities=[], needs_graph=True, needs_vector=True, search_query="unrelated topic"
+        ),
+    )
+    result = retrieve.plan("Why was the dynamic pricing engine rejected?", ["Pricing Model B"])
+    assert result.entities == []
+
+
+def test_candidate_entity_query_repeats_clearance_gate():
+    """Candidate names are permission-filtered before they reach the planner prompt."""
+    import uuid
+    from callosum.store import entity_names_for_chunks
+
+    class Session:
+        def __init__(self):
+            self.query = ""
+            self.params = {}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def run(self, query, **params):
+            self.query, self.params = query, params
+            return [{"name": "Pricing Model B"}]
+
+    class Driver:
+        def __init__(self):
+            self.session_obj = Session()
+
+        def session(self):
+            return self.session_obj
+
+    driver = Driver()
+    assert entity_names_for_chunks(driver, [uuid.uuid4()], 1) == ["Pricing Model B"]
+    assert "c.sensitivity <= $clearance" in driver.session_obj.query
+    assert driver.session_obj.params["clearance"] == 1
 
 
 # --- gold graph / gold questions consistency --------------------------------
