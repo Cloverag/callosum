@@ -226,3 +226,31 @@ separately from any product implementation.
 - Live integration suite: passed as above.
 - The live Ollama evaluation gate is still unresolved; none of these changes authorize
   R8-R13 acceptance or P0.
+
+## Follow-up completed: Meridian governed workflow design artifacts
+
+### Research and scope
+
+- Reviewed the supplied `C:\Users\devgu\Downloads\meridian\Meridian_prototype\Meridian Dashboard.dc.html` as visual inspiration. Its useful patterns are the calm board-workspace shell, persistent Ask Meridian framing, and source badges.
+- Cross-checked the design against `PRD.md` (FR-LIVE-04/05, FR-DEC-01/03/04/06, AI governance, accessibility, and explainability) and `ROADMAP.md`.
+- This work is deliberately a static design research artifact, not P0/P3 implementation. It introduces no workspace/meeting model, API, identity, authorization, persistence, telemetry, external action, or Callosum core change.
+
+### Delivered artifacts
+
+- `design/meridian-governed-workflows.html`: a self-contained clickable prototype for:
+  - grounded chat with separately labelled approved facts, citations, and opaque withholding;
+  - individual proposal review with exact quote, source, span, confidence, and a local-only simulated disposition;
+  - a citation drawer that exposes readable source provenance but does not disclose withheld sources.
+- `design/README.md`: local review instructions and scope boundary.
+- `docs/ux/meridian-governed-workflows.md`: research rationale, interaction contract, PRD traceability, design decisions, and open questions for P0/P3.
+- `tests/test_design_artifacts.py`: static governance-contract checks that prevent a network/API surface or a design regression implying autonomous action.
+
+### Verification
+
+- Parsed the static HTML and extracted the inline script.
+- `node --check C:\tmp\meridian-governed-workflows.js` passed after explicit DOM references replaced legacy ID globals.
+- `.venv\Scripts\pytest.exe -q`: `36 passed, 1 skipped, 5 deselected`.
+
+### Status remains unchanged
+
+These artifacts may be reviewed, refined, and used for product discovery while Ollama is unavailable. They do **not** authorize P0, make a web product exist, or alter the R8-R13 live-evaluation/review gate.
