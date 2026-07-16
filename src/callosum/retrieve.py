@@ -111,10 +111,9 @@ def plan(
     no thresholds, no hand-maintained alias lists) is the point: the simplest thing that
     fixes the measured bottleneck.
 
-    At graph scale, `known_entities` must be PRE-FILTERED to candidates near the mention
-    (substring / token overlap, or a name index) — dumping 50k node names into a prompt
-    does not scale. On the demo graph the vocabulary is tiny, so we pass all of it; the
-    candidate-retrieval step is the documented next lever if the graph grows.
+    `known_entities` is a permission-scoped candidate list, not the entire graph
+    vocabulary. The caller obtains it from readable vector hits, which bounds prompt size
+    and prevents private entity names from becoming a side channel.
     """
     system = PLANNER_PROMPT
     if known_entities:
@@ -126,10 +125,39 @@ def plan(
             "For each entity the question refers to that matches one of the above by "
             "meaning, put that entity's EXACT name (copied from the list) in `entities` — "
             "e.g. if the question says 'usage-based pricing' and the list contains "
-            "'Pricing Model B', output 'Pricing Model B'. Only use a name absent from the "
-            "list when the question clearly names an entity the graph does not contain."
+            "'Pricing Model B', output 'Pricing Model B'. If none is the same referent, "
+            "output an empty `entities` list. Never output a name absent from the list."
         )
-    return structured(system, question, Plan, temperature=temperature)
+    result = structured(system, question, Plan, temperature=temperature)
+    # Model output is untrusted. Keeping only supplied candidates makes abstention an
+    # enforceable runtime property rather than solely a prompt instruction.
+    if known_entities is not None:
+        allowed = set(known_entities)
+        result.entities = [name for name in result.entities if name in allowed]
+    return result
+
+
+def candidate_entities(
+    conn: psycopg.Connection, driver: Driver, question: str, principal: Principal,
+    *, k: int = 16,
+) -> list[str]:
+    """Find canonical grounding candidates without exposing unreadable graph names."""
+    evidence, _ = vector_search(conn, question, principal, k=k)
+    return store.entity_names_for_chunks(
+        driver, [item.chunk_id for item in evidence], principal.clearance
+    )
+
+
+def grounded_plan(
+    conn: psycopg.Connection, driver: Driver, question: str, principal: Principal,
+    *, temperature: float | None = None,
+) -> Plan:
+    """Plan with readable semantic candidates and an enforceable abstention path."""
+    return plan(
+        question,
+        known_entities=candidate_entities(conn, driver, question, principal),
+        temperature=temperature,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -392,11 +420,9 @@ def ask(
     if plan_override is not None:
         p = plan_override
     else:
-        # Ground the question's entities against the graph's vocabulary before planning,
-        # so "usage-based pricing" resolves to the "Pricing Model B" node the traversal
-        # seeds on. Only needed when the graph will actually be searched.
-        known = store.entity_names(driver) if use_graph else None
-        p = plan(question, known_entities=known)
+        # Ground only against canonical names surfaced by readable semantic candidates.
+        # This is both scalable and prevents private graph names entering the prompt.
+        p = grounded_plan(conn, driver, question, principal) if use_graph else plan(question)
 
     graph_facts: list[str] = []
     graph_chunk_ids: list[uuid.UUID] = []

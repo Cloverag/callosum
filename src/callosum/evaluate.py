@@ -40,7 +40,7 @@ from neo4j import Driver
 
 from callosum import store
 from callosum.ontology import EntityType, RelationType
-from callosum.retrieve import Answer, Principal, ask, graph_search, plan
+from callosum.retrieve import Answer, Principal, ask, graph_search, grounded_plan, plan
 
 STRATUM_ORDER = ["lookup", "relational", "multi_hop", "temporal",
                  "aliases", "conflict", "coreference", "grounding_adv", "grounding_neg", "rbac"]
@@ -381,11 +381,6 @@ def evaluate(
     results: list[QuestionResult] = []
     scores: dict[str, StratumScore] = {s: StratumScore(stratum=s) for s in STRATUM_ORDER}
 
-    # The graph's vocabulary, fetched once — the planner grounds each question's entities
-    # against it (entity linking). This is what makes "usage-based pricing" reach the
-    # "Pricing Model B" node instead of seeding on nothing.
-    vocabulary = set(store.entity_names(driver))
-
     for item in gold:
         principal = _resolve_principal(conn, item.as_user)
         if principal is None:
@@ -401,7 +396,7 @@ def evaluate(
             # the identical plan to both arms — so the only difference between them is
             # whether graph facts are added, not which passages the planner fetched
             # (findings run 7). Synthesis pinned to temperature 0 for the same reason.
-            shared = plan(item.question, known_entities=sorted(vocabulary), temperature=0.0)
+            shared = grounded_plan(conn, driver, item.question, principal, temperature=0.0)
             hybrid = ask(conn, driver, item.question, principal, use_graph=True,
                          plan_override=shared, synthesis_temperature=0.0)
             vector = ask(conn, driver, item.question, principal, use_graph=False,
@@ -421,11 +416,11 @@ def evaluate(
         if item.expect_entities:
             grounded = bool(set(shared.entities) & set(item.expect_entities))
         else:
-            grounded = bool(set(shared.entities) & vocabulary)
+            grounded = bool(shared.entities)
 
         # A negative question grounded to a real node is a FALSE POSITIVE — the linker
         # forced a match it should have refused. This is the precision side of grounding.
-        false_positive = item.should_not_ground and bool(set(shared.entities) & vocabulary)
+        false_positive = item.should_not_ground and bool(shared.entities)
 
         # Ablation: what does the graph return WITHOUT grounding? Plan with no vocabulary
         # (raw mentions) and seed the traversal on them. No synthesis — recall is read off

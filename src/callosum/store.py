@@ -286,16 +286,39 @@ def ensure_constraints(driver: Driver) -> None:
 
 
 def entity_names(driver: Driver) -> list[str]:
-    """Every entity name in the graph — the vocabulary the planner resolves against.
+    """Every entity name in the graph.
 
-    Passed to the planner so it can map a question's phrasing ("usage-based pricing")
-    onto the canonical node name ("Pricing Model B"); without that mapping the exact-match
-    seed in graph_search never fires and multi-hop recall is zero (findings run 8). Names
-    are not the secret — the RBAC gate is downstream on edges/quotes/chunks — so returning
-    all of them to an internal planner leaks nothing a readable edge wouldn't already.
+    Evaluation seeding and administrative tooling may need the complete vocabulary. Runtime
+    question planning must instead use :func:`entity_names_for_chunks`, which scopes the
+    candidate list to source chunks already readable by the caller.
     """
     with driver.session() as session:
         result = session.run("MATCH (e:Entity) RETURN e.name AS name ORDER BY name")
+        return [r["name"] for r in result]
+
+
+def entity_names_for_chunks(
+    driver: Driver, chunk_ids: list[uuid.UUID], clearance: int
+) -> list[str]:
+    """Return canonical names mentioned by readable candidate chunks only.
+
+    A grounding prompt is a disclosure channel: sending it the whole graph vocabulary can
+    reveal a confidential name. Candidate chunks come from a clearance-filtered vector
+    query; this Cypher repeats the predicate so it fails closed for direct callers too.
+    """
+    if not chunk_ids:
+        return []
+    with driver.session() as session:
+        result = session.run(
+            """
+            MATCH (c:Chunk)-[:MENTIONS]->(e:Entity)
+            WHERE c.id IN $chunk_ids AND c.sensitivity <= $clearance
+            RETURN DISTINCT e.name AS name
+            ORDER BY name
+            """,
+            chunk_ids=[str(chunk_id) for chunk_id in set(chunk_ids)],
+            clearance=clearance,
+        )
         return [r["name"] for r in result]
 
 

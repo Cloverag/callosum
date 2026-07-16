@@ -134,35 +134,37 @@ benchmark by document type.
 - [ ] Results by document type and failure reason require a live extraction/evaluation run.
 - [x] Fixture assertions and the local rendering limitation are documented.
 
-## R12 — Grounding abstention and scalable candidates
+## R12 - Grounding abstention and scalable candidates - implementation complete; live measurement pending
 
 **Goal:** Make entity linking precise at larger graph sizes.
 
-**Work:** use R8–R11 findings to implement candidate retrieval and a “none of these”
-policy; measure candidate recall, grounding accuracy, false positives, latency, and
-downstream traversal effects.
+**Work completed:** semantic candidates now come only from chunks returned by the
+clearance-filtered vector search. Neo4j repeats the chunk-clearance predicate before their
+canonical names enter the planner prompt. The planner is explicitly instructed to abstain,
+and its output is restricted to the supplied candidates as a runtime guard.
 
 **Exit checklist:**
 
-- [ ] No-referent cases are first-class and do not force links.
-- [ ] Candidate selection does not bypass permissions or leak private entity names.
-- [ ] The precision/recall change is measured and approved against baseline.
+- [x] No-referent cases are first-class: the planner contract permits an empty entity list and model output outside the candidate set is discarded.
+- [x] Candidate selection is permission-scoped and deterministic coverage verifies its clearance predicate.
+- [ ] Candidate recall, grounding accuracy, false positives, latency, and downstream traversal effects require a clean live evaluation and review against `eval-baseline-v2`.
 
-## R13 — Research handoff and frozen baseline
+## R13 - Research handoff and frozen baseline - handoff prepared; approval pending
 
 **Goal:** Close the research phase with a reproducible contract for product work.
 
-**Work:** consolidate findings/capability matrix/baselines/limits; freeze the evaluated
-core at a named version; publish an implementation-status matrix separating research-ready
-from production-ready behavior.
+**Work completed:** `docs/research-handoff.md` consolidates reproducible commands, the
+named baseline, capability/evidence/limitation matrix, frozen-core exception process, and
+the decision rule for P0. It deliberately records that live measurement is unavailable
+rather than treating implementation work as acceptance.
 
 **Exit checklist:**
 
-- [ ] Every completed capability has reproducible commands, source corpus, evidence, and
-  limitations.
-- [ ] Freeze boundary and exception process are approved.
-- [ ] `AGENTS.md`, `PRD.md`, `CONTRIBUTING.md`, findings, and roadmap agree.
-- [ ] Product checkpoint P0 is formally authorized.
+- [x] The handoff lists commands, corpus/evidence references, and limitations for every implemented capability.
+- [x] The freeze boundary and exception record are documented.
+- [ ] R8-R12 require a live, reviewed evaluation before the handoff can be approved.
+- [ ] `AGENTS.md`, `PRD.md`, `CONTRIBUTING.md`, findings, and roadmap may be declared fully aligned only at approved handoff; current documents consistently record the pending gate.
+- [ ] Product checkpoint P0 requires explicit authorization after the approved handoff.
 
 ---
 
