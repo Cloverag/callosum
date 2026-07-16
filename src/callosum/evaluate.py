@@ -43,7 +43,7 @@ from callosum.ontology import EntityType, RelationType
 from callosum.retrieve import Answer, Principal, ask, graph_search, plan
 
 STRATUM_ORDER = ["lookup", "relational", "multi_hop", "temporal",
-                 "grounding_adv", "grounding_neg", "rbac"]
+                 "aliases", "conflict", "grounding_adv", "grounding_neg", "rbac"]
 
 
 # ---------------------------------------------------------------------------
@@ -143,11 +143,48 @@ GOLD_CONFIDENTIAL_EDGES = [
      "Priya Nair, CFO, is at $185K base"),
 ]
 
+# --- Board Meeting 14 (sensitivity 1) — reviewed aliases, not auto-merges ---------
+GOLD_M14_ENTITIES = [
+    ("Rajesh Malhotra", EntityType.PERSON, {"role": "CEO, co-founder"}),
+    ("Raj", EntityType.PERSON, {"source_spelling": "Raj"}),
+    ("R. Malhotra", EntityType.PERSON, {"source_spelling": "R. Malhotra"}),
+    ("Raj Patel", EntityType.PERSON, {"role": "guest observer"}),
+    ("Board Meeting 14", EntityType.MEETING, {}),
+]
+GOLD_M14_EDGES = [
+    ("Raj", RelationType.ALIAS_OF, "Rajesh Malhotra", "Raj, short for Rajesh Malhotra"),
+    ("R. Malhotra", RelationType.ALIAS_OF, "Rajesh Malhotra", "R. Malhotra, the same CEO"),
+    ("Rajesh Malhotra", RelationType.ATTENDED, "Board Meeting 14", "Rajesh Malhotra (CEO, co-founder)"),
+    ("Raj Patel", RelationType.ATTENDED, "Board Meeting 14", "Raj Patel (guest observer, not Rajesh Malhotra)"),
+]
+
+# --- Meeting 15 conflict sources (sensitivity 1) ---------------------------------
+GOLD_FINANCE_ENTITIES = [("Finance FY27 ARR forecast", EntityType.METRIC, {"value": "$12.0M", "period": "FY27"})]
+GOLD_FINANCE_EDGES = [("Finance FY27 ARR forecast", RelationType.REPORTED_IN, "Finance FY27 Forecast", "Finance forecast: FY27 ARR is $12.0M.")]
+GOLD_SALES_ENTITIES = [("Sales FY27 ARR forecast", EntityType.METRIC, {"value": "$11.6M", "period": "FY27"})]
+GOLD_SALES_EDGES = [("Sales FY27 ARR forecast", RelationType.REPORTED_IN, "Sales FY27 Forecast", "Sales forecast: FY27 ARR is $11.6M.")]
+GOLD_M15_ENTITIES = [
+    ("Board Meeting 15", EntityType.MEETING, {}),
+    ("Finance FY27 Forecast", EntityType.DOCUMENT, {}),
+    ("Sales FY27 Forecast", EntityType.DOCUMENT, {}),
+    ("FY27 ARR forecast", EntityType.TOPIC, {}),
+]
+GOLD_M15_EDGES = [
+    ("Finance FY27 Forecast", RelationType.PRESENTED_AT, "Board Meeting 15", "The Finance FY27 Forecast says $12.0M; the Sales FY27 Forecast says $11.6M."),
+    ("Sales FY27 Forecast", RelationType.PRESENTED_AT, "Board Meeting 15", "The Finance FY27 Forecast says $12.0M; the Sales FY27 Forecast says $11.6M."),
+    ("Finance FY27 Forecast", RelationType.ABOUT, "FY27 ARR forecast", "The Finance FY27 Forecast says $12.0M"),
+    ("Sales FY27 Forecast", RelationType.ABOUT, "FY27 ARR forecast", "the Sales FY27 Forecast says $11.6M"),
+]
+
 # (document title -> entities, edges). Title is the file stem, as ingest.upsert_document
 # stores it. Confidential group last; its edge count is reported separately.
 GOLD_GROUPS = [
     ("board_meeting_12_transcript", GOLD_M12_ENTITIES, GOLD_M12_EDGES, False),
     ("board_meeting_13_transcript", GOLD_M13_ENTITIES, GOLD_M13_EDGES, False),
+    ("board_meeting_14_transcript", GOLD_M14_ENTITIES, GOLD_M14_EDGES, False),
+    ("finance_fy27_forecast", GOLD_FINANCE_ENTITIES + [("Finance FY27 Forecast", EntityType.DOCUMENT, {})], GOLD_FINANCE_EDGES, False),
+    ("sales_fy27_forecast", GOLD_SALES_ENTITIES + [("Sales FY27 Forecast", EntityType.DOCUMENT, {})], GOLD_SALES_EDGES, False),
+    ("board_meeting_15_transcript", GOLD_M15_ENTITIES, GOLD_M15_EDGES, False),
     ("compensation_review_CONFIDENTIAL", GOLD_CONFIDENTIAL_ENTITIES, GOLD_CONFIDENTIAL_EDGES, True),
 ]
 

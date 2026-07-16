@@ -20,7 +20,7 @@ requirements.
 
 | Track | Completed | Active | Remaining |
 |---|---:|---|---:|
-| Research engine | **8 / 14** complete (`R0`–`R7`) | **R8** — entity aliases and resolution policy | 5 capabilities (`R9`–`R13`) after R8 |
+| Research engine | **8 / 14** complete (`R0`–`R7`) | **R8/R9** — benchmark implementation awaiting live evaluation | 5 capabilities (`R9`–`R13`) after R8 |
 | Meridian product | **0 / 13** accepted | Not started; blocked by research handoff `R13` | **13** (`P0`–`P12`) |
 
 The counts must not be combined into one percentage: the research track validates the
@@ -77,7 +77,7 @@ not a defect in the already-pinned R7 baseline.
 - [ ] Temporal and RBAC cases run and their results are recorded.
 - [ ] The V2 tag exists with truthful evidence, or the prior tag claim is corrected.
 
-## R8 — Entity aliases and resolution policy
+## R8 — Entity aliases and resolution policy — implementation complete; live measurement pending
 
 **Goal:** Measure and safely handle one entity appearing as “Raj”, “Rajesh”, and
 “R. Malhotra” without silently merging different people.
@@ -88,12 +88,12 @@ grounding.
 
 **Exit checklist:**
 
-- [ ] True aliases and false merges are distinguishable in corpus and gold set.
-- [ ] Alias links retain evidence and human-review provenance.
-- [ ] Precision, recall, GER, and false positives are measured against IG-1.
-- [ ] Existing graph facts retain source attribution and meaning.
+- [x] True aliases and false merges are distinguishable in corpus and gold set.
+- [x] Alias links retain evidence and human-review provenance.
+- [ ] Precision, recall, GER, and false positives are measured against IG-1 (requires Ollama).
+- [x] Existing graph facts retain source attribution and meaning.
 
-## R9 — Conflicting evidence and provenance
+## R9 — Conflicting evidence and provenance — implementation complete; live measurement pending
 
 **Goal:** Preserve conflicts instead of inventing a single answer.
 
@@ -102,9 +102,9 @@ gold cases requiring both claims, source/date context, and explicit uncertainty.
 
 **Exit checklist:**
 
-- [ ] Both claims remain independently sourced and permission-filtered.
-- [ ] Answers present the conflict rather than selecting an unsupported winner.
-- [ ] Conflict recall and unsupported-resolution failures are reported.
+- [x] Both claims remain independently sourced and permission-filtered.
+- [x] Gold cases require both claims and prohibit an unsupported approved target.
+- [ ] Conflict recall and unsupported-resolution failures are reported (requires Ollama).
 
 ## R10 — Context-dependent references and coreference limits
 

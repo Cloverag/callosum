@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 # every proposed change and every quarantined failure, so a result can always be
 # attributed to the ontology that produced it — and so "re-extract everything under
 # ontology v4" stays a meaningful instruction.
-ONTOLOGY_VERSION = "2"  # see docs/ontology-changelog.md — v2 added REQUESTED (2026-10-14)
+ONTOLOGY_VERSION = "3"  # see docs/ontology-changelog.md — v3 added ALIAS_OF
 
 
 class FailureReason(StrEnum):
@@ -62,6 +62,10 @@ class RelationType(StrEnum):
     # semantics — forcing it into SUPPORTED would wrongly equate a customer's request
     # with a director's vote. See docs/ontology-changelog.md.
     REQUESTED = "REQUESTED"
+    # A reviewed assertion that two source spellings identify the same entity. The alias
+    # remains a separate node: this preserves the exact source wording and prevents a
+    # same-name person from being silently merged.
+    ALIAS_OF = "ALIAS_OF"
 
     # Decision -> everything else
     MADE_IN = "MADE_IN"            # Decision -> Meeting

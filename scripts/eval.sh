@@ -14,6 +14,10 @@ cd "$(dirname "$0")/.."
 CLI=".venv/bin/callosum"
 BOARD="data/demo/board_meeting_12_transcript.txt"
 BOARD13="data/demo/board_meeting_13_transcript.txt"
+BOARD14="data/demo/board_meeting_14_transcript.txt"
+BOARD15="data/demo/board_meeting_15_transcript.txt"
+FINANCE="data/demo/finance_fy27_forecast.txt"
+SALES="data/demo/sales_fy27_forecast.txt"
 COMP="data/demo/compensation_review_CONFIDENTIAL.txt"
 
 hr() { printf '\n\033[1;36m━━━ %s ━━━\033[0m\n' "$1"; }
@@ -28,6 +32,10 @@ $CLI init
 hr "Ingesting docs — chunks + embeddings only (--no-extract)"
 $CLI ingest-doc "$BOARD" --type transcript --sensitivity 1 --no-extract
 $CLI ingest-doc "$BOARD13" --type transcript --sensitivity 1 --no-extract
+$CLI ingest-doc "$BOARD14" --type transcript --sensitivity 1 --no-extract
+$CLI ingest-doc "$FINANCE" --type memo --sensitivity 1 --no-extract
+$CLI ingest-doc "$SALES" --type memo --sensitivity 1 --no-extract
+$CLI ingest-doc "$BOARD15" --type transcript --sensitivity 1 --no-extract
 $CLI ingest-doc "$COMP" --type transcript --sensitivity 3 --no-extract
 
 hr "Seeding the gold graph (deterministic — no LLM)"
