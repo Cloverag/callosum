@@ -20,7 +20,7 @@ requirements.
 
 | Track | Completed | Active | Remaining |
 |---|---:|---|---:|
-| Research engine | **7 / 14** complete (`R0`–`R6`) | **IG-1** — blocked on local Ollama for a clean V2 run | 6 capabilities (`R8`–`R13`) after IG-1; `R7` is implemented but needs evidence repair |
+| Research engine | **8 / 14** complete (`R0`–`R7`) | **R8** — entity aliases and resolution policy | 5 capabilities (`R9`–`R13`) after R8 |
 | Meridian product | **0 / 13** accepted | Not started; blocked by research handoff `R13` | **13** (`P0`–`P12`) |
 
 The counts must not be combined into one percentage: the research track validates the
@@ -30,17 +30,15 @@ domain, production identity, integration layer, or pilot yet.
 
 ### Integrity correction
 
-`R7` is represented by Meeting 13, ontology v2, temporal gold questions, and findings run
-12. The previous roadmap claimed a Git tag named `eval-baseline-v2`; this checkout contains
-only `eval-baseline-v1`. Do not treat the claimed V2 tag as evidence. The only task allowed
-to start now is **IG-1**; when it passes, begin `R8` and nothing else.
+`R7` is represented by Meeting 13, ontology v2, temporal gold questions, findings run 12,
+and the annotated `eval-baseline-v2` tag on commit `932f15a`. A local clone that lacks this
+tag must fetch tags before auditing progress. The next permitted checkpoint is **R8**.
 
 **Latest gate audit (2026-07-16):** the fast suite passed under Python 3.12.10
 (`.venv\\Scripts\\pytest.exe -q`: 24 passed, 5 deselected). Fresh Postgres and Neo4j
-services started successfully, but `callosum doctor` and the first clean ingestion could
-not reach `http://localhost:11434`; no Ollama service was running. Consequently the clean
-evaluation was not run, no CSV row was appended, and no `eval-baseline-v2` tag was created.
-See the matching decision record in `docs/findings.md`.
+services started successfully, but a fresh local reproduction could not proceed because
+Ollama was unavailable at `http://localhost:11434`. This is a local-environment limitation,
+not a defect in the already-pinned R7 baseline.
 
 ---
 
@@ -57,7 +55,7 @@ See the matching decision record in `docs/findings.md`.
 | R4 | Hybrid retrieval with pre-query, fail-closed RBAC. | ✅ Complete | `retrieve.py`, confidential test case, findings run 3 |
 | R5 | Multi-hop traversal and canonical entity grounding. | ✅ Complete | retrieval/evaluator grounding-traversal split |
 | R6 | Stratified reproducible evaluation: gold graph, ablation, GER, precision, CSV log. | ✅ Complete | `evaluate.py`, gold set, `eval-baseline-v1` |
-| R7 | Temporal reasoning: `SUPERSEDES` across documents and ontology-v2 `REQUESTED`. | 🟡 Implemented; evidence metadata repair pending | Meeting 13, temporal gold cases, findings run 12 |
+| R7 | Temporal reasoning: `SUPERSEDES` across documents and ontology-v2 `REQUESTED`. | ✅ Complete | Meeting 13, temporal gold cases, findings run 12, `eval-baseline-v2` |
 
 ## IG-1 — Reconcile and pin the V2 baseline
 
