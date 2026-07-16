@@ -483,6 +483,43 @@ or realistic documents (typos, inconsistent speaker names, interrupted dialogue,
 references) — that is where systems like this actually get tested. Synthetic data proves
 the capability exists; messy data proves it survives contact with reality.
 
+## 2026-07-16 (M14 — identity, the "fail" run) — role references break grounding, as designed.
+
+Added Board Meeting 14 (`data/demo/board_meeting_14_transcript.txt`): an incident review
+introducing Rajesh Kumar (VP Engineering) to collide with Raj Malhotra (CEO). Each Raj/
+Rajesh pair points at a *different* target (Raj OWNS Board Communication, Rajesh OWNS
+Migration; Raj APPROVED Customer Communication, Rajesh APPROVED Engineering Rollback), so a
+mis-link is a wrong answer. New `identity` stratum + one new metric row: **identity linking
+(alias → correct person)**. The grounding stage was left UNCHANGED on purpose, to measure
+the gap before fixing it (a deliberate fail-then-fix, for an attributable before/after).
+
+**Result — identity linking 50% (2/4), and every failure is a role reference:**
+- `R. Malhotra` → `Raj Malhotra` ✅, `R. Kumar` → `Rajesh Kumar` ✅ — lexical aliases resolve.
+- `the CEO` → **`Meridian Inc`** ❌ — did not abstain, MIS-LINKED to the company. A confident
+  wrong link, which is worse than a miss: this is the negative-identity-precision failure
+  made concrete.
+- `the CEO` (ID4) → grounded only the noun "Migration", never reached a person ❌.
+
+**Diagnosis (the measured gap).** The grounder is handed entity NAMES only. A role
+reference ("the CEO", "he") has no lexical overlap with "Raj Malhotra", so the planner
+cannot resolve it and either mis-links or drops it. Name-based grounding solves alias
+resolution but not *reference* resolution. Note the graph itself is blameless: identity
+`graph-fact recall` is 100% — the action-item questions (ID5–8) disambiguate Raj vs Rajesh
+perfectly via traversal, because they ground on the unambiguous action-item and the seeded
+edges are correct. The failure is localized precisely to person-reference linking.
+
+**Fix (next run):** pass each entity's role into the grounder's catalog, so "the CEO" can
+map to "Raj Malhotra (CEO)". Expect identity linking 50% → ~100%, GER to drop, and the
+"the CEO → Meridian Inc" mis-link to disappear. Overall this run: grounding 84% (16/19),
+GER 16%, precision 50% (N1 still), ablation 32% → 100%.
+
+**Recurring infra note:** four bge-m3 embedding calls returned NaN again (HTTP 500) despite
+the retry; graceful degradation held (graph-only, run completed). The retry catches
+transient NaNs but some inputs fail persistently — the mitigation is the degrade-to-graph
+path, not a cure. Candidate future fix: a different embedding backend or server-side patch.
+
+## 2026-07-16 (run 12, M13) — confirmed earlier.
+
 **Run 12 (M13 wired in) — confirmed.** `temporal` stratum 4/4, **graph-fact recall 100%**:
 the cross-document `SUPERSEDES` reasoning works — the answer to "is Model B still rejected?"
 requires an edge in a different document, and the graph delivers it. `multi_hop` moved from

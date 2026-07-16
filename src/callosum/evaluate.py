@@ -42,7 +42,7 @@ from callosum import store
 from callosum.ontology import EntityType, RelationType
 from callosum.retrieve import Answer, Principal, ask, graph_search, plan
 
-STRATUM_ORDER = ["lookup", "relational", "multi_hop", "temporal",
+STRATUM_ORDER = ["lookup", "relational", "multi_hop", "temporal", "identity",
                  "grounding_adv", "grounding_neg", "rbac"]
 
 
@@ -130,6 +130,40 @@ GOLD_M13_EDGES = [
      "Tom owns the Germany expansion workstream through Q2"),
 ]
 
+# --- Board Meeting 14 (sensitivity 1) — the identity / disambiguation case ----
+# An incident review where a NEW person (Rajesh Kumar, VP Engineering) collides with the
+# CEO (Raj Malhotra) under inconsistent surface forms — "Raj", "R. Malhotra", "the CEO"
+# vs "Rajesh", "R. Kumar". The graph here is easy; arriving at the correct node is the
+# test. Each Raj/Rajesh pair points at a DIFFERENT target, so a mis-link is a wrong answer.
+GOLD_M14_ENTITIES = [
+    ("Rajesh Kumar", EntityType.PERSON, {"role": "VP Engineering"}),
+    ("Board Meeting 14", EntityType.MEETING, {}),
+    ("Board Communication", EntityType.ACTION_ITEM, {"owner": "Raj Malhotra"}),
+    ("Migration", EntityType.ACTION_ITEM, {"owner": "Rajesh Kumar"}),
+    ("Customer Communication", EntityType.ACTION_ITEM, {}),
+    ("Engineering Rollback", EntityType.ACTION_ITEM, {}),
+    ("Enable Feature Flag For All Tenants", EntityType.DECISION, {"status": "approved"}),
+    ("Staged Rollouts", EntityType.TOPIC, {}),
+]
+GOLD_M14_EDGES = [
+    ("Raj Malhotra", RelationType.OWNS, "Board Communication",
+     "I own the board communication"),
+    ("Rajesh Kumar", RelationType.OWNS, "Migration",
+     "Rajesh owns the migration"),
+    ("Raj Malhotra", RelationType.APPROVED, "Customer Communication",
+     "Raj approved the customer communication"),
+    ("Rajesh Kumar", RelationType.APPROVED, "Engineering Rollback",
+     "Rajesh approved the engineering rollback"),
+    ("Raj Malhotra", RelationType.APPROVED, "Migration",
+     "the CEO approved the migration"),
+    ("Elena Duarte", RelationType.OPPOSED, "Enable Feature Flag For All Tenants",
+     "I opposed enabling it for every customer"),
+    ("Marcus Webb", RelationType.REQUESTED, "Staged Rollouts",
+     "this is exactly why I wanted staged rollouts"),
+    ("Enable Feature Flag For All Tenants", RelationType.MADE_IN, "Board Meeting 14",
+     "Board Meeting 14"),
+]
+
 # --- Compensation review (sensitivity 3) — founder/exec only ------------------
 # This edge exists solely to exercise the graph-side RBAC gate: its quote embeds a salary,
 # so if the path gate ever failed open, an investor asking about Priya would receive
@@ -148,6 +182,7 @@ GOLD_CONFIDENTIAL_EDGES = [
 GOLD_GROUPS = [
     ("board_meeting_12_transcript", GOLD_M12_ENTITIES, GOLD_M12_EDGES, False),
     ("board_meeting_13_transcript", GOLD_M13_ENTITIES, GOLD_M13_EDGES, False),
+    ("board_meeting_14_transcript", GOLD_M14_ENTITIES, GOLD_M14_EDGES, False),
     ("compensation_review_CONFIDENTIAL", GOLD_CONFIDENTIAL_ENTITIES, GOLD_CONFIDENTIAL_EDGES, True),
 ]
 
@@ -455,6 +490,24 @@ def grounding_traversal(results: list[QuestionResult]) -> dict | None:
     }
 
 
+def identity_linking(results: list[QuestionResult]) -> dict | None:
+    """Identity-linking accuracy over the `identity` stratum (one metric row).
+
+    Did an inconsistent surface form ("R. Malhotra", "the CEO") ground to the CORRECT
+    canonical person? Measured as grounding correctness restricted to identity questions.
+    A mis-link (grounding "R. Malhotra" to Rajesh Kumar) counts as wrong, so this is also
+    the negative-identity-precision check — the risk here is not failing to link, it is
+    linking to the wrong person. Failures on role/pronoun references ("the CEO") are the
+    expected gap: the grounder sees names, not roles, until we pass role context.
+    """
+    ids = [r for r in results if r.item.stratum == "identity"
+           and r.item.expect_entities and not r.error]
+    if not ids:
+        return None
+    correct = [r for r in ids if r.grounded]
+    return {"n": len(ids), "correct": len(correct), "accuracy": len(correct) / len(ids)}
+
+
 def write_csv(results: list[QuestionResult], path: Path, model: str) -> None:
     """Append this run to a permanent, diffable experiment log (one row per question).
 
@@ -525,6 +578,10 @@ def render_markdown(
             lines.append(f"| Grounding precision (abstains on negatives) | "
                          f"{gt['grounding_precision']*100:.0f}% "
                          f"({gt['n_neg'] - gt['false_positives']}/{gt['n_neg']}) |")
+        idl = identity_linking(results)
+        if idl is not None:
+            lines.append(f"| Identity linking (alias → correct person) | "
+                         f"{idl['accuracy']*100:.0f}% ({idl['correct']}/{idl['n']}) |")
         lines.append(f"| Traversal (given grounding) | {trav} |")
         lines.append("\nGrounding is scored for CORRECTNESS (right seed), not mere presence. "
                      "Traversal is measured only on questions that grounded, so it isolates "

@@ -1,0 +1,41 @@
+Meridian Inc — Board Meeting 14
+Date: 2026-11-20
+Attendees: Raj Malhotra (CEO, co-founder), Priya Nair (CFO), Marcus Webb (Sequoia, board), Elena Duarte (Accel, board), Tom Fischer (independent director), Rajesh Kumar (VP Engineering)
+
+---
+
+RAJ: Before we start the regular agenda, we need to talk about last week's outage. Rajesh, you were on the incident. Summarize it for the board.
+
+RAJESH: The Germany rollout itself wasn't the problem. The feature flag that gates usage-based billing was enabled for every tenant at once, not just the Germany cohort. That put write load on the metering service it wasn't provisioned for, and API latency went over ten seconds for about forty minutes before we caught it.
+
+PRIYA: How much revenue did we lose?
+
+RAJESH: About ninety thousand dollars in failed transactions, plus the credits we're issuing. Northwind was one of the affected accounts, which is the part that worries me most given the contract.
+
+MARCUS: Raj, this is exactly why I wanted staged rollouts. If the flag had gone to Germany first, the blast radius would have been one region.
+
+RAJ: Agreed, and that's on me — I pushed the timeline. He who owns the timeline owns the outage. Let's fix the process, not just the bug.
+
+ELENA: For the record on how we got here: the CEO approved the migration to the new billing service. I opposed enabling it for every customer in one step — I wanted a cohort at a time. That's in the September minutes.
+
+RAJ: That's fair, Elena, and you were right. Rajesh, walk us through the response.
+
+RAJESH: I recommended delaying the rollout the night before. It wasn't accepted, and we shipped on schedule. When latency spiked I called the rollback, and once metering recovered I signed off on resuming. Later I agreed with Raj that we do a staged re-enable, region by region.
+
+TOM: For the minutes — R. Malhotra signed off on the customer-facing statement after R. Kumar reported the rollback succeeded?
+
+RAJ: Yes. To be clear on ownership so nothing falls through: Rajesh owns the migration and the technical remediation. I own the board communication and the customer communication. Raj approved the customer communication going out; Rajesh approved the engineering rollback. Two different sign-offs, two different owners — I don't want them conflated in the record.
+
+PRIYA: Understood. Rajesh, I need updated cost estimates for the metering service before we re-enable — I'm not approving more spend blind.
+
+RAJESH: You'll have them Thursday.
+
+RAJ: Good. Staged re-enable, Germany cohort first, and Rajesh's remediation plan gates the next region. That's the decision.
+
+---
+
+RAJ: One more thing while we're here — Tom, the Germany expansion you own. Does the outage change the timeline?
+
+TOM: It slips two weeks, not more. The residency build wasn't affected by this. I'll keep owning it through Q2 as agreed.
+
+RAJ: Fine. That's the meeting.

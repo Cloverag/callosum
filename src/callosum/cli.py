@@ -418,6 +418,10 @@ def eval(
         if gt["grounding_precision"] is not None:
             stage.add_row("grounding precision (negatives)", f"{gt['grounding_precision']*100:.0f}% "
                           f"({gt['n_neg'] - gt['false_positives']}/{gt['n_neg']})")
+        idl = ev.identity_linking(results)
+        if idl is not None:
+            stage.add_row("identity linking (alias → person)",
+                          f"{idl['accuracy']*100:.0f}% ({idl['correct']}/{idl['n']})")
         stage.add_row("traversal (given grounding)", trav)
         console.print(stage)
 
