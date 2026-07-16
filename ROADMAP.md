@@ -1,80 +1,322 @@
-# Callosum — Roadmap & Checkpoints
+# Meridian / Callosum Roadmap and Completion Gates
 
-Where the project is, what is done, and what comes next. Legend:
-**✅ done · 🔄 in progress / next · ⬜ planned · 🔒 deliberately out of scope (for the thesis)**
+This is the single authoritative development roadmap. It replaces the former
+`path_to_completion.md`. `FEATURES.md` is a non-binding feature catalog; a feature is
+not committed or “done” unless this roadmap assigns it to a checkpoint and the checkpoint
+exit criteria are met.
 
-> ## 📍 You are here: **Checkpoint 7 — Temporal reasoning + ontology v2**
-> Tagged `eval-baseline-v2` (`master`). Two documents in the corpus (polarity + temporal),
-> reproducible stratified evaluation, canonical entity grounding. Next up: **Checkpoint 8 —
-> entity aliases (Board Meeting 14).**
+## Operating rule
+
+Work is strictly sequential. Start the next checkpoint only after the current one passes
+every exit criterion, its evidence is reviewed, and any exception is recorded with an
+owner and due checkpoint. A merged PR, prototype screen, or plausible demo is not enough.
+
+Every checkpoint produces a decision record, risk-appropriate tests (including negative
+security cases), updated docs/status, runnable verification commands, and a reviewed diff.
+No checkpoint may weaken evidence verification, human approval, RBAC, provenance, or audit
+requirements.
+
+## Current progress — 2026-07-16
+
+| Track | Completed | Active | Remaining |
+|---|---:|---|---:|
+| Research engine | **7 / 14** complete (`R0`–`R6`) | **IG-1** — blocked on local Ollama for a clean V2 run | 6 capabilities (`R8`–`R13`) after IG-1; `R7` is implemented but needs evidence repair |
+| Meridian product | **0 / 13** accepted | Not started; blocked by research handoff `R13` | **13** (`P0`–`P12`) |
+
+The counts must not be combined into one percentage: the research track validates the
+memory engine; the product track makes it a deployable board operating system. The CLI
+research foundation exists, but the product has no web application, workspace/meeting
+domain, production identity, integration layer, or pilot yet.
+
+### Integrity correction
+
+`R7` is represented by Meeting 13, ontology v2, temporal gold questions, and findings run
+12. The previous roadmap claimed a Git tag named `eval-baseline-v2`; this checkout contains
+only `eval-baseline-v1`. Do not treat the claimed V2 tag as evidence. The only task allowed
+to start now is **IG-1**; when it passes, begin `R8` and nothing else.
+
+**Latest gate audit (2026-07-16):** the fast suite passed under Python 3.12.10
+(`.venv\\Scripts\\pytest.exe -q`: 24 passed, 5 deselected). Fresh Postgres and Neo4j
+services started successfully, but `callosum doctor` and the first clean ingestion could
+not reach `http://localhost:11434`; no Ollama service was running. Consequently the clean
+evaluation was not run, no CSV row was appended, and no `eval-baseline-v2` tag was created.
+See the matching decision record in `docs/findings.md`.
 
 ---
 
-## Phase A — Research prototype (the thesis)
+# Track A — Verified institutional-memory research engine
 
-This is the current focus. Each checkpoint is a demonstrable capability backed by the
-evaluation, not a feature guess.
+## Completed research checkpoints
 
-| # | Checkpoint | State | Evidence |
+| ID | Capability | State | Evidence |
 |---|---|---|---|
-| CP0 | Architecture decided (hybrid graph+vector, the shared-chunk bridge) | ✅ | `docs/architecture.md` |
-| CP1 | Ingestion — load, hash-dedupe, chunk with char offsets, embed | ✅ | `src/callosum/ingest.py` |
-| CP2 | **Verified extraction** — no edge without a located verbatim quote; quarantine | ✅ | `extract.py`, findings run 1–4 |
-| CP3 | Hybrid storage — Postgres+pgvector + Neo4j joined on a shared chunk UUID | ✅ | `store.py` |
-| CP4 | Retrieval + **RBAC** — planner → graph‖vector → fail-closed permission gate | ✅ | `retrieve.py`, findings run 3 (leak found+fixed) |
-| CP5 | **Multi-hop traversal + canonical entity grounding** (NEL) | ✅ | findings run 5, 9 |
-| CP6 | **Reproducible stratified evaluation** — gold graph, ablation, GER, CSV log | ✅ | `evaluate.py`, tag `eval-baseline-v1` |
-| CP7 | **Temporal reasoning + ontology v2** (SUPERSEDES across documents, REQUESTED) | ✅ **← now** | tag `eval-baseline-v2`, findings run 12 |
-| CP8 | **Entity aliases** (Board Meeting 14) — "Raj" / "Rajesh" / "R. Malhotra" = one node | 🔄 next | stresses grounding recall + precision |
-| CP9 | Conflicting evidence & provenance (Board Meeting 15) — Finance 12M vs Sales 11.6M | ⬜ | |
-| CP10 | Context-dependent references (Board Meeting 16) — "that proposal", "the motion" | ⬜ | |
-| CP11 | Messy real-world documents — typos, interrupted dialogue, inconsistent names | ⬜ | the real test; after synthetic matrix is complete |
-| CP12 | Grounding abstention / candidate retrieval — fix precision, scale the vocabulary | ⬜ | triggered by measured GER/precision gaps |
-| CP13 | Thesis writeup — the V1→V2→V3 narrative + the evaluation chapter | ⬜ | `docs/findings.md` is the raw material |
+| R0 | Hybrid graph + vector architecture joined by shared chunk UUID. | ✅ Complete | `docs/architecture.md`, schema, `store.py` |
+| R1 | Loading, hash-dedupe, offset-preserving chunking, embeddings. | ✅ Complete | `ingest.py`, deterministic offset tests |
+| R2 | Verified extraction: every edge needs a located quote; invalid edges are quarantined. | ✅ Complete | `extract.py`, tests, findings runs 1–4 |
+| R3 | Postgres/pgvector and Neo4j storage connected by shared UUID. | ✅ Complete | schema, `store.py` |
+| R4 | Hybrid retrieval with pre-query, fail-closed RBAC. | ✅ Complete | `retrieve.py`, confidential test case, findings run 3 |
+| R5 | Multi-hop traversal and canonical entity grounding. | ✅ Complete | retrieval/evaluator grounding-traversal split |
+| R6 | Stratified reproducible evaluation: gold graph, ablation, GER, precision, CSV log. | ✅ Complete | `evaluate.py`, gold set, `eval-baseline-v1` |
+| R7 | Temporal reasoning: `SUPERSEDES` across documents and ontology-v2 `REQUESTED`. | 🟡 Implemented; evidence metadata repair pending | Meeting 13, temporal gold cases, findings run 12 |
 
-**The capability matrix** (why each document exists — one capability per document):
+## IG-1 — Reconcile and pin the V2 baseline
 
-| Doc | Capability under test |
-|---|---|
-| Meeting 12 | Polarity (SUPPORTED / OPPOSED / APPROVED) |
-| Meeting 13 | Temporal reasoning & decision evolution (SUPERSEDES) |
-| Meeting 14 | Entity grounding under aliases |
-| Meeting 15 | Conflicting evidence & provenance |
-| Meeting 16 | Context-dependent references |
+**Goal:** Make R7 reproducible before changing the research core again.
+
+**Work:**
+
+- Run the documented evaluation under Python 3.12 with Meetings 12/13 and confidential
+  corpus, using a clean local database.
+- Record commit SHA, provider/model, prompt, ontology, corpus, temporal results,
+  grounding metrics, and RBAC results; append the experiment CSV.
+- Compare the result to run-12 claims. Create annotated `eval-baseline-v2` only if it
+  truthfully represents the reproducible run; otherwise correct the historical claim.
+
+**Exit checklist:**
+
+- [ ] Fast deterministic tests pass in the supported Python 3.12 environment.
+- [ ] A clean environment reproduces the seeded evaluation from documented commands.
+- [ ] Temporal and RBAC cases run and their results are recorded.
+- [ ] The V2 tag exists with truthful evidence, or the prior tag claim is corrected.
+
+## R8 — Entity aliases and resolution policy
+
+**Goal:** Measure and safely handle one entity appearing as “Raj”, “Rajesh”, and
+“R. Malhotra” without silently merging different people.
+
+**Work:** add Board Meeting 14; add alias, same-name, and abstention gold cases; define a
+reviewed alias/merge policy; compare exact matching, reviewed aliases, and planner
+grounding.
+
+**Exit checklist:**
+
+- [ ] True aliases and false merges are distinguishable in corpus and gold set.
+- [ ] Alias links retain evidence and human-review provenance.
+- [ ] Precision, recall, GER, and false positives are measured against IG-1.
+- [ ] Existing graph facts retain source attribution and meaning.
+
+## R9 — Conflicting evidence and provenance
+
+**Goal:** Preserve conflicts instead of inventing a single answer.
+
+**Work:** add Meeting 15 and supporting sources with materially conflicting facts; add
+gold cases requiring both claims, source/date context, and explicit uncertainty.
+
+**Exit checklist:**
+
+- [ ] Both claims remain independently sourced and permission-filtered.
+- [ ] Answers present the conflict rather than selecting an unsupported winner.
+- [ ] Conflict recall and unsupported-resolution failures are reported.
+
+## R10 — Context-dependent references and coreference limits
+
+**Goal:** Safely resolve or abstain on references such as “that proposal” and “the prior
+motion.”
+
+**Work:** add Meeting 16 with references, distractors, and ambiguity; isolate whether
+chunk context, graph context, or a reviewed coreference stage fixes a measured gap.
+
+**Exit checklist:**
+
+- [ ] Ambiguous references become unknown/needs-review, never fabricated links.
+- [ ] Correct links retain original source spans.
+- [ ] Evaluation separates coreference, grounding, and traversal failures.
+
+## R11 — Messy-document benchmark
+
+**Goal:** Test the engine beyond clean synthetic transcripts.
+
+**Work:** add realistic typos, interrupted dialogue, inconsistent names, long sections,
+emails, tables, PDF/DOCX fixtures, and confidentiality cases; build a hand-reviewed
+benchmark by document type.
+
+**Exit checklist:**
+
+- [ ] All supported formats have an ingestion fixture and relevant security test.
+- [ ] Results are reported by document type and failure reason, not aggregate only.
+- [ ] Regressions and unsupported conditions are visible and documented.
+
+## R12 — Grounding abstention and scalable candidates
+
+**Goal:** Make entity linking precise at larger graph sizes.
+
+**Work:** use R8–R11 findings to implement candidate retrieval and a “none of these”
+policy; measure candidate recall, grounding accuracy, false positives, latency, and
+downstream traversal effects.
+
+**Exit checklist:**
+
+- [ ] No-referent cases are first-class and do not force links.
+- [ ] Candidate selection does not bypass permissions or leak private entity names.
+- [ ] The precision/recall change is measured and approved against baseline.
+
+## R13 — Research handoff and frozen baseline
+
+**Goal:** Close the research phase with a reproducible contract for product work.
+
+**Work:** consolidate findings/capability matrix/baselines/limits; freeze the evaluated
+core at a named version; publish an implementation-status matrix separating research-ready
+from production-ready behavior.
+
+**Exit checklist:**
+
+- [ ] Every completed capability has reproducible commands, source corpus, evidence, and
+  limitations.
+- [ ] Freeze boundary and exception process are approved.
+- [ ] `AGENTS.md`, `PRD.md`, `CONTRIBUTING.md`, findings, and roadmap agree.
+- [ ] Product checkpoint P0 is formally authorized.
 
 ---
 
-## Phase B — Product prototype (frontend + real usage)
+# Track B — Meridian Board Operating System
 
-Turns the engine into something a founder actually touches. Best fit for a product/PM
-collaborator — see `CONTRIBUTING.md`.
+This track begins only after R13. It turns Callosum’s verified memory engine into the
+founder-facing board workflow specified in `PRD.md`.
 
-| # | Milestone | State |
-|---|---|---|
-| CP14 | Founder **chat UI** — question → grounded answer + citations + "withheld" notice | ⬜ |
-| CP15 | **Approval-queue UI** — the human-in-the-loop review screen | ⬜ |
-| CP16 | **Graph explorer** — navigate the knowledge graph visually | ⬜ |
-| CP17 | Thin **API layer** (FastAPI) over the retrieval + approval functions | ⬜ |
+## P0 — Product contract and delivery controls
 
----
+**Goal:** Make the PRD executable.
 
-## Phase C — Fully-fledged application
+**Work:** assign product, engineering, security, and pilot owners; create requirements
+traceability; set decision-log/change-control rules; lock pilot segment and V1 scope.
 
-The long horizon: from a research prototype to a deployable product. The concrete feature
-list lives in **[FEATURES.md](FEATURES.md)**. Headline pillars:
+**Exit:** every V1 requirement has owner, priority, dependency, and testable evidence;
+human-control/evidence/RBAC invariants are signed off; no static prototype is called built.
 
-- **Connectors** — ingest from Slack, Gmail, Zoom/Meet, Drive, Notion, Confluence
-- **Real-time ingestion** — new documents flow in continuously, not batch
-- **Entity resolution & temporal validity** — aliases, coreference, valid-from/valid-to
-- **Multi-tenancy, SSO, compliance** — teams, roles, audit, encryption, GDPR
-- **Cloud deployment & scale** — managed stores, horizontal scaling, observability
+## P1 — Production security, tenancy, and governance design
 
----
+**Goal:** Define access, retention, and processing rules before real board data enters a
+web application.
 
-## How to read progress
+**Work:** specify tenancy, identity, role/object policy, invitation lifecycle, audit,
+retention/deletion, consent, encryption, secrets, backups, incident response, processors,
+and residency; evolve clearance-only retrieval to reviewed object-level policy.
 
-- The **evaluation is the source of truth.** A checkpoint is "done" when the eval
-  demonstrates it, not when the code merges. See `docs/findings.md` and the git tags.
-- **Frozen vs open** boundary lives in `CONTRIBUTING.md`. The core pipeline is frozen;
-  data, questions, frontend, and analyses keep growing.
-- Every ontology change is versioned and logged in `docs/ontology-changelog.md`.
+**Exit:** security approves threat/data-flow models and role matrix; unauthorized content is
+blocked in SQL, Cypher, quotes, chunks, logs, APIs, and UI; transcript policy is approved.
+
+## P2 — Durable product domain and migrations
+
+**Goal:** Model the board workflow absent from Callosum.
+
+**Work:** migrate workspace, member, board, meeting, agenda/pack/minutes versions,
+decision, resolution, commitment, notification, and audit objects; define lifecycle states,
+publication/version semantics, ownership, and retries.
+
+**Exit:** migration/recovery plan is tested; invalid transitions and cross-workspace access
+are rejected; superseded/published records preserve immutable history.
+
+## P3 — Authenticated API and accessible application shell
+
+**Goal:** Provide a secure founder-facing interface over approved core functions.
+
+**Work:** select/document stack; build sign-in, workspace selection, role-aware navigation,
+dashboard, directory, withheld/error/loading states, secure API contracts, rate limits, and
+observability.
+
+**Exit:** users access only authorized workspaces; UI distinguishes draft/approved/withheld/
+failed states; primary flows pass keyboard and accessibility smoke checks.
+
+## P4 — Board workspace, members, and source intake
+
+**Goal:** Establish a single source of truth for board participants and material.
+
+**Work:** implement members, document intake/import, metadata/sensitivity, versions and
+duplicates, processing/quarantine state, and workspace/meeting assignment.
+
+**Exit:** membership is authorized/audited; document lifecycle is visible; restricted titles,
+text, quotes, graph facts, and hints cannot leak.
+
+## P5 — Meeting, agenda, and board-pack lifecycle
+
+**Goal:** Enable a founder to prepare and publish a permissioned pre-read.
+
+**Work:** build meeting lifecycle, attendance/objectives, agenda editing/timeboxes,
+evidence-backed agenda draft, pack assembly/review/version/publish, and explicitly
+confirmed calendar/email adapters.
+
+**Exit:** a meeting reaches a versioned published pack; review identifies missing/stale
+material and unresolved commitments; publishes and sends are auditable confirmations.
+
+## P6 — Live meeting context and controlled capture
+
+**Goal:** Make meetings strategic without treating AI output as truth.
+
+**Work:** build live agenda/pack, cited Q&A, consent-governed transcript/notes intake,
+candidate decisions/actions/positions, corrections, and review queues.
+
+**Exit:** answers are cited and permission-filtered; every candidate is editable/reviewable;
+confidential multi-hop graph content has regression coverage; no candidate auto-commits.
+
+## P7 — Decisions, minutes, and memory review
+
+**Goal:** Make every completed meeting a trustworthy institutional record.
+
+**Work:** deliver decision review/detail, citations, positions, supersession, draft/final
+minutes versioning, proposal/quarantine review, timeline, filters, and source drill-down.
+
+**Exit:** a founder can reconstruct decision/rationale/stakeholders/evidence/reversal;
+published minutes/decisions are immutable versions; research quality and RBAC do not regress.
+
+## P8 — Resolution policy and decision-to-execution bridge
+
+**Goal:** Convert approved decisions into accountable work while respecting legal scope.
+
+**Work:** finalize voting/e-signature policy; create commitments with owners/deadlines/
+statuses; add confirmed task/notification adapters with retries/reconciliation; report work
+in the next meeting.
+
+**Exit:** execution-required decisions have commitments or a recorded exception; external
+delivery is confirmed/idempotent/observable; informal actions, commitments, and resolutions
+remain distinct.
+
+## P9 — Product quality gates and operations
+
+**Goal:** Establish production-scale test and operating discipline.
+
+**Work:** make research benchmark regression gates; add model/prompt/ontology review,
+metrics/tracing, latency/error monitoring, integration-failure tests, accessibility audit,
+and load baselines.
+
+**Exit:** claims have reproducible evidence; model changes require reviewed comparisons;
+operations detect provider, access, latency, and delivery failures.
+
+## P10 — Cross-module context and strategic intelligence
+
+**Goal:** Use authorized operating data without ungoverned automation.
+
+**Work:** add finance/CRM/HR/product read adapters with source precedence and timestamps;
+provide cited KPI summaries, recommendations, risk/staleness/contradiction signals, aliases,
+and abstention.
+
+**Exit:** every result names source/time/scope/authorization; recommendations are measured,
+reviewable, and abstain safely; none causes external/permanent action without confirmation.
+
+## P11 — Production readiness
+
+**Goal:** Prove safe operation for confidential board workflows.
+
+**Work:** complete deployment, isolation, alerts, backup/restore, DR, support, incidents,
+security/privacy review, penetration tests, accessibility, load tests, and outage exercises.
+
+**Exit:** readiness review approves requirements; restore/incident drills succeed; supported
+integrations and legal/jurisdiction limits are published truthfully.
+
+## P12 — Controlled pilot and launch decision
+
+**Goal:** Validate Meridian in real founder workflows before broad release.
+
+**Work:** onboard a defined pilot, record preparation-time baseline, train users, collect
+consent, support three board cycles, capture feedback/trust incidents, and review outcomes.
+
+**Exit:** pilot cycles are completed; PRD measures are recorded (preparation and retrieval
+time, record completeness, execution continuity, adoption); launch has documented go/no-go,
+known limits, and post-launch owners.
+
+## Definition of initial product completion
+
+Meridian reaches initial production scope when an authorized founder can prepare a meeting,
+publish a permissioned pack, use cited history during discussion, review source-backed
+decisions/minutes, create and track reviewed commitments, retrieve history later, and prove
+that no caller can access material outside their authorization. The workflow must be
+versioned, auditable, observable, accessible, reproducible, and validated in the pilot.
