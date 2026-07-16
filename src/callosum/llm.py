@@ -59,8 +59,15 @@ def _inline_refs(schema: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def structured(system: str, user: str, output: type[T]) -> T:
-    """Get schema-validated structured output. The workhorse of extraction."""
+def structured(
+    system: str, user: str, output: type[T], temperature: float | None = None
+) -> T:
+    """Get schema-validated structured output. The workhorse of extraction.
+
+    `temperature=0` pins the planner during the eval so the same question extracts the
+    same entities and search_query every run — otherwise graph-fact recall and vector
+    retrieval would drift run to run and the "reproducible" eval would not be.
+    """
     cfg = settings()
 
     if cfg.provider == Provider.ANTHROPIC:
@@ -93,6 +100,10 @@ def structured(system: str, user: str, output: type[T]) -> T:
         f"validate against this JSON Schema:\n{json.dumps(schema)}"
     )
 
+    options: dict[str, Any] = {"num_ctx": 16384}
+    if temperature is not None:
+        options["temperature"] = temperature
+
     def _call(messages: list[dict[str, str]]) -> str:
         response = httpx.post(
             f"{cfg.ollama_host}/api/chat",
@@ -102,7 +113,7 @@ def structured(system: str, user: str, output: type[T]) -> T:
                 "messages": messages,
                 "stream": False,
                 "format": schema,
-                "options": {"num_ctx": 16384},
+                "options": options,
             },
         )
         _raise_for_ollama(response)
@@ -187,8 +198,16 @@ def _parse_structured(content: str, output: type[T]) -> T:
     )
 
 
-def text(system: str, user: str, effort: str = "high", max_tokens: int = 4000) -> str:
-    """Free-form generation — the answer-synthesis path."""
+def text(
+    system: str, user: str, effort: str = "high", max_tokens: int = 4000,
+    temperature: float | None = None,
+) -> str:
+    """Free-form generation — the answer-synthesis path.
+
+    `temperature=0` makes synthesis as deterministic as the model allows — used by the
+    eval so the answer text stops flickering run to run and the comparison measures the
+    context, not sampling noise.
+    """
     cfg = settings()
 
     if cfg.provider == Provider.ANTHROPIC:
@@ -204,6 +223,10 @@ def text(system: str, user: str, effort: str = "high", max_tokens: int = 4000) -
         )
         return next((b.text for b in response.content if b.type == "text"), "")
 
+    options: dict[str, Any] = {"num_ctx": 16384, "num_predict": max_tokens}
+    if temperature is not None:
+        options["temperature"] = temperature
+
     response = httpx.post(
         f"{cfg.ollama_host}/api/chat",
         timeout=OLLAMA_TIMEOUT,
@@ -214,7 +237,7 @@ def text(system: str, user: str, effort: str = "high", max_tokens: int = 4000) -
                 {"role": "user", "content": user},
             ],
             "stream": False,
-            "options": {"num_ctx": 16384, "num_predict": max_tokens},
+            "options": options,
         },
     )
     _raise_for_ollama(response)
@@ -258,11 +281,20 @@ def embed(texts: list[str], input_type: str = "document") -> list[list[float]]:
         # bge-m3 runs locally and is free. Batch modestly — a long transcript chunk
         # is a lot of tokens and the local model has no server-side batching.
         for i in range(0, len(texts), 16):
-            response = httpx.post(
-                f"{cfg.ollama_host}/api/embed",
-                timeout=OLLAMA_TIMEOUT,
-                json={"model": cfg.ollama_embedding_model, "input": texts[i : i + 16]},
-            )
+            batch = texts[i : i + 16]
+            # bge-m3 occasionally computes a NaN embedding and then fails to JSON-encode
+            # its own response (HTTP 500, "unsupported value: NaN") — a server-side fault
+            # we cannot sanitise client-side. It is often transient (a GPU hiccup), so
+            # retry a 500 a couple of times before giving up. Other errors (404 missing
+            # model, 401 auth) are not transient — surface them immediately.
+            for attempt in range(3):
+                response = httpx.post(
+                    f"{cfg.ollama_host}/api/embed",
+                    timeout=OLLAMA_TIMEOUT,
+                    json={"model": cfg.ollama_embedding_model, "input": batch},
+                )
+                if response.status_code == 200 or response.status_code != 500 or attempt == 2:
+                    break
             _raise_for_ollama(response)
             vectors.extend(response.json()["embeddings"])
 

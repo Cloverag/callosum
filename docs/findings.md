@@ -218,3 +218,224 @@ refusal on salary. Fail-closed does not depend on which edges extraction happene
 **Next:** a deterministic eval-graph seed (`seed-eval`) — the gold entities + edges +
 chunk sensitivities written straight to the stores, bypassing the LLM — so `callosum
 eval` measures retrieval on a stable graph. Extraction keeps its own separate scorecard.
+
+## 2026-07-15 (run 7) — first reproducible eval, and it says HYBRID LOSES. Read on.
+
+The gold-graph seed works: `scripts/eval.sh` is deterministic now. The first honest,
+reproducible Phase 7 table — and it is the opposite of the hoped-for direction. This is
+the eval doing its job.
+
+| Stratum | n | Vector-only | Hybrid | Graph-fact recall |
+|---|---|---|---|---|
+| lookup | 3 | 3/3 | 2/3 | — |
+| relational | 3 | 3/3 | 3/3 | 100% |
+| multi_hop | 2 | 1/2 | 0/2 | 0% |
+| rbac | 2 | 2/2 | 1/2 | — |
+
+Hybrid lost L3, M2, X2 (vector ✓, hybrid ✗) and tied everywhere else. Three causes,
+diagnosed from the per-question breakdown, in order of importance.
+
+**(1) A comparison/correctness bug — hybrid was starved of passages.** The ablation
+always runs vector search; hybrid respected the planner's `needs_vector`. When the
+planner over-trusted the graph and set `needs_vector=False`, hybrid retrieved *less*
+than vector-only and lost L3/M2/X2. A hybrid system must retrieve a SUPERSET of its
+vector-only ablation — the graph may only add context, never remove it. FIX (this run):
+vector search always runs; `needs_vector` is now advisory-only, not a gate. Re-run
+expected to flip L3, M2, X2 to hybrid ✓. Lesson: the planner's cost optimisation was a
+correctness bug, and only the ablation exposed it.
+
+**(2) Entity resolution blocks multi-hop — 0% graph recall despite a correct graph.**
+The `multi_hop` questions say "usage-based pricing"; the seeded node is "Pricing Model
+B". `graph_search` matches `WHERE seed.name IN $names` (exact), so it seeds on nothing
+and the traversal never fires. `relational` scored 100% recall only because those
+questions name "Pricing Model B" verbatim. This is the exact-string entity-resolution
+limitation, now justified by a measured failure rather than asserted. The multi-hop
+TRAVERSAL is proven (relational reached the 2-hop-away POSITION edges at 100%); what is
+missing is linking the question's vocabulary to the node's name.
+
+**(3) The corpus ceiling — the graph ties instead of winning.** Where the graph DID
+fire (relational, 100% recall), hybrid still only tied vector-only. On a single fully
+readable transcript the relational facts are also present in the retrievable text, so
+vector needs no graph to answer. The graph's join advantage cannot appear until the
+answer is NOT co-located in one chunk — i.e. until the corpus forces a cross-document
+join. This is the strongest argument yet for corpus expansion, and it is an empirical
+result, not a hunch.
+
+**No RBAC leak.** X1 (Marcus) passed under both conditions — the confidential "$185K"
+edge never reached the investor, through graph or vector. The rbac 1/2 is X2: Raj not
+getting his OWN authorised answer under hybrid, caused by (1), the starvation bug. That
+is an availability failure, not a confidentiality breach; fixing (1) resolves it. The
+seeded confidential graph edge means the gate was genuinely exercised this run, not
+merely the vector filter.
+
+**Where this leaves the thesis.** The eval is now a real instrument: reproducible, and
+already producing three actionable, mechanistic findings on its first honest run. The
+narrative is not "hybrid wins" (yet) — it is "here is precisely what a hybrid system
+must get right for the graph to pay off: never starve vector, resolve entities, and feed
+it a corpus where answers span documents." That is a more credible thesis than a graph
+that wins by construction. Next: re-run with fix (1); then entity resolution (2); then
+corpus expansion (3).
+
+## 2026-07-16 (run 8) — the answer-text metric can't be made deterministic on a cloud model. Measure retrieval.
+
+Two harness-fairness fixes went in: (1) both arms now share ONE plan computed at
+temperature 0, so the ablation isolates the graph rather than re-running a stochastic
+planner per arm; (2) synthesis pinned to temperature 0. The result taught us the limit
+of answer-text scoring.
+
+**The hosted model is nondeterministic under identical input — so answer text can't be
+the metric.** Careful claim (per review — we can demonstrate nondeterminism, not that the
+model literally "ignores temperature"; a hosted endpoint may be nondeterministic for
+routing/batching/backend reasons too): L3 ("how many months of runway?") has NO matching
+graph entity, so `graph_search` returns nothing — hybrid and vector-only send
+*byte-identical* context to the synthesiser, with a shared temperature-0 plan. They still
+produced different answers across runs (run 8: vector ✓/hybrid ✗; the very next run:
+vector ✗/hybrid ✓ — the failure flipped arms). With identical prompt and context, the
+only remaining variable is the hosted model's own sampling. **Thesis phrasing:** "under
+repeated runs with identical prompts and retrieved context, the hosted model produced
+nondeterministic outputs despite deterministic retrieval; therefore answer text was not
+used as the primary metric — graph-fact recall was, because it is deterministic." Added a
+`graph facts` column so this is visible: a row with 0 graph facts and hybrid≠vector is
+serving nondeterminism, read it as a tie, not the graph helping or hurting.
+
+**The reproducible metric is graph-fact recall.** It depends only on the (now temp-0,
+shared) plan's entities and the seeded graph — no synthesis. It is the number to put in
+the thesis: **relational 100%, multi_hop 0%.** That single contrast is the whole current
+result — the graph reliably delivers the required edge when the question's words match a
+node (relational), and never when they don't (multi_hop: "usage-based pricing" vs the
+"Pricing Model B" node). Everything else on this corpus is saturated (all answerable from
+text) and noisy.
+
+**bge-m3 NaN embedding is a server-side flake (handled).** M1 hit the same "unsupported
+value: NaN" 500 — bge-m3 computes a NaN vector and fails to encode its own response, so
+it cannot be sanitised client-side. Added: retry a 500 up to 3× (it is often transient),
+and if it persists, `vector_search` degrades to graph-only with a stderr warning instead
+of aborting the query. The harness already isolated the failure to one question; now that
+question gets scored (graph-only) instead of dropping out of its stratum.
+
+**Net:** the eval is as reproducible as this model allows — deterministic at the
+retrieval layer, honestly noisy at the synthesis layer, and the report now labels which
+is which. Headline stands: **multi_hop graph-fact recall is 0% purely because of
+exact-string entity resolution.** That is the next build, and it is the one that moves
+the one metric that matters.
+
+## 2026-07-16 (run 9) — canonical entity grounding. Multi-hop recovers; the bottleneck was linking, not traversal.
+
+Added planner-assisted canonical entity grounding (Named Entity Linking): the planner is
+given the graph's vocabulary and maps the question's wording ("usage-based pricing") onto
+the node name it stores ("Pricing Model B"). `graph_search` is unchanged — grounding
+happens upstream. Deterministic: no embeddings, no thresholds, no hand-maintained aliases.
+
+**Result (first grounded run).** multi_hop graph-fact recall 0% → 100%; entity grounding
+100% (5/5), traversal 100%. Then adversarial questions were added — paraphrases sharing
+NO tokens with the node name ("consumption-pricing model", "pay-per-use proposal",
+"metered-billing plan", "commercial pricing plan") — to test whether the linker
+generalises or just handled one obvious synonym. Second run, with adversarials:
+**grounding 89% (8/9), GER 11%, traversal (given grounding) 100%.** The single miss was a
+*standard* multi_hop question, while the *harder* adversarial paraphrases grounded — which
+points at the cause: the planner is an LLM on a nondeterministic hosted endpoint (run 8),
+so grounding inherits that nondeterminism and GER has a noise floor on this model, rather
+than a systematic linking gap. Worth stating plainly in the thesis.
+
+**Claim, phrased to match the evidence** (per review — do not overclaim "the engine is
+always correct"): *within the evaluation corpus, graph traversal behaved correctly once
+entities were grounded to canonical nodes; the remaining retrieval failures were
+attributable to entity grounding rather than to graph traversal.* The two-stage split
+(grounding vs traversal) is what licenses even that narrower claim.
+
+**Instrumentation added this run (measurement, not architecture):**
+- **Grounding correctness**, not mere presence — a wrong-but-in-vocab seed fails, so a
+  grounding error is distinguishable from a traversal bug.
+- **GER** (grounding error rate) as the primary linker metric; confidence deliberately
+  NOT used — a model's self-reported confidence is not observed correctness (GER is).
+- **Grounding precision** via `grounding_neg` questions with no referent ("dynamic
+  pricing engine", "customer churn dashboard"): a good linker must ABSTAIN; grounding one
+  anyway is a false positive.
+- **The ablation** (reviewer's "one experiment"): identical graph engine, grounding on vs
+  off. "Exact match only" vs "planner grounding" recall — the delta is the measured
+  contribution of the grounding stage, not an assertion. (Numbers populate on the next run.)
+- **A CSV experiment log** (`eval/results.csv`), one row per question per run, so runs
+  7→8→9→… are diffable without re-reading prose.
+
+**Scaling caveat (state it in the thesis so no examiner raises it):** for the evaluation
+corpus the full entity vocabulary was small enough to pass to the planner directly. At
+larger scales a lightweight candidate-retrieval stage would first reduce the search space
+(substring/token index over node names) before the LLM chooses among candidates.
+
+---
+
+## The research narrative (this is the thesis spine, not a feature list)
+
+1. **V1 — GraphRAG with LLM extraction.** Standard hybrid graph+vector.
+2. **Observation:** hallucinated evidence and nondeterministic synthesis made evaluation
+   unreliable — you could not tell a real edge from an invented one, or reproduce a score.
+3. **V2 — verified evidence spans + provenance + quarantine + deterministic graph-fact
+   evaluation.** No edge without a located verbatim quote; the extraction process becomes
+   the dataset; the eval is measured at the retrieval layer, not on noisy answer text.
+4. **Observation:** multi-hop failures were caused by entity GROUNDING, not by graph
+   traversal — proven by the two-stage split (traversal 100% given grounding).
+5. **V3 — planner-assisted canonical entity grounding.** Restores deterministic multi-hop
+   retrieval without heuristic thresholds or embedding matching.
+
+Each step is driven by an observed, measured failure — not architectural intuition. That
+progression is the contribution.
+
+## Freeze boundary (write this down and hold it)
+
+**FROZEN — no more production code without a measured shortcoming against the baseline:**
+extraction · evidence verifier · quarantine · planner · canonical grounding · traversal ·
+RBAC gate · human approval.
+
+**NOT frozen — these must keep growing:** datasets (more meetings, more document types) ·
+questions · analyses · the error taxonomy. The biggest current risk is single-corpus
+overfitting: everything so far rides on one board transcript. The next and most valuable
+artifact is NOT a feature — it is an evaluation dataset spanning multiple meetings and
+document types. Every future feature (auto-aliases, temporal edges, contradiction
+detection) must be justified by a measured gap against this frozen baseline.
+
+**Deferred, each with its trigger:** Level 2 auto-aliases from `ABOUT` edges (trigger: GER
+stays > 0 after de-noising the planner) · Level 3 embedding NEL (trigger: aliases
+insufficient) · candidate retrieval for grounding (trigger: graph too large to pass whole
+vocab).
+
+## 2026-07-16 (run 10) — instrumented run confirms the ablation, and finds the linker's real weakness: precision.
+
+Full instrumented run (ablation + negatives + CSV; `eval/results.csv`). This is the run
+that both confirms the grounding win AND exposes the next real limitation.
+
+**Grounding recall 100% (9/9), GER 0%.** The run-9 single miss (11%) did not recur — it
+was hosted-model nondeterminism, as suspected. Traversal 100% given grounding.
+
+**The ablation (reviewer's experiment), now with numbers.** Same graph engine, grounding
+on vs off, read from `recall_ungrounded` vs `recall_grounded`:
+
+| Configuration | Graph-fact recall (paraphrased questions) | (all graph questions) |
+|---|---|---|
+| Exact match only (no grounding) | **0%** | 33% |
+| Planner grounding | **100%** | 100% |
+
+The clean "0% → 100%" lives in the paraphrased strata (`multi_hop` + `grounding_adv`, 6
+questions). Over all 9 graph questions the ungrounded baseline is 33%, because the 3
+`relational` questions name the entity verbatim ("reject Pricing Model B") and so match
+even without grounding. That is the honest shape: **grounding contributes exactly where
+the mention is not a verbatim node name, and nothing where it already is.** The per-
+question CSV shows it cleanly — relational 1.00/1.00, every paraphrase 1.00/0.00.
+
+**THE new finding — grounding PRECISION is the weak point, not recall.** N1 ("Why was the
+*dynamic pricing engine* rejected?") is a FALSE POSITIVE: the planner grounded it to
+"Pricing Model B" instead of abstaining. Precision = 50% (1/2); N2 ("customer churn
+dashboard") correctly abstained. The linker over-grounds: on a corpus with exactly one
+pricing entity, any pricing-adjacent phrase gets pulled onto it. This is the reviewer's
+predicted failure, now measured — and it reframes the roadmap. Recall was the run-8/9
+story and it is solved; **precision is the run-10 story and it is open.** A good NEL stage
+must know when NOT to link. Evidence now justifies an abstention mechanism (a "none of
+these" option in the grounding prompt, or candidate-retrieval where "dynamic pricing
+engine" surfaces no close candidate). Do not build it yet — but it is the first thing the
+larger corpus will stress, because more entities means more chances to mis-link.
+
+**Caveat that strengthens with corpus size.** On one document, both the false positive
+(only one pricing node to grab) and the high recall (only one plausible target) are
+partly artefacts of scale. The precision problem will get HARDER and the recall problem
+EASIER as documents are added. That is the single strongest reason the next work is
+corpus expansion, not code: it is the only way to measure whether grounding holds when
+there is genuinely more than one thing a mention could link to.

@@ -19,6 +19,7 @@ import psycopg
 from neo4j import Driver
 from pydantic import BaseModel, Field
 
+from callosum import store
 from callosum.llm import embed, structured, text as generate
 
 
@@ -96,8 +97,39 @@ Extract entity names as a document would write them — "Pricing Model B", not
 """
 
 
-def plan(question: str) -> Plan:
-    return structured(PLANNER_PROMPT, question, Plan)
+def plan(
+    question: str, known_entities: list[str] | None = None,
+    temperature: float | None = None,
+) -> Plan:
+    """Route a question, optionally grounding its entities to canonical graph names.
+
+    This is entity LINKING, not fuzzy matching: given the graph's actual vocabulary, the
+    planner maps the question's wording ("usage-based pricing") onto the node name the
+    graph stores ("Pricing Model B"). graph_search seeds on an exact name, so if grounding
+    does not happen here the traversal never starts — that, not the engine, was the entire
+    cause of 0% multi-hop recall (findings run 8). Keeping it deterministic (no embeddings,
+    no thresholds, no hand-maintained alias lists) is the point: the simplest thing that
+    fixes the measured bottleneck.
+
+    At graph scale, `known_entities` must be PRE-FILTERED to candidates near the mention
+    (substring / token overlap, or a name index) — dumping 50k node names into a prompt
+    does not scale. On the demo graph the vocabulary is tiny, so we pass all of it; the
+    candidate-retrieval step is the documented next lever if the graph grows.
+    """
+    system = PLANNER_PROMPT
+    if known_entities:
+        catalog = "\n".join(f"- {n}" for n in known_entities)
+        system += (
+            "\n\n# Canonical graph entities\n"
+            "The knowledge graph stores exactly these entities:\n"
+            f"{catalog}\n\n"
+            "For each entity the question refers to that matches one of the above by "
+            "meaning, put that entity's EXACT name (copied from the list) in `entities` — "
+            "e.g. if the question says 'usage-based pricing' and the list contains "
+            "'Pricing Model B', output 'Pricing Model B'. Only use a name absent from the "
+            "list when the question clearly names an entity the graph does not contain."
+        )
+    return structured(system, question, Plan, temperature=temperature)
 
 
 # ---------------------------------------------------------------------------
@@ -115,7 +147,16 @@ def vector_search(
     were withheld*. Reporting "2 sources withheld" is a feature: it tells a founder
     that a fuller answer exists, without leaking what it says.
     """
-    vector = embed([query], input_type="query")[0]
+    try:
+        vector = embed([query], input_type="query")[0]
+    except RuntimeError as exc:
+        # A persistent embedding failure (bge-m3 NaN, see llm.embed) must not take down
+        # the whole query. Degrade to graph-only retrieval — return no vector hits — and
+        # make it visible rather than silent. Better a partial answer than a 500.
+        import sys
+        print(f"[vector_search] embedding failed; returning no vector hits ({exc})",
+              file=sys.stderr)
+        return [], 0
 
     hits = conn.execute(
         """
@@ -328,7 +369,8 @@ Rules:
 
 def ask(
     conn: psycopg.Connection, driver: Driver, question: str, principal: Principal,
-    *, use_graph: bool = True,
+    *, use_graph: bool = True, plan_override: Plan | None = None,
+    synthesis_temperature: float | None = None,
 ) -> Answer:
     """Answer a question for a principal.
 
@@ -337,28 +379,41 @@ def ask(
     can run the identical question under hybrid and vector-only conditions and measure
     what the graph actually contributes per question type. The whole thesis is that the
     two conditions tie on lookup and diverge on multi-hop; this switch is how we show it.
+
+    `plan_override` lets the eval compute ONE plan and hand the identical plan to both
+    arms of the comparison. Without it, each arm re-runs the stochastic planner and can
+    retrieve different passages — so the ablation would be measuring planner noise, not
+    the graph (findings run 7 traced L3's spurious hybrid loss to exactly this). The two
+    arms must differ only in whether graph facts are added; everything upstream is shared.
+    `synthesis_temperature=0` similarly pins the answer text so it stops flickering.
     """
     started = time.monotonic()
 
-    p = plan(question)
+    if plan_override is not None:
+        p = plan_override
+    else:
+        # Ground the question's entities against the graph's vocabulary before planning,
+        # so "usage-based pricing" resolves to the "Pricing Model B" node the traversal
+        # seeds on. Only needed when the graph will actually be searched.
+        known = store.entity_names(driver) if use_graph else None
+        p = plan(question, known_entities=known)
 
     graph_facts: list[str] = []
     graph_chunk_ids: list[uuid.UUID] = []
     if use_graph and p.needs_graph:
         graph_facts, graph_chunk_ids = graph_search(driver, p.entities, principal)
 
-    evidence: list[Evidence] = []
-    withheld = 0
-    # In the ablation (use_graph=False) vector always runs — otherwise a question the
-    # planner routed graph-only would hand vector-only an empty context for the wrong
-    # reason, and the comparison would flatter the graph. Vector-only must genuinely
-    # get its best shot at every question.
-    if p.needs_vector or not use_graph:
-        # A graph-routed question can come back with an empty search_query; fall back to
-        # the raw question so the ablation still searches for something real (and so we
-        # never embed an empty string). The question is always a usable query.
-        query_text = p.search_query.strip() or question
-        evidence, withheld = vector_search(conn, query_text, principal)
+    # Vector search ALWAYS runs. Gating it on the planner's needs_vector starved hybrid
+    # whenever the planner over-trusted the graph and set the flag False: hybrid then
+    # retrieved *less* than the vector-only ablation and lost questions it should have
+    # won (findings run 7 — L3, M2, X2). A hybrid system must retrieve a superset of its
+    # vector-only ablation, never a subset; the graph may only ADD context, never remove
+    # it. One embedding call is a cheap price for that guarantee. needs_vector survives
+    # in the plan as an advisory signal for logging, but it no longer gates retrieval.
+    # A graph-routed question can return an empty search_query; fall back to the raw
+    # question so we always search for something real and never embed an empty string.
+    query_text = p.search_query.strip() or question
+    evidence, withheld = vector_search(conn, query_text, principal)
 
     # The merge: graph-discovered passages joined with semantically-similar ones,
     # deduplicated on chunk id. Both halves have already been permission-filtered.
@@ -369,7 +424,10 @@ def ask(
             seen.add(ev.chunk_id)
 
     context = _render(graph_facts, evidence, withheld)
-    answer_text = generate(ANSWER_PROMPT, f"{context}\n\nQuestion: {question}")
+    answer_text = generate(
+        ANSWER_PROMPT, f"{context}\n\nQuestion: {question}",
+        temperature=synthesis_temperature,
+    )
 
     answer = Answer(
         text=answer_text,

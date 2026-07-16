@@ -40,9 +40,9 @@ from neo4j import Driver
 
 from callosum import store
 from callosum.ontology import EntityType, RelationType
-from callosum.retrieve import Answer, Principal, ask
+from callosum.retrieve import Answer, Principal, ask, graph_search, plan
 
-STRATUM_ORDER = ["lookup", "relational", "multi_hop", "rbac"]
+STRATUM_ORDER = ["lookup", "relational", "multi_hop", "grounding_adv", "grounding_neg", "rbac"]
 
 
 # ---------------------------------------------------------------------------
@@ -165,6 +165,14 @@ class GoldItem:
     expect_answer: list[str]
     forbid_answer: list[str]
     expect_facts: list[dict]
+    # Canonical node name(s) the planner should ground this question's mention to. Any
+    # one counts (a pricing question may legitimately seed the Topic OR the Decision).
+    # Lets grounding be scored for CORRECTNESS — right seed — not merely presence.
+    expect_entities: list[str] = field(default_factory=list)
+    # A question whose mention has NO referent in the graph ("dynamic pricing engine").
+    # A good linker must ABSTAIN, not force a match — grounding one of these to a real
+    # node is a false positive. This is what makes grounding *precision* measurable.
+    should_not_ground: bool = False
 
 
 @dataclass
@@ -173,6 +181,11 @@ class QuestionResult:
     vector_correct: bool
     hybrid_correct: bool
     graph_fact_recall: float           # hybrid only; fraction of expect_facts present
+    hybrid_graph_facts: int            # how many graph facts the hybrid arm actually got
+    grounded: bool                     # did the planner ground to the CORRECT node?
+    grounded_to: list[str]             # what the planner actually produced (for the audit)
+    ungrounded_recall: float           # graph-fact recall WITHOUT grounding (ablation)
+    false_positive: bool               # negative question that grounded anyway (precision)
     vector_latency_ms: int
     hybrid_latency_ms: int
     error: str | None = None           # set if the question raised; excluded from scores
@@ -210,6 +223,8 @@ def load_gold(path: Path) -> list[GoldItem]:
                 expect_answer=d.get("expect_answer", []),
                 forbid_answer=d.get("forbid_answer", []),
                 expect_facts=d.get("expect_facts", []),
+                expect_entities=d.get("expect_entities", []),
+                should_not_ground=d.get("should_not_ground", False),
             )
         )
     return items
@@ -259,6 +274,11 @@ def evaluate(
     results: list[QuestionResult] = []
     scores: dict[str, StratumScore] = {s: StratumScore(stratum=s) for s in STRATUM_ORDER}
 
+    # The graph's vocabulary, fetched once — the planner grounds each question's entities
+    # against it (entity linking). This is what makes "usage-based pricing" reach the
+    # "Pricing Model B" node instead of seeding on nothing.
+    vocabulary = set(store.entity_names(driver))
+
     for item in gold:
         principal = _resolve_principal(conn, item.as_user)
         if principal is None:
@@ -270,18 +290,59 @@ def evaluate(
         # nine. Record the error and press on; errored questions are reported but do
         # not count toward any stratum's score (they are neither pass nor fail).
         try:
-            hybrid = ask(conn, driver, item.question, principal, use_graph=True)
-            vector = ask(conn, driver, item.question, principal, use_graph=False)
+            # Plan ONCE at temperature 0, grounded against the graph vocabulary, and hand
+            # the identical plan to both arms — so the only difference between them is
+            # whether graph facts are added, not which passages the planner fetched
+            # (findings run 7). Synthesis pinned to temperature 0 for the same reason.
+            shared = plan(item.question, known_entities=sorted(vocabulary), temperature=0.0)
+            hybrid = ask(conn, driver, item.question, principal, use_graph=True,
+                         plan_override=shared, synthesis_temperature=0.0)
+            vector = ask(conn, driver, item.question, principal, use_graph=False,
+                         plan_override=shared, synthesis_temperature=0.0)
         except Exception as exc:  # noqa: BLE001 — a harness must survive a flaky model
-            results.append(QuestionResult(item, False, False, 0.0, 0, 0, error=str(exc)))
+            results.append(
+                QuestionResult(item, False, False, 0.0, 0, False, [], 0.0, False, 0, 0,
+                               error=str(exc))
+            )
             continue
 
         recall = _graph_fact_recall(hybrid, item)
+        # Grounding CORRECTNESS: did the planner produce the right seed? If the gold item
+        # names acceptable canonical entities, require one of them (a wrong seed that
+        # happens to be in the vocab does NOT count). This separates a grounding error
+        # (wrong seed) from a traversal bug (right seed, no facts) — distinct failures.
+        if item.expect_entities:
+            grounded = bool(set(shared.entities) & set(item.expect_entities))
+        else:
+            grounded = bool(set(shared.entities) & vocabulary)
+
+        # A negative question grounded to a real node is a FALSE POSITIVE — the linker
+        # forced a match it should have refused. This is the precision side of grounding.
+        false_positive = item.should_not_ground and bool(set(shared.entities) & vocabulary)
+
+        # Ablation: what does the graph return WITHOUT grounding? Plan with no vocabulary
+        # (raw mentions) and seed the traversal on them. No synthesis — recall is read off
+        # graph_facts directly, so this is cheap. This is the "exact match only" baseline
+        # that makes the grounding contribution a measured delta, not an assertion.
+        ungrounded_recall = 0.0
+        if item.expect_facts:
+            raw = plan(item.question, temperature=0.0)  # deliberately no known_entities
+            raw_facts, _ = graph_search(driver, raw.entities, principal)
+            ungrounded_recall = _graph_fact_recall(
+                Answer(text="", evidence=[], graph_facts=raw_facts, withheld=0, latency_ms=0),
+                item,
+            )
+
         qr = QuestionResult(
             item=item,
             vector_correct=_answer_correct(vector, item),
             hybrid_correct=_answer_correct(hybrid, item),
             graph_fact_recall=recall,
+            hybrid_graph_facts=len(hybrid.graph_facts),
+            grounded=grounded,
+            grounded_to=list(shared.entities),
+            ungrounded_recall=ungrounded_recall,
+            false_positive=false_positive,
             vector_latency_ms=vector.latency_ms,
             hybrid_latency_ms=hybrid.latency_ms,
         )
@@ -296,6 +357,77 @@ def evaluate(
             sc.graph_fact_recall_sum += recall
 
     return results, scores
+
+
+def grounding_traversal(results: list[QuestionResult]) -> dict | None:
+    """Split the graph-dependent result into two stages (entity linking + traversal).
+
+    The point of the split (per review): report the pipeline as two stages so the reader
+    sees WHERE it fails. "Entity grounding 52% / traversal 100%" says the graph engine is
+    correct and the linking stage is the bottleneck — a far stronger claim than a flat
+    "multi-hop = 0%". Traversal accuracy is measured ONLY on questions that grounded, so
+    it isolates the engine from the stage upstream of it.
+    """
+    graph_qs = [r for r in results if r.item.expect_facts and not r.error]
+    if not graph_qs:
+        return None
+    grounded = [r for r in graph_qs if r.grounded]
+    negatives = [r for r in results if r.item.should_not_ground and not r.error]
+    false_pos = [r for r in negatives if r.false_positive]
+    return {
+        "n": len(graph_qs),
+        "grounded": len(grounded),
+        "grounding_acc": len(grounded) / len(graph_qs),
+        # Grounding Error Rate: fraction of mentions linked to the wrong node (or none).
+        # This is the error source distinct from a traversal bug — a wrong seed. As the
+        # graph grows and paraphrase gets harder, GER is the number that will move first.
+        "ger": (len(graph_qs) - len(grounded)) / len(graph_qs),
+        # Mean recall among grounded questions: given the seed resolved, did the traversal
+        # return the required edges? Undefined (—) if nothing grounded.
+        "traversal_acc": (sum(r.graph_fact_recall for r in grounded) / len(grounded))
+        if grounded else None,
+        # Precision side: of the questions with no valid referent, how many did the
+        # linker wrongly force onto a real node? A good linker abstains.
+        "n_neg": len(negatives),
+        "false_positives": len(false_pos),
+        "grounding_precision": (1 - len(false_pos) / len(negatives)) if negatives else None,
+        # The ablation: mean graph-fact recall over graph questions, grounding ON vs OFF.
+        # This is the headline delta — the graph engine is identical; only grounding moves.
+        "recall_grounded": sum(r.graph_fact_recall for r in graph_qs) / len(graph_qs),
+        "recall_ungrounded": sum(r.ungrounded_recall for r in graph_qs) / len(graph_qs),
+    }
+
+
+def write_csv(results: list[QuestionResult], path: Path, model: str) -> None:
+    """Append this run to a permanent, diffable experiment log (one row per question).
+
+    Markdown tables are for reading; this CSV is for comparing run 7 → 8 → 9 → … without
+    re-parsing prose. Each row carries what it grounded to and whether that was correct,
+    so a regression in the linker is greppable, not buried in a report.
+    """
+    import csv
+
+    stamp = time.strftime("%Y-%m-%d %H:%M")
+    new = not path.exists()
+    with path.open("a", newline="", encoding="utf-8") as fh:
+        w = csv.writer(fh)
+        if new:
+            w.writerow([
+                "run", "model", "id", "stratum", "question",
+                "expect_entities", "grounded_to", "grounded_correct", "false_positive",
+                "recall_grounded", "recall_ungrounded",
+                "vector_correct", "hybrid_correct", "error",
+            ])
+        for r in results:
+            w.writerow([
+                stamp, model, r.item.id, r.item.stratum, r.item.question,
+                "|".join(r.item.expect_entities), "|".join(r.grounded_to),
+                "" if not r.item.expect_facts else int(r.grounded),
+                int(r.false_positive),
+                f"{r.graph_fact_recall:.2f}" if r.item.expect_facts else "",
+                f"{r.ungrounded_recall:.2f}" if r.item.expect_facts else "",
+                int(r.vector_correct), int(r.hybrid_correct), r.error or "",
+            ])
 
 
 def render_markdown(
@@ -320,25 +452,69 @@ def render_markdown(
             f"| {s} | {sc.n} | {sc.vector_correct}/{sc.n} | {sc.hybrid_correct}/{sc.n} | {gr_cell} |"
         )
 
+    gt = grounding_traversal(results)
+    if gt:
+        lines.append("\n## Entity grounding vs traversal (graph-dependent questions)\n")
+        lines.append("The multi-hop bottleneck is a Named Entity Linking problem, not a "
+                     "graph one. This split shows which stage fails: the traversal engine "
+                     "vs the linking of the question's words to a node name.\n")
+        trav = "—" if gt["traversal_acc"] is None else f"{gt['traversal_acc']*100:.0f}%"
+        lines.append("| Stage | Accuracy |")
+        lines.append("|---|---|")
+        lines.append(f"| Entity grounding (correct seed) | {gt['grounding_acc']*100:.0f}% "
+                     f"({gt['grounded']}/{gt['n']}) |")
+        lines.append(f"| Grounding Error Rate (GER) | {gt['ger']*100:.0f}% |")
+        if gt["grounding_precision"] is not None:
+            lines.append(f"| Grounding precision (abstains on negatives) | "
+                         f"{gt['grounding_precision']*100:.0f}% "
+                         f"({gt['n_neg'] - gt['false_positives']}/{gt['n_neg']}) |")
+        lines.append(f"| Traversal (given grounding) | {trav} |")
+        lines.append("\nGrounding is scored for CORRECTNESS (right seed), not mere presence. "
+                     "Traversal is measured only on questions that grounded, so it isolates "
+                     "the graph engine from the linking stage upstream. The `grounding_adv` "
+                     "stratum is adversarial — paraphrases sharing no tokens with the node "
+                     "name (\"metered billing\", \"pay-per-use\") — so grounding here tests "
+                     "generalisation, not one lucky synonym. `grounding_neg` questions have "
+                     "no referent in the graph; a good linker abstains (precision).\n")
+
+        # The ablation the reviewer asked for: identical graph engine, grounding on vs off.
+        lines.append("\n## Ablation — grounding on vs off (identical graph engine)\n")
+        lines.append("| Configuration | Graph-fact recall (graph questions) |")
+        lines.append("|---|---|")
+        lines.append(f"| Exact match only (no grounding) | {gt['recall_ungrounded']*100:.0f}% |")
+        lines.append(f"| Planner grounding | {gt['recall_grounded']*100:.0f}% |")
+        lines.append("\nSame traversal code, same corpus, same questions — the only variable "
+                     "is whether the planner grounds the mention to a canonical node name. "
+                     "The delta is the measured contribution of the grounding stage.\n")
+
     lines.append("\n## Per-question detail\n")
-    lines.append("| id | stratum | as | vector | hybrid | graph-fact recall | question |")
-    lines.append("|---|---|---|---|---|---|---|")
+    lines.append("| id | stratum | as | grounded | grounded to | vector | hybrid | graph facts | recall | question |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|")
     tick = lambda b: "✓" if b else "✗"  # noqa: E731
     for r in results:
         if r.error:
             lines.append(
-                f"| {r.item.id} | {r.item.stratum} | {r.item.as_user} | "
-                f"ERR | ERR | — | {r.item.question} (errored: {r.error[:60]}) |"
+                f"| {r.item.id} | {r.item.stratum} | {r.item.as_user} | — | — | "
+                f"ERR | ERR | — | — | {r.item.question} (errored: {r.error[:60]}) |"
             )
             continue
         gr = "—" if not r.item.expect_facts else f"{r.graph_fact_recall*100:.0f}%"
+        gnd = tick(r.grounded) if r.item.expect_facts else "—"
+        # The mention→canonical audit: what the linker actually chose. For adversarial
+        # rows this is the whole point — did "pay-per-use proposal" reach "Pricing Model B"?
+        to = ", ".join(r.grounded_to) if (r.item.expect_facts and r.grounded_to) else "—"
         lines.append(
-            f"| {r.item.id} | {r.item.stratum} | {r.item.as_user} | "
-            f"{tick(r.vector_correct)} | {tick(r.hybrid_correct)} | {gr} | {r.item.question} |"
+            f"| {r.item.id} | {r.item.stratum} | {r.item.as_user} | {gnd} | {to} | "
+            f"{tick(r.vector_correct)} | {tick(r.hybrid_correct)} | {r.hybrid_graph_facts} | "
+            f"{gr} | {r.item.question} |"
         )
 
     lines.append("\n## How to read this\n")
     lines.append(
+        "- **graph facts** is how many facts the hybrid arm actually received. When it is "
+        "0 and the plan is shared, hybrid and vector-only see *identical* context — so any "
+        "difference in their answers is model sampling noise (gpt-oss cloud ignores "
+        "`temperature`), NOT the graph helping or hurting. Treat those rows as ties.\n"
         "- **Vector-only correct vs Hybrid correct**: equal on `lookup` is the expected "
         "tie; hybrid > vector on `relational`/`multi_hop` is the graph earning its keep.\n"
         "- **Graph-fact recall** is the mechanism check: it is the fraction of the "
