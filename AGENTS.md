@@ -51,8 +51,8 @@ external tools, and focused on saving founder time while improving governance qu
 It must not claim to replace cap-table products, project-management products, or legal
 governance systems. AI may draft, retrieve, summarize, and recommend; it may not silently
 approve a fact, vote, resolution, owner, deadline, external message, signature, task, or
-memory update. See `PRD.md` for the complete requirements and
-`path_to_completion.md` for the required sequential delivery gates.
+memory update. See `PRD.md` for the complete requirements and `ROADMAP.md` for the
+authoritative sequential delivery gates and current progress status.
 
 ## Architecture
 

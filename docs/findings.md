@@ -493,3 +493,25 @@ the linker more ways to mis-link. Traversal 100%; precision steady at 50% (N1 st
 false-positives). Net: the temporal capability is demonstrated and the graph's advantage is
 now visible on answer-correctness, while grounding recall/precision under scale becomes the
 next thing to watch — which is exactly what the capability matrix (M14 aliases) is for.
+
+## 2026-07-16 (IG-1 gate audit) — R8 and R9 remain unstarted
+
+This audit reconciled the roadmap with the checkout before extending the corpus. The claimed
+`eval-baseline-v2` tag is absent; the only local evaluation tag is `eval-baseline-v1`.
+Therefore run 12's recorded results remain useful historical observations, but are not a
+reproducibly pinned V2 baseline.
+
+**Verified:** Python 3.12.10 ran the deterministic suite successfully: `24 passed, 5
+deselected` from `.venv\\Scripts\\pytest.exe -q`. A fresh `docker compose down -v` followed
+by `docker compose up -d` produced healthy Postgres and Neo4j services.
+
+**Blocked reproducibility step:** `callosum doctor` reported that Ollama was not running at
+`http://localhost:11434`; direct access to `/api/tags` also failed. The first `--no-extract`
+ingestion therefore could not obtain `bge-m3` embeddings, so the seeded evaluation could
+not proceed. This was a local-provider availability failure, not an evaluation result.
+
+**Decision:** do not create the V2 tag, append synthetic evaluation results, or mark R8
+(aliases) or R9 (conflicting evidence) complete. Once Ollama is running and `bge-m3` is
+available, run `scripts/eval.sh` (or its Windows-equivalent commands using
+`.venv\\Scripts\\callosum.exe`), capture the full run metadata and results, tag the exact
+commit truthfully, then start R8. R9 remains sequentially blocked behind completed R8.
