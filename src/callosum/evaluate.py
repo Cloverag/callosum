@@ -145,19 +145,51 @@ GOLD_CONFIDENTIAL_EDGES = [
      "Priya Nair, CFO, is at $185K base"),
 ]
 
-# --- Board Meeting 14 (sensitivity 1) — reviewed aliases, not auto-merges ---------
+# --- Board Meeting 14 (sensitivity 1) — identity disambiguation under colliding forms --
+# Two people whose surface forms collide: Raj Malhotra (CEO; "Raj", "R. Malhotra") and
+# Rajesh Kumar (Staff Engineer; "Rajesh", "R. Kumar"). The traps are natural: "Raj" vs
+# "Rajesh" (one is short for the CEO, one is a different person's first name) and
+# "R. Malhotra" vs "R. Kumar" (same initial, different surname). The two decisions are
+# deliberately adjacent — the engineer approved the DEPLOY, the CEO approved the ROLLBACK —
+# so attributing the right action to the right similar-named person is the capability under
+# test. Aliases stay evidence-backed (ALIAS_OF, reviewed), and the two people are never
+# merged. This also removes a corpus contradiction: the prior M14 named the CEO "Rajesh
+# Malhotra", disagreeing with Meetings 12/13, where the CEO is "Raj Malhotra". Every quote
+# is a verbatim span of data/demo/board_meeting_14_transcript.txt.
 GOLD_M14_ENTITIES = [
-    ("Rajesh Malhotra", EntityType.PERSON, {"role": "CEO, co-founder"}),
+    ("Raj Malhotra", EntityType.PERSON, {"role": "CEO, co-founder"}),
     ("Raj", EntityType.PERSON, {"source_spelling": "Raj"}),
     ("R. Malhotra", EntityType.PERSON, {"source_spelling": "R. Malhotra"}),
-    ("Raj Patel", EntityType.PERSON, {"role": "guest observer"}),
+    ("Rajesh Kumar", EntityType.PERSON, {"role": "Staff Engineer, Platform"}),
+    ("Rajesh", EntityType.PERSON, {"source_spelling": "Rajesh"}),
+    ("R. Kumar", EntityType.PERSON, {"source_spelling": "R. Kumar"}),
     ("Board Meeting 14", EntityType.MEETING, {}),
+    ("Approve billing pipeline deploy", EntityType.DECISION, {"status": "approved"}),
+    ("Approve rollback and customer credits", EntityType.DECISION, {"status": "approved"}),
+    ("Billing pipeline remediation", EntityType.ACTION_ITEM, {"owner": "Rajesh Kumar"}),
+    ("Customer-credit reconciliation", EntityType.ACTION_ITEM, {"owner": "Priya Nair"}),
 ]
 GOLD_M14_EDGES = [
-    ("Raj", RelationType.ALIAS_OF, "Rajesh Malhotra", "Raj, short for Rajesh Malhotra"),
-    ("R. Malhotra", RelationType.ALIAS_OF, "Rajesh Malhotra", "R. Malhotra, the same CEO"),
-    ("Rajesh Malhotra", RelationType.ATTENDED, "Board Meeting 14", "Rajesh Malhotra (CEO, co-founder)"),
-    ("Raj Patel", RelationType.ATTENDED, "Board Meeting 14", "Raj Patel (guest observer, not Rajesh Malhotra)"),
+    # Two alias clusters, kept distinct. Each spelling resolves to its OWN person.
+    ("Raj", RelationType.ALIAS_OF, "Raj Malhotra", "Raj is short for Raj Malhotra, the CEO"),
+    ("R. Malhotra", RelationType.ALIAS_OF, "Raj Malhotra", "R. Malhotra is Raj, our CEO"),
+    ("Rajesh", RelationType.ALIAS_OF, "Rajesh Kumar", "Rajesh is Rajesh Kumar, the engineer"),
+    ("R. Kumar", RelationType.ALIAS_OF, "Rajesh Kumar",
+     "R. Kumar — that's me, Rajesh Kumar — approved the deploy window"),
+    # The adjacent decisions, attributed to the right similar-named person.
+    ("Rajesh Kumar", RelationType.APPROVED, "Approve billing pipeline deploy",
+     "Rajesh Kumar approved the deploy"),
+    ("Raj Malhotra", RelationType.APPROVED, "Approve rollback and customer credits",
+     "Raj Malhotra approved the rollback and the credits"),
+    ("Approve billing pipeline deploy", RelationType.MADE_IN, "Board Meeting 14", "Board Meeting 14"),
+    ("Approve rollback and customer credits", RelationType.MADE_IN, "Board Meeting 14", "Board Meeting 14"),
+    # Action items, each with its distinct owner.
+    ("Rajesh Kumar", RelationType.OWNS, "Billing pipeline remediation",
+     "Rajesh Kumar owns the billing pipeline remediation"),
+    ("Priya Nair", RelationType.OWNS, "Customer-credit reconciliation",
+     "Priya Nair owns the customer-credit reconciliation"),
+    ("Raj Malhotra", RelationType.ATTENDED, "Board Meeting 14", "Raj Malhotra (CEO, co-founder)"),
+    ("Rajesh Kumar", RelationType.ATTENDED, "Board Meeting 14", "Rajesh Kumar (Staff Engineer, Platform)"),
 ]
 
 # --- Meeting 15 conflict sources (sensitivity 1) ---------------------------------
