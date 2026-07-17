@@ -690,10 +690,13 @@ would make the abstention metric look like it improved. Three fixes: (a) `embed(
 bge-m3 resident (`keep_alive`) and backs off between 500-retries instead of hammering the
 same instant; (b) a bounded, explicitly-labelled harness retry re-attempts the empty-
 candidate signature; (c) the harness now separates `unretrieved` (infra) from `evaluated`
-and scores grounding only on the latter. The same text embeds 0/30 in isolation yet still
-fails intermittently *inside* the eval when local embeds interleave with cloud planner
-calls — reduced run-to-run from 3→2→1 unretrieved, not yet zero. **The metric is now robust
-to it either way** (excluded, not mis-scored); closing it fully is an open infra task.
+and scores grounding only on the latter. **The metric is now robust to it either way**
+(excluded, not mis-scored); closing it fully is an open infra task. *(Correction, 2026-07-17:
+this entry originally called the NaN "intermittent" based on a probe that used a paraphrase,
+not the exact failing string. The follow-up investigation found the fault is
+**input-specific and deterministic** — see the 2026-07-17 stability + NaN entry below and
+`docs/reviews/2026-07-17-nan-investigation.md`. `keep_alive`+retry does not fix it; the
+harness exclusion is what keeps the metric honest.)*
 
 **Finding 4 — several "linker errors" were benchmark defects, and fixing them exposed a
 deeper decoupling.** Inspecting every miss against gold: C2 rejected exactly the forecast
@@ -725,3 +728,44 @@ is that the instrumentation improved the benchmark and the measurement itself be
 algorithm was written** — the project's discipline (every feature justified by a measured,
 repeatable gap) held. Frozen again pending a clean rerun that still shows a clear,
 repeatable bottleneck. Review record: `docs/reviews/2026-07-17-r12-instrumentation.md`.
+
+## 2026-07-17 (stability — 3 independent runs) — which metrics are reproducible, and which are LLM noise.
+
+The core was run three times against the identical seeded graph, no code changes between
+runs. The purpose was to establish what is reproducible *before* trusting any single number.
+Runs: `22:34`, `22:47`, `23:01` in `eval/results-v2.csv`. First run was cold (~29 min); warm
+runs ~13 min.
+
+**Deterministic — safe to quote as results:**
+- **Candidate recall: 100% / 100% / 100%.** The R12 ceiling is rock-stable across runs.
+- **Grounding precision (abstention negatives): 50% / 50% / 50%.** The single N1 false
+  positive ("dynamic pricing engine" → Pricing Model B) is deterministic — a real, repeatable
+  linker fault, and the *only* one.
+- **Traversal given grounding: 100%** every run. The engine is never the variance source.
+
+**Nondeterministic — must NOT be quoted from a single run:**
+- **The grounded seed flickers.** `grounded_to` varies run-to-run on ~10 questions (e.g. A1
+  toggles `Pricing Model B` vs `Pricing Model B|Reject Pricing Model B`; R1, T3, L1 similar).
+  Cause: `gpt-oss:120b-cloud` ignores `temperature=0` (established run 8). The *set* of seeds
+  is stable enough that recall holds, but the exact list is not reproducible.
+- **Grounding accuracy varies 76–80%**, driven by seed flicker on borderline questions
+  (grounding pass/fail flips on C1, C2, M2 across runs) plus the denominator moving with
+  unretrieved count.
+- **Answer-correctness flickers** on A1, C1, E1, L3, T4 — the known cloud-model answer-text
+  nondeterminism. Read graph-fact recall, never the answer column, for a mechanism claim.
+
+**The T4 embedding fault is deterministic (see NaN investigation).** T4 is `unretrieved`
+every run because its exact string reliably NaNs bge-m3 — reported and excluded, never
+mis-scored. Root cause and proposed fix: `docs/reviews/2026-07-17-nan-investigation.md`.
+
+**Secondary, unresolved:** the cold first run showed four extra one-time empty candidate lists
+(C1, C2, K1, K2) with *no* NaN logged; all four retrieve cleanly in the warm runs and in
+direct retest. Flagged as a low-priority cold-start transient, not root-caused.
+
+**Lesson for the thesis:** the *mechanism* metrics (candidate recall, precision, traversal)
+are reproducible and are what the claims should rest on; the *LLM-dependent* metrics (exact
+seed, answer text, and any accuracy computed from them) carry ±a few points of run-to-run
+noise from a cloud model that ignores temperature. Report the former as numbers and the
+latter as ranges over multiple runs — never a single run's figure. This is why the design
+made graph-fact recall, not answer text, the deterministic metric (run 8); the 3-run
+stability check confirms that choice was necessary, not cautious.
