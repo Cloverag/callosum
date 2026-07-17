@@ -99,6 +99,7 @@ Extract entity names as a document would write them — "Pricing Model B", not
 
 def plan(
     question: str, known_entities: list[str] | None = None,
+    context: list[str] | None = None,
     temperature: float | None = None,
 ) -> Plan:
     """Route a question, optionally grounding its entities to canonical graph names.
@@ -116,17 +117,23 @@ def plan(
     and prevents private entity names from becoming a side channel.
     """
     system = PLANNER_PROMPT
+    if context:
+        ctx_text = "\n---\n".join(context)
+        system += (
+            f"\n\n# Context for the question\n"
+            f"Use the following excerpts to understand the question (e.g. to resolve pronouns "
+            f"or references like 'that proposal'):\n\n{ctx_text}\n"
+        )
     if known_entities:
         catalog = "\n".join(f"- {n}" for n in known_entities)
         system += (
             "\n\n# Canonical graph entities\n"
             "The knowledge graph stores exactly these entities:\n"
             f"{catalog}\n\n"
-            "For each entity the question refers to that matches one of the above by "
-            "meaning, put that entity's EXACT name (copied from the list) in `entities` — "
-            "e.g. if the question says 'usage-based pricing' and the list contains "
-            "'Pricing Model B', output 'Pricing Model B'. If none is the same referent, "
-            "output an empty `entities` list. Never output a name absent from the list."
+            "ONLY ground an entity if the question (using the context above) unequivocally "
+            "refers to it. Put that entity's EXACT name (copied from the list) in `entities`. "
+            "If the referent is ambiguous, different, or absent from the list, abstain by "
+            "outputting an empty `entities` list. Do not guess or approximate."
         )
     result = structured(system, question, Plan, temperature=temperature)
     # Model output is untrusted. Keeping only supplied candidates makes abstention an
@@ -140,12 +147,17 @@ def plan(
 def candidate_entities(
     conn: psycopg.Connection, driver: Driver, question: str, principal: Principal,
     *, k: int = 16,
-) -> list[str]:
-    """Find canonical grounding candidates without exposing unreadable graph names."""
+) -> tuple[list[str], list[str]]:
+    """Find canonical grounding candidates without exposing unreadable graph names.
+    
+    Returns (candidate_entity_names, evidence_chunk_texts).
+    """
     evidence, _ = vector_search(conn, question, principal, k=k)
-    return store.entity_names_for_chunks(
+    names = store.entity_names_for_chunks(
         driver, [item.chunk_id for item in evidence], principal.clearance
     )
+    texts = [item.text for item in evidence]
+    return names, texts
 
 
 def grounded_plan(
@@ -153,9 +165,11 @@ def grounded_plan(
     *, temperature: float | None = None,
 ) -> Plan:
     """Plan with readable semantic candidates and an enforceable abstention path."""
+    names, texts = candidate_entities(conn, driver, question, principal)
     return plan(
         question,
-        known_entities=candidate_entities(conn, driver, question, principal),
+        known_entities=names,
+        context=texts,
         temperature=temperature,
     )
 
