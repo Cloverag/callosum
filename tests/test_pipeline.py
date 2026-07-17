@@ -579,6 +579,113 @@ def test_unretrieved_questions_are_excluded_from_grounding_not_scored_as_failure
     assert gt["candidate_recall"] == 1.0
 
 
+def _fake_ollama_cfg():
+    from types import SimpleNamespace
+    from callosum.config import Provider
+    return SimpleNamespace(provider=Provider.OLLAMA, ollama_host="http://x",
+                           ollama_embedding_model="bge-m3")
+
+
+class _Resp:
+    def __init__(self, status, payload=None, text=""):
+        self.status_code = status
+        self._payload = payload
+        self.text = text
+
+    def json(self):
+        return self._payload
+
+
+def test_embed_recovers_deterministic_nan_via_one_normalized_retry(monkeypatch):
+    """The input-specific bge-m3 NaN is rescued by a single normalized retry, not a loop."""
+    import callosum.llm as llm
+    from callosum.config import EMBEDDING_DIM
+
+    monkeypatch.setattr(llm, "settings", _fake_ollama_cfg)
+    good = [0.01] * EMBEDDING_DIM
+    calls = []
+
+    def fake_post(url, **kw):
+        inp = kw["json"]["input"]
+        calls.append(list(inp))
+        # The exact failing string ends in '?'; the normalized retry drops it and succeeds.
+        if inp[0].endswith("?"):
+            return _Resp(500, text='{"error":"failed to encode response: unsupported value: NaN"}')
+        return _Resp(200, {"embeddings": [good]})
+
+    monkeypatch.setattr(llm.httpx, "post", fake_post)
+
+    v = llm.embed(["a query that NaNs?"], input_type="query")
+
+    assert len(v) == 1 and len(v[0]) == EMBEDDING_DIM
+    assert calls == [["a query that NaNs?"], ["a query that NaNs"]]  # original, then normalized — exactly once
+
+
+def test_embed_detects_nan_inside_a_200_response(monkeypatch):
+    """A 200 whose vector contains NaN is treated as the fault, not returned to the caller."""
+    import callosum.llm as llm
+    from callosum.config import EMBEDDING_DIM
+
+    monkeypatch.setattr(llm, "settings", _fake_ollama_cfg)
+    good = [0.01] * EMBEDDING_DIM
+    nan_vec = [float("nan")] + [0.0] * (EMBEDDING_DIM - 1)
+
+    def fake_post(url, **kw):
+        inp = kw["json"]["input"]
+        return _Resp(200, {"embeddings": [nan_vec if inp[0].endswith("?") else good]})
+
+    monkeypatch.setattr(llm.httpx, "post", fake_post)
+
+    v = llm.embed(["poison?"], input_type="query")
+    assert not any(x != x for x in v[0])  # no NaN survived to the caller
+
+
+def test_embed_raises_and_excludes_when_normalized_retry_also_fails(monkeypatch):
+    """If both attempts fail it raises (→ vector_search returns [] → question excluded)."""
+    import callosum.llm as llm
+    import pytest
+
+    monkeypatch.setattr(llm, "settings", _fake_ollama_cfg)
+    calls = []
+
+    def always_nan(url, **kw):
+        calls.append(list(kw["json"]["input"]))
+        return _Resp(500, text="unsupported value: NaN")
+
+    monkeypatch.setattr(llm.httpx, "post", always_nan)
+
+    with pytest.raises(RuntimeError):
+        llm.embed(["always bad?"], input_type="query")
+    assert len(calls) == 2  # original + exactly one normalized retry, never a loop
+
+
+def test_embed_does_not_retry_non_nan_errors(monkeypatch):
+    """A 404/401 is not the recoverable case — surface it immediately, no normalized retry."""
+    import callosum.llm as llm
+    import pytest
+
+    monkeypatch.setattr(llm, "settings", _fake_ollama_cfg)
+    calls = []
+
+    def not_found(url, **kw):
+        calls.append(1)
+        return _Resp(404, text="model not found")
+
+    monkeypatch.setattr(llm.httpx, "post", not_found)
+
+    with pytest.raises(Exception):
+        llm.embed(["anything"], input_type="query")
+    assert len(calls) == 1  # no normalized retry on a non-NaN error
+
+
+def test_normalize_for_retry_is_minimal():
+    from callosum.llm import _normalize_for_retry
+    assert _normalize_for_retry("between the two board meetings?") == "between the two board meetings"
+    assert _normalize_for_retry("no trailing punct") == "no trailing punct"
+    assert _normalize_for_retry("trailing space ? ") == "trailing space"
+    assert _normalize_for_retry("?") == "?"  # never returns empty
+
+
 def test_ground_retry_recovers_a_transient_empty_candidate_list(monkeypatch):
     """The infra retry re-attempts an empty candidate list and takes the recovered one."""
     import callosum.evaluate as ev
