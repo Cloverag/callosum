@@ -191,20 +191,6 @@ def ingest_doc(
 
     # After queuing proposals, scan for entity name conflicts (e.g. "Raj" vs "Rajesh Malhotra").
     # This is a read-only scan on the graph — nothing reaches Neo4j without a human approval.
-    try:
-        n_conflicts = conflicts.detect_conflicts(conn, driver)
-        if n_conflicts:
-            console.print(
-                f"[yellow]⚠ {n_conflicts} potential entity name alias(es) flagged.[/] "
-                "Run: [dim]callosum review-conflicts[/]"
-            )
-    except Exception as exc:
-        # Degrade gracefully if entity_conflict table doesn't exist yet (pre-migration).
-        console.print(
-            f"[dim]Conflict detection skipped ({_terminal_safe(exc)}). "
-            "Run: scripts/migrate_entity_conflict.sql[/]"
-        )
-
     driver.close()
 
 
@@ -279,6 +265,16 @@ def approve(
 
     console.print(f"[green]✓[/] {committed} change(s) committed to the graph")
     console.print("[dim]See it: http://localhost:7474 → MATCH (n) RETURN n[/]")
+    
+    if committed > 0:
+        with store.pg() as conn:
+            n_conflicts = conflicts.detect_conflicts(conn, driver)
+            if n_conflicts > 0:
+                console.print(
+                    f"\n[yellow]⚠ {n_conflicts} potential entity name alias(es) flagged.[/] "
+                    "Run: [bold]callosum review-conflicts[/]"
+                )
+                
     driver.close()
 
 
