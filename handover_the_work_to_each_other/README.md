@@ -69,6 +69,7 @@ to authoritative files instead of copying long material into the handover.
 
 ## Current handover
 
+- [Devguru grounding salvage — gated approach confirmed](2026-07-18_03-02-19_IST/devguru-grounding-salvage_handover.md)
 - [R8-R13 handover](2026-07-16_08-24-44_IST/R8-R13_handover.md)
 
 Keep this README short and stable. Put session-specific facts in the timestamped note.
