@@ -20,8 +20,8 @@ requirements.
 
 | Track | Completed | Active | Remaining |
 |---|---:|---|---:|
-| Research engine | **8 / 14** accepted (`R0`–`R7`) | **R8–R12 live-measured** (2026-07-17); reviewer acceptance pending | `R13` handoff after R8–R12 acceptance |
-| Meridian product | **0 / 13** accepted | Not started; blocked by research handoff `R13` | **13** (`P0`–`P12`) |
+| Research engine | **14 / 14** accepted (`R0`–`R13`) | — research track CLOSED 2026-07-18, baseline frozen at `6ed5ed5` | 0 |
+| Meridian product | **0 / 13** accepted | **P0 authorized** (research handoff accepted) | **13** (`P0`–`P12`) |
 
 The counts must not be combined into one percentage: the research track validates the
 memory engine; the product track makes it a deployable board operating system. The CLI
@@ -168,22 +168,23 @@ and its output is restricted to the supplied candidates as a runtime guard.
 - [x] Candidate selection is permission-scoped and deterministic coverage verifies its clearance predicate.
 - [x] Candidate recall, grounding accuracy, false positives, latency, and downstream traversal effects **measured live (2026-07-17)** — candidate recall 100% on retrieved questions, planner-dominated latency ~20:1, precision fault reduced to a single case. Instrumentation merged (PR #2); reviewer acceptance vs `eval-baseline-v2` pending in `docs/reviews/2026-07-17-r12-instrumentation.md`. **Finding: abstention not justified — core frozen instead of extended.**
 
-## R13 - Research handoff and frozen baseline - handoff prepared; approval pending
+## R13 - Research handoff and frozen baseline - ✅ COMPLETE (2026-07-18, owner: Raghav)
 
 **Goal:** Close the research phase with a reproducible contract for product work.
 
 **Work completed:** `docs/research-handoff.md` consolidates reproducible commands, the
 named baseline, capability/evidence/limitation matrix, frozen-core exception process, and
-the decision rule for P0. It deliberately records that live measurement is unavailable
-rather than treating implementation work as acceptance.
+the decision rule for P0. The R8–R12 live evaluation ran cleanly on 2026-07-18 (full 21/21
+denominator, gated planner adopted); acceptance is recorded in
+`docs/reviews/2026-07-18-r13-acceptance.md`. **Accepted baseline commit: `6ed5ed5`.**
 
 **Exit checklist:**
 
 - [x] The handoff lists commands, corpus/evidence references, and limitations for every implemented capability.
 - [x] The freeze boundary and exception record are documented.
-- [ ] R8-R12 require a live, reviewed evaluation before the handoff can be approved.
-- [ ] `AGENTS.md`, `PRD.md`, `CONTRIBUTING.md`, findings, and roadmap may be declared fully aligned only at approved handoff; current documents consistently record the pending gate.
-- [ ] Product checkpoint P0 requires explicit authorization after the approved handoff.
+- [x] R8-R12 live-evaluated and reviewed — clean 21/21 A/B, gated planner accepted (`docs/reviews/2026-07-18-r13-acceptance.md`).
+- [x] Baseline accepted and frozen at `6ed5ed5`; to be tagged as the immutable research baseline (new tag — `eval-baseline-v1/v2` are the older R6/R7 baselines).
+- [x] Product checkpoint P0 is now **authorized**.
 
 ---
 
