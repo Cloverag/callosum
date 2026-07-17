@@ -200,3 +200,43 @@ CREATE TABLE query_log (
     latency_ms    INT,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- ---------------------------------------------------------------------------
+-- Entity conflict review queue.
+-- When two entity names are similar enough to be the same but not confirmed,
+-- a human decides: approve (→ ALIAS_OF edge in Neo4j) or reject (→ stays distinct).
+--
+-- The LLM never touches this table. Detection is a deterministic string-similarity
+-- scan run after ingest. Approval routes through proposed_change → store.approve(),
+-- the only path that writes to Neo4j, so all provenance invariants are preserved.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE entity_conflict (
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name_a          TEXT NOT NULL,
+    type_a          TEXT NOT NULL,
+    name_b          TEXT NOT NULL,
+    type_b          TEXT NOT NULL,
+    similarity      REAL NOT NULL,          -- 0.0–1.0 token-sort ratio from rapidfuzz
+    -- The chunks that first introduced each entity name (lowest ordinal MENTIONS edge).
+    -- NULL if the chunk was deleted; the conflict row is kept for audit.
+    chunk_id_a      UUID REFERENCES chunk(id) ON DELETE SET NULL,
+    chunk_id_b      UUID REFERENCES chunk(id) ON DELETE SET NULL,
+    -- Verbatim source sentences so the reviewer never has to hunt for context.
+    quote_a         TEXT,
+    quote_b         TEXT,
+    -- Sensitivity of the more-restricted of the two source chunks.
+    -- A reviewer must have clearance >= this value to see the conflict.
+    sensitivity     INT NOT NULL DEFAULT 1 REFERENCES sensitivity(level),
+    status          TEXT NOT NULL DEFAULT 'pending',  -- pending | approved | rejected
+    reviewed_by     UUID REFERENCES principal(id),
+    reviewed_at     TIMESTAMPTZ,
+    -- The proposed_change row that will create the ALIAS_OF edge when approved.
+    -- NULL until approval is triggered (i.e. when status transitions to approved).
+    change_id       UUID REFERENCES proposed_change(id),
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    -- Prevent the same pair from being re-queued (either direction).
+    UNIQUE (name_a, type_a, name_b, type_b)
+);
+CREATE INDEX ON entity_conflict (status);
+CREATE INDEX ON entity_conflict (sensitivity);
