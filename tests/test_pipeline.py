@@ -465,3 +465,353 @@ def test_nothing_is_ever_silently_dropped():
     v = verify(_ext(rels), "RAJ: We're not doing Model B.")
     assert v.total_proposed == 3
     assert len(v.relationships) + len(v.failures) == 3
+
+
+# ---------------------------------------------------------------------------
+# R12 — the candidate stage, measured as the ceiling it is
+# ---------------------------------------------------------------------------
+
+
+def test_ground_reports_the_candidates_it_offered_the_planner(monkeypatch):
+    """The candidate list is evidence, not a debug aid — it must survive the call.
+
+    Without it the eval cannot tell a linker error from a candidate miss, which is the
+    whole reason grounding precision and recall could not be attributed in run 13.
+    """
+    import callosum.retrieve as retrieve
+
+    monkeypatch.setattr(retrieve, "candidate_entities",
+                        lambda *_a, **_k: (["Pricing Model B", "Board Meeting 12"], ["Context text"]))
+    monkeypatch.setattr(
+        retrieve, "structured",
+        lambda *_a, **_k: Plan(entities=["Pricing Model B"], needs_graph=True,
+                               needs_vector=True, search_query="pricing"),
+    )
+
+    g = retrieve.ground(None, None, "Why was pay-per-use rejected?", None)
+
+    assert g.plan.entities == ["Pricing Model B"]
+    assert g.candidates == ["Pricing Model B", "Board Meeting 12"]
+    assert g.candidate_ms >= 0 and g.plan_ms >= 0
+
+
+def test_grounded_plan_still_returns_a_plan(monkeypatch):
+    """`ground` is the richer call; the old signature stays honest for existing callers."""
+    import callosum.retrieve as retrieve
+
+    monkeypatch.setattr(retrieve, "candidate_entities", lambda *_a, **_k: (["Pricing Model B"], ["Context text"]))
+    monkeypatch.setattr(
+        retrieve, "structured",
+        lambda *_a, **_k: Plan(entities=["Pricing Model B"], needs_graph=True,
+                               needs_vector=True, search_query="pricing"),
+    )
+    assert retrieve.grounded_plan(None, None, "q", None).entities == ["Pricing Model B"]
+
+
+def test_candidate_recall_bounds_grounding_accuracy():
+    """grounding_acc can never exceed candidate_recall — it is a ceiling, not a stat.
+
+    If this inverts, the attribution table is lying: it would be claiming the linker
+    grounded to something it was never offered.
+    """
+    from callosum.evaluate import GoldItem, QuestionResult, grounding_traversal
+
+    facts = [{"subject": "Raj", "rel": "APPROVED", "target": "Reject Model B"}]
+    item = GoldItem("A1", "grounding_adv", "q", "Raj", [], [], facts,
+                    expect_entities=["Pricing Model B"])
+
+    # Offered and linked correctly.
+    hit = QuestionResult(item, True, True, 1.0, 2, True, ["Pricing Model B"], 0.0, False,
+                         1, 1, candidates=["Pricing Model B"], candidate_hit=True)
+    # Offered, linker picked a distractor — a linker failure.
+    miss_link = QuestionResult(item, True, True, 0.0, 0, False, ["Board Meeting 12"], 0.0,
+                               False, 1, 1,
+                               candidates=["Pricing Model B", "Board Meeting 12"],
+                               candidate_hit=True)
+    # Never offered — no prompt change could have saved this one.
+    miss_cand = QuestionResult(item, True, True, 0.0, 0, False, [], 0.0, False, 1, 1,
+                               candidates=["Board Meeting 12"], candidate_hit=False)
+
+    gt = grounding_traversal([hit, miss_link, miss_cand])
+
+    import pytest
+
+    # All three were retrieved (non-empty candidate lists), so all three are evaluated.
+    assert gt["evaluated"] == 3
+    assert gt["unretrieved"] == 0
+    assert gt["grounding_acc"] <= gt["candidate_recall"]
+    assert gt["candidate_recall"] == pytest.approx(2 / 3)   # offered on two of three
+    assert gt["grounding_acc"] == pytest.approx(1 / 3)
+    assert gt["linker_acc"] == pytest.approx(1 / 2)         # correct on one of two offered
+    # The GER splits cleanly across the two stages, and the split accounts for all of it.
+    assert gt["loss_to_candidates"] == pytest.approx(1 / 3)
+    assert gt["loss_to_linker"] == pytest.approx(1 / 3)
+    assert (gt["loss_to_candidates"] + gt["loss_to_linker"]
+            + gt["grounding_acc"]) == pytest.approx(1.0)
+
+
+def test_unretrieved_questions_are_excluded_from_grounding_not_scored_as_failures():
+    """A question the candidate stage never retrieved must not count as a linker failure.
+
+    This is the embedding-NaN case: the planner had no vocabulary, so scoring it as a
+    grounding miss blames the linker for an infrastructure fault upstream (review
+    2026-07-17). It is reported as `unretrieved`, and the rates are over what remained.
+    """
+    from callosum.evaluate import GoldItem, QuestionResult, grounding_traversal
+
+    facts = [{"subject": "Raj", "rel": "APPROVED", "target": "Reject Model B"}]
+    item = GoldItem("A1", "grounding_adv", "q", "Raj", [], [], facts,
+                    expect_entities=["Pricing Model B"])
+
+    grounded_ok = QuestionResult(item, True, True, 1.0, 2, True, ["Pricing Model B"], 0.0,
+                                 False, 1, 1, candidates=["Pricing Model B"],
+                                 candidate_hit=True)
+    # Embedding died: no candidates reached the planner, nothing to ground against.
+    embed_dead = QuestionResult(item, True, True, 0.0, 0, False, [], 0.0, False, 1, 1,
+                                candidates=[], candidate_hit=False)
+
+    gt = grounding_traversal([grounded_ok, embed_dead])
+
+    assert gt["n"] == 2                    # two graph questions total
+    assert gt["unretrieved"] == 1          # one never retrieved
+    assert gt["evaluated"] == 1            # scored over the one that did
+    assert gt["grounding_acc"] == 1.0      # NOT 50% — the dead one is excluded, not failed
+    assert gt["candidate_recall"] == 1.0
+
+
+def _fake_ollama_cfg():
+    from types import SimpleNamespace
+    from callosum.config import Provider
+    return SimpleNamespace(provider=Provider.OLLAMA, ollama_host="http://x",
+                           ollama_embedding_model="bge-m3")
+
+
+class _Resp:
+    def __init__(self, status, payload=None, text=""):
+        self.status_code = status
+        self._payload = payload
+        self.text = text
+
+    def json(self):
+        return self._payload
+
+
+def test_embed_recovers_deterministic_nan_via_one_normalized_retry(monkeypatch):
+    """The input-specific bge-m3 NaN is rescued by a single normalized retry, not a loop."""
+    import callosum.llm as llm
+    from callosum.config import EMBEDDING_DIM
+
+    monkeypatch.setattr(llm, "settings", _fake_ollama_cfg)
+    good = [0.01] * EMBEDDING_DIM
+    calls = []
+
+    def fake_post(url, **kw):
+        inp = kw["json"]["input"]
+        calls.append(list(inp))
+        # The exact failing string ends in '?'; the normalized retry drops it and succeeds.
+        if inp[0].endswith("?"):
+            return _Resp(500, text='{"error":"failed to encode response: unsupported value: NaN"}')
+        return _Resp(200, {"embeddings": [good]})
+
+    monkeypatch.setattr(llm.httpx, "post", fake_post)
+
+    v = llm.embed(["a query that NaNs?"], input_type="query")
+
+    assert len(v) == 1 and len(v[0]) == EMBEDDING_DIM
+    assert calls == [["a query that NaNs?"], ["a query that NaNs"]]  # original, then normalized — exactly once
+
+
+def test_embed_detects_nan_inside_a_200_response(monkeypatch):
+    """A 200 whose vector contains NaN is treated as the fault, not returned to the caller."""
+    import callosum.llm as llm
+    from callosum.config import EMBEDDING_DIM
+
+    monkeypatch.setattr(llm, "settings", _fake_ollama_cfg)
+    good = [0.01] * EMBEDDING_DIM
+    nan_vec = [float("nan")] + [0.0] * (EMBEDDING_DIM - 1)
+
+    def fake_post(url, **kw):
+        inp = kw["json"]["input"]
+        return _Resp(200, {"embeddings": [nan_vec if inp[0].endswith("?") else good]})
+
+    monkeypatch.setattr(llm.httpx, "post", fake_post)
+
+    v = llm.embed(["poison?"], input_type="query")
+    assert not any(x != x for x in v[0])  # no NaN survived to the caller
+
+
+def test_embed_raises_and_excludes_when_normalized_retry_also_fails(monkeypatch):
+    """If both attempts fail it raises (→ vector_search returns [] → question excluded)."""
+    import callosum.llm as llm
+    import pytest
+
+    monkeypatch.setattr(llm, "settings", _fake_ollama_cfg)
+    calls = []
+
+    def always_nan(url, **kw):
+        calls.append(list(kw["json"]["input"]))
+        return _Resp(500, text="unsupported value: NaN")
+
+    monkeypatch.setattr(llm.httpx, "post", always_nan)
+
+    with pytest.raises(RuntimeError):
+        llm.embed(["always bad?"], input_type="query")
+    assert len(calls) == 2  # original + exactly one normalized retry, never a loop
+
+
+def test_embed_does_not_retry_non_nan_errors(monkeypatch):
+    """A 404/401 is not the recoverable case — surface it immediately, no normalized retry."""
+    import callosum.llm as llm
+    import pytest
+
+    monkeypatch.setattr(llm, "settings", _fake_ollama_cfg)
+    calls = []
+
+    def not_found(url, **kw):
+        calls.append(1)
+        return _Resp(404, text="model not found")
+
+    monkeypatch.setattr(llm.httpx, "post", not_found)
+
+    with pytest.raises(Exception):
+        llm.embed(["anything"], input_type="query")
+    assert len(calls) == 1  # no normalized retry on a non-NaN error
+
+
+def test_normalize_for_retry_is_minimal():
+    from callosum.llm import _normalize_for_retry
+    assert _normalize_for_retry("between the two board meetings?") == "between the two board meetings"
+    assert _normalize_for_retry("no trailing punct") == "no trailing punct"
+    assert _normalize_for_retry("trailing space ? ") == "trailing space"
+    assert _normalize_for_retry("?") == "?"  # never returns empty
+
+
+def test_ground_retry_recovers_a_transient_empty_candidate_list(monkeypatch):
+    """The infra retry re-attempts an empty candidate list and takes the recovered one."""
+    import callosum.evaluate as ev
+    from callosum.retrieve import Grounding, Plan
+
+    empty = Grounding(plan=Plan(entities=[], needs_graph=True, needs_vector=True,
+                                search_query="q"),
+                      candidates=[], candidate_ms=1, plan_ms=1)
+    good = Grounding(plan=Plan(entities=["Pricing Model B"], needs_graph=True,
+                               needs_vector=True, search_query="q"),
+                     candidates=["Pricing Model B"], candidate_ms=1, plan_ms=1)
+    calls = iter([empty, good])
+    monkeypatch.setattr(ev, "ground", lambda *_a, **_k: next(calls))
+    monkeypatch.setattr(ev.time, "sleep", lambda _s: None)  # don't actually wait in a test
+
+    g = ev._ground_with_retry(None, None, "q", None, temperature=0.0)
+    assert g.candidates == ["Pricing Model B"]
+
+
+def test_ground_retry_is_bounded_and_gives_up_honestly(monkeypatch):
+    """If every attempt fails, return the empty result so `unretrieved` can exclude it."""
+    import callosum.evaluate as ev
+    from callosum.retrieve import Grounding, Plan
+
+    empty = Grounding(plan=Plan(entities=[], needs_graph=True, needs_vector=True,
+                                search_query="q"),
+                      candidates=[], candidate_ms=1, plan_ms=1)
+    n = 0
+    def counting(*_a, **_k):
+        nonlocal n
+        n += 1
+        return empty
+    monkeypatch.setattr(ev, "ground", counting)
+    monkeypatch.setattr(ev.time, "sleep", lambda _s: None)
+
+    g = ev._ground_with_retry(None, None, "q", None, temperature=0.0, retries=2)
+    assert g.candidates == []          # gave up honestly, did not fabricate
+    assert n == 3                      # initial attempt + 2 retries, no more
+
+
+def test_coreference_negative_does_not_lower_linker_precision():
+    """A coreference false-positive is a missing coref stage, not a linker abstention miss.
+
+    Precision must be measured over abstention negatives (no referent at all); the
+    coreference negative is reported on its own line (review 2026-07-17).
+    """
+    from callosum.evaluate import GoldItem, QuestionResult, grounding_traversal
+
+    facts = [{"subject": "Raj", "rel": "APPROVED", "target": "Reject Model B"}]
+    positive = GoldItem("A1", "grounding_adv", "q", "Raj", [], [], facts,
+                        expect_entities=["Pricing Model B"])
+    abst_neg = GoldItem("N1", "grounding_neg", "Why was the dynamic pricing engine rejected?",
+                        "Raj", [], [], [], should_not_ground=True)
+    coref_neg = GoldItem("K2", "coreference", "What does 'the prior motion' refer to?",
+                         "Raj", [], [], [], should_not_ground=True)
+
+    r_pos = QuestionResult(positive, True, True, 1.0, 2, True, ["Pricing Model B"], 0.0,
+                           False, 1, 1, candidates=["Pricing Model B"], candidate_hit=True)
+    # Abstention negative: linker correctly abstained (no false positive).
+    r_abst = QuestionResult(abst_neg, True, True, 0.0, 0, False, [], 0.0, False, 1, 1,
+                            candidates=["Pricing Model B"], candidate_hit=False)
+    # Coreference negative: linker grounded to a real node — but that's a coref gap.
+    r_coref = QuestionResult(coref_neg, True, True, 0.0, 0, False, ["Board Meeting 16"],
+                             0.0, True, 1, 1, candidates=["Board Meeting 16"],
+                             candidate_hit=False)
+
+    gt = grounding_traversal([r_pos, r_abst, r_coref])
+
+    assert gt["n_neg"] == 1                     # only the abstention negative
+    assert gt["false_positives"] == 0
+    assert gt["grounding_precision"] == 1.0     # NOT dragged down by the coref miss
+    assert gt["n_neg_coref"] == 1               # coref negative counted separately
+    assert gt["coref_false_positives"] == 1
+
+
+def test_csv_schema_change_never_corrupts_the_existing_log(tmp_path):
+    """An old log under a narrower header must be left alone, byte for byte.
+
+    eval/results.csv is the eval chapter's raw data across every run. Appending wider
+    rows under the old header would shift each field silently and damage the HISTORY,
+    not the new run — so a schema mismatch rotates to a sibling instead.
+    """
+    from callosum.evaluate import CSV_COLUMNS, GoldItem, QuestionResult, write_csv
+
+    log = tmp_path / "results.csv"
+    old = "run,model,id,stratum,question,error\n2026-07-16 10:00,gpt-oss,A1,lookup,q,\n"
+    log.write_text(old, encoding="utf-8")
+
+    item = GoldItem("A1", "lookup", "q", "Raj", [], [], [])
+    r = QuestionResult(item, True, True, 0.0, 0, False, [], 0.0, False, 1, 1)
+
+    written = write_csv([r], log, "gpt-oss")
+
+    assert written == tmp_path / "results-v2.csv"
+    assert log.read_text(encoding="utf-8") == old, "the old log was modified"
+    rows = written.read_text(encoding="utf-8").splitlines()
+    assert rows[0] == ",".join(CSV_COLUMNS)
+    assert len(rows) == 2
+
+
+def test_csv_appends_in_place_when_the_schema_already_matches(tmp_path):
+    """Rotation is for schema drift only — matching runs must keep sharing one file."""
+    from callosum.evaluate import GoldItem, QuestionResult, write_csv
+
+    log = tmp_path / "results.csv"
+    item = GoldItem("A1", "lookup", "q", "Raj", [], [], [])
+    r = QuestionResult(item, True, True, 0.0, 0, False, [], 0.0, False, 1, 1)
+
+    assert write_csv([r], log, "gpt-oss") == log
+    assert write_csv([r], log, "gpt-oss") == log       # second run appends, no rotation
+    assert not (tmp_path / "results-v2.csv").exists()
+    assert len(log.read_text(encoding="utf-8").splitlines()) == 3   # header + two rows
+
+
+def test_candidate_list_is_logged_verbatim_for_the_audit(tmp_path):
+    """When the linker false-positives, the row must show which distractors it saw."""
+    from callosum.evaluate import GoldItem, QuestionResult, write_csv
+
+    item = GoldItem("N1", "grounding_neg", "Why was the dynamic pricing engine rejected?",
+                    "Raj", [], [], [], should_not_ground=True)
+    r = QuestionResult(item, True, True, 0.0, 0, False, ["Pricing Model B"], 0.0, True,
+                       1, 1, candidates=["Pricing Model B", "Board Meeting 12"],
+                       candidate_hit=False, candidate_ms=42, plan_ms=310)
+
+    written = write_csv([r], tmp_path / "results.csv", "gpt-oss")
+    row = written.read_text(encoding="utf-8").splitlines()[1]
+
+    assert "Pricing Model B|Board Meeting 12" in row
+    assert "42" in row and "310" in row

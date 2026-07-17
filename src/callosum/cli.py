@@ -461,8 +461,13 @@ def eval(
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(ev.render_markdown(results, scores, provider_note), encoding="utf-8")
     csv_path = out.with_suffix(".csv")
-    ev.write_csv(results, csv_path, info["model"])
-    console.print(f"\n[green]✓[/] Wrote {out} and appended {csv_path}")
+    written = ev.write_csv(results, csv_path, info["model"])
+    console.print(f"\n[green]✓[/] Wrote {out} and appended {written}")
+    if written != csv_path:
+        # Say it out loud. A silent redirect would look like the run vanished from the log.
+        console.print(f"[yellow]![/] {csv_path} predates the R12 candidate columns; its "
+                      f"schema differs, so it was left untouched and this run went to "
+                      f"{written}.")
     console.print("[dim]Read it by row: lookup should tie, multi_hop should separate.[/]")
 
 
