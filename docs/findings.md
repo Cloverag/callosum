@@ -736,6 +736,11 @@ runs. The purpose was to establish what is reproducible *before* trusting any si
 Runs: `22:34`, `22:47`, `23:01` in `eval/results-v2.csv`. First run was cold (~29 min); warm
 runs ~13 min.
 
+> **Methodological takeaway.** Mechanism metrics (candidate recall, traversal, graph-fact
+> recall) were stable across repeated runs. LLM-generated answer text and seed grounding
+> exhibited nondeterministic variation despite fixed decoding parameters, so thesis
+> conclusions are based primarily on deterministic mechanism metrics.
+
 **Deterministic — safe to quote as results:**
 - **Candidate recall: 100% / 100% / 100%.** The R12 ceiling is rock-stable across runs.
 - **Grounding precision (abstention negatives): 50% / 50% / 50%.** The single N1 false
