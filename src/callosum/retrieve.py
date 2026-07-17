@@ -10,6 +10,7 @@ Filtering after retrieval would be one bug away from leaking. This is the only
 placement that actually satisfies the PRD's RBAC requirement.
 """
 
+import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -116,19 +117,24 @@ def plan(
     vocabulary. The caller obtains it from readable vector hits, which bounds prompt size
     and prevents private entity names from becoming a side channel.
 
-    EXPERIMENTAL (Devguru docs/r13-research-handoff, commit 8099d53, under evaluation):
-    `context` passes the readable candidate CHUNK TEXTS so the planner can resolve
-    references like "that proposal" (coreference, M16), and the grounding instruction is
-    tightened to abstain unless the referent is unequivocal (precision, N1). This is the
-    change being measured on the exp-devguru-grounding branch against the CP8 baseline.
+    SALVAGE (exp-devguru-grounding, under evaluation): Devguru's 8099d53 injected `context`
+    (readable candidate chunk texts) into EVERY plan call and tightened the abstention prompt.
+    The A/B measured that as fixing coreference (K1/K2) but regressing grounding recall −5
+    (the planner latched onto salient PEOPLE in the injected text) with no precision gain
+    (N1 unchanged). This salvage keeps the exact baseline prompt and passes `context` ONLY
+    for questions that actually need coreference resolution (see `ground` /
+    `_needs_coreference_context`), so non-coreference questions are byte-identical to
+    baseline and only the genuine coreference cases see the context.
     """
     system = PLANNER_PROMPT
     if context:
         ctx_text = "\n---\n".join(context)
         system += (
             "\n\n# Context for the question\n"
-            "Use the following excerpts to understand the question (e.g. to resolve pronouns "
-            f"or references like 'that proposal'):\n\n{ctx_text}\n"
+            "Use the following excerpts ONLY to resolve what a reference in the question "
+            "points to (e.g. 'that proposal', 'the prior motion'). Do not ground to people "
+            "or entities merely because they appear in these excerpts — ground to the entity "
+            f"the reference resolves TO:\n\n{ctx_text}\n"
         )
     if known_entities:
         catalog = "\n".join(f"- {n}" for n in known_entities)
@@ -136,10 +142,11 @@ def plan(
             "\n\n# Canonical graph entities\n"
             "The knowledge graph stores exactly these entities:\n"
             f"{catalog}\n\n"
-            "ONLY ground an entity if the question (using the context above) unequivocally "
-            "refers to it. Put that entity's EXACT name (copied from the list) in `entities`. "
-            "If the referent is ambiguous, different, or absent from the list, abstain by "
-            "outputting an empty `entities` list. Do not guess or approximate."
+            "For each entity the question refers to that matches one of the above by "
+            "meaning, put that entity's EXACT name (copied from the list) in `entities` — "
+            "e.g. if the question says 'usage-based pricing' and the list contains "
+            "'Pricing Model B', output 'Pricing Model B'. If none is the same referent, "
+            "output an empty `entities` list. Never output a name absent from the list."
         )
     result = structured(system, question, Plan, temperature=temperature)
     # Model output is untrusted. Keeping only supplied candidates makes abstention an
@@ -197,14 +204,43 @@ class Grounding:
     plan_ms: int
 
 
+# Referential cues that mark a question as needing coreference resolution — a demonstrative
+# or explicit "refer to" pointing at an antecedent the graph vocabulary does not name
+# literally ("that proposal", "the prior motion"). Deliberately TIGHT: it must fire on the
+# coreference stratum (K1/K2) and NOT on definite descriptions the planner already grounds
+# well ("the earlier pricing rejection" resolves from vocabulary, so it is excluded). The
+# A/B showed universal context injection costs 5 grounding questions; this gate is what
+# confines the context — and its salience bias — to the cases that actually benefit.
+_COREF_CUES = re.compile(
+    r"\brefer(?:s|ring|red)?\s+to\b"
+    r"|\bthat\s+(?:proposal|motion|decision|plan|deal|change|item|point|one)\b"
+    r"|\bthe\s+prior\s+\w+"
+    r"|\bthe\s+(?:above|aforementioned|latter|former)\b",
+    re.IGNORECASE,
+)
+
+
+def _needs_coreference_context(question: str) -> bool:
+    """True if the question contains a referential expression needing chunk context."""
+    return bool(_COREF_CUES.search(question))
+
+
 def ground(
     conn: psycopg.Connection, driver: Driver, question: str, principal: Principal,
     *, temperature: float | None = None,
 ) -> Grounding:
-    """Plan with readable semantic candidates, returning the candidate stage with it."""
+    """Plan with readable semantic candidates, returning the candidate stage with it.
+
+    Context (candidate chunk texts) is passed to the planner ONLY for genuine coreference
+    questions — the salvage of Devguru's 8099d53. Injecting it universally biased grounding
+    toward salient people in the text and cost recall (measured −5); gating it preserves the
+    baseline for everything else while still resolving 'that proposal'/'the prior motion'.
+    """
     started = time.monotonic()
-    candidates, context = candidate_entities(conn, driver, question, principal)
+    candidates, texts = candidate_entities(conn, driver, question, principal)
     candidate_ms = int((time.monotonic() - started) * 1000)
+
+    context = texts if _needs_coreference_context(question) else None
 
     started = time.monotonic()
     p = plan(question, known_entities=candidates, context=context, temperature=temperature)
