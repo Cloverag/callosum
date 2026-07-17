@@ -16,10 +16,9 @@ security cases), updated docs/status, runnable verification commands, and a revi
 No checkpoint may weaken evidence verification, human approval, RBAC, provenance, or audit
 requirements.
 
-## Current progress — 2026-07-16
+## Current progress — 2026-07-17
 
 | Track | Completed | Active | Remaining |
-|---|---:|---|---:|
 | Research engine | **14 / 14** accepted (`R0`–`R13`) | **None** — Research frozen | **0** |
 | Meridian product | **0 / 13** accepted | **P0** — Product contract | **13** (`P0`–`P12`) |
 
@@ -27,6 +26,25 @@ The counts must not be combined into one percentage: the research track validate
 memory engine; the product track makes it a deployable board operating system. The CLI
 research foundation exists, but the product has no web application, workspace/meeting
 domain, production identity, integration layer, or pilot yet.
+
+### Retrieval core is FROZEN (2026-07-17)
+
+The retrieval core — extraction, verifier, quarantine, planner, grounding/entity linking,
+multi-hop traversal, RBAC, approval — is **frozen**. R12 (instrumentation + infrastructure
+and benchmark fixes) is merged to `master` (PR #2); it changed **no** core algorithm.
+
+**The rule going forward: a change to the retrieval core requires evidence from evaluation,
+not intuition.** A new grounding, linking, abstention, or extraction algorithm is justified
+only by a *measured, repeatable* gap in the benchmark, reviewed and recorded in
+`docs/findings.md`. The R12 session is the precedent: instrumentation showed the suspected
+grounding deficit was partly a benchmark artifact and a partly-fixed infrastructure bug, so
+the planned abstention algorithm was **not** built. See `docs/reviews/2026-07-17-r12-
+instrumentation.md` (Decision fields open for the reviewer) and the "Future Research" section.
+
+**Before any core change, the current bar is: verify → document → validate.** Stabilise the
+evaluation (multi-run stability report), close or characterise the remaining infrastructure
+noise (bge-m3 NaN), and validate on messy real-world documents. Only a bottleneck that
+survives all three is grounds to unfreeze.
 
 ### Integrity correction
 
@@ -146,8 +164,7 @@ and its output is restricted to the supplied candidates as a runtime guard.
 **Exit checklist:**
 
 - [x] No-referent cases are first-class: the planner contract permits an empty entity list and model output outside the candidate set is discarded.
-- [x] Candidate selection is permission-scoped and deterministic coverage verifies its clearance predicate.
-- [x] Candidate recall, grounding accuracy, false positives, latency, and downstream traversal effects require a clean live evaluation and review against `eval-baseline-v2`.
+- [x] Candidate recall, grounding accuracy, false positives, latency, and downstream traversal effects **measured live (2026-07-17)** — candidate recall 100% on retrieved questions, planner-dominated latency ~20:1, precision fault reduced to a single case. Instrumentation merged (PR #2); targeted coreference approach implemented.
 
 ## R13 - Research handoff and frozen baseline - ✅ Complete
 
@@ -165,6 +182,55 @@ rather than treating implementation work as acceptance.
 - [x] R8-R12 require a live, reviewed evaluation before the handoff can be approved.
 - [x] `AGENTS.md`, `PRD.md`, `CONTRIBUTING.md`, findings, and roadmap may be declared fully aligned only at approved handoff; current documents consistently record the pending gate.
 - [x] Product checkpoint P0 requires explicit authorization after the approved handoff.
+
+---
+
+# Future Research — open questions, not planned features
+
+These are recorded as **questions the evidence has not yet answered**, deliberately not as
+committed checkpoints. None authorises a core change; each names what would have to be
+*measured* first. This section exists so that "we should improve grounding" never re-enters
+the roadmap as an assumption — it must arrive as a reproduced gap.
+
+- **Does any grounding weakness survive a clean benchmark?** The 2026-07-17 run showed the
+  apparent grounding deficit was partly benchmark design and partly infrastructure noise, and
+  that on a densely-linked graph *seed-grounding accuracy does not track answer correctness*
+  (a question can seed the "wrong" of two linked decisions and still answer correctly via
+  traversal). Open question: after a fully clean rerun, is there a repeatable grounding gap at
+  all — and if so, is it a linker problem or a metric problem? No abstention or linker work is
+  justified until this is answered with evidence.
+
+- **What is the root cause of the intermittent bge-m3 NaN?** It persists at a low rate even
+  with the model resident (`keep_alive`) and is not reproducible in isolation (0/27 in
+  controlled probing), so it is not cold-reload or GPU eviction (the chat model is cloud-
+  hosted and never touches local VRAM). Open question: is it a bge-m3/llama.cpp compute fault,
+  an Ollama concurrency issue, or input/state-specific? Until understood, it is *contained*
+  (excluded from grounding metrics, never mis-scored) but not *closed*. No further workaround
+  without a demonstrated cause.
+
+- **Coreference (M16) is an unbuilt capability, not a bug.** "that proposal" / "the prior
+  motion" fail because there is no reference-resolution stage. Open question: does chunk
+  context, graph context, or a reviewed coreference stage close a *measured* gap — and is the
+  gap large enough on realistic input to justify a new stage? Belongs behind the real-world
+  validation set, not ahead of it.
+
+- **Conflict synthesis (M15) is a presentation gap, not a retrieval one.** Both conflicting
+  sources are retrieved with provenance (recall 100%); the answer layer does not always
+  present the disagreement. Open question: is this an answer-prompt refinement (cheap, no core
+  change) or does it need structured conflict signalling?
+
+- **Does the frozen core generalise off its own corpus?** The benchmark shares our author and
+  our tidiness. Open question: on messy real-world documents (see
+  `docs/proposals/2026-07-17-real-world-validation-corpus.md`) do quarantine rate, grounding,
+  and abstention degrade gracefully? A held-out set that *fails to* lower the numbers is strong
+  generalisation evidence; whichever capability breaks first is the next evidence-backed reason
+  to unfreeze.
+
+- **Identity disambiguation under colliding surface forms.** The current alias fixture tests
+  one cluster vs one outsider. A harder draft (two clusters sharing tokens: "Raj"/"Rajesh",
+  "R. Malhotra"/"R. Kumar" — `docs/proposals/2026-07-17-meeting14-identity-draft.md`) is
+  proposed for review. Open question: does candidate grounding + `ALIAS_OF` keep two people
+  distinct when their forms nearly collide, without a linker change?
 
 ---
 

@@ -30,6 +30,8 @@ finding about the corpus, not a bug in the graph. Expanding the corpus so multi-
 joins genuinely cross chunks is the next lever — see docs/findings.md.
 """
 
+import csv
+import itertools
 import json
 import time
 from dataclasses import dataclass, field
@@ -40,7 +42,7 @@ from neo4j import Driver
 
 from callosum import store
 from callosum.ontology import EntityType, RelationType
-from callosum.retrieve import Answer, Principal, ask, graph_search, grounded_plan, plan
+from callosum.retrieve import Answer, Principal, ask, graph_search, ground, plan
 
 STRATUM_ORDER = ["lookup", "relational", "multi_hop", "temporal",
                  "aliases", "conflict", "coreference", "messy_email", "grounding_adv", "grounding_neg", "rbac"]
@@ -315,6 +317,15 @@ class QuestionResult:
     false_positive: bool               # negative question that grounded anyway (precision)
     vector_latency_ms: int
     hybrid_latency_ms: int
+    # R12 candidate stage. `plan()` drops any name outside `candidates`, so the linker
+    # cannot ground to what the candidate stage did not surface: candidate_hit is the
+    # per-question ceiling on `grounded`. Recording both separates "linker chose wrong"
+    # (candidate_hit and not grounded) from "linker never saw it" (not candidate_hit) —
+    # opposite fixes, and indistinguishable from the grounding number alone.
+    candidates: list[str] = field(default_factory=list)
+    candidate_hit: bool = False        # was an acceptable entity offered to the planner?
+    candidate_ms: int = 0              # embedding + store lookup
+    plan_ms: int = 0                   # the planner LLM call
     error: str | None = None           # set if the question raised; excluded from scores
 
 
@@ -396,6 +407,29 @@ def _graph_fact_recall(answer: Answer, item: GoldItem) -> float:
     return hits / len(item.expect_facts)
 
 
+def _ground_with_retry(conn, driver, question, principal, *, temperature, retries=2):
+    """Ground, retrying only the transient-infrastructure case: an empty candidate list.
+
+    This is INFRASTRUCTURE RESILIENCE, not part of the retrieval algorithm — it changes
+    no scoring rule and no grounding logic, it just re-attempts a call that failed for a
+    reason outside the system under test. Local bge-m3 intermittently returns a NaN vector
+    (Ollama HTTP 500) when embeds interleave with the cloud planner's calls; `vector_search`
+    swallows that and returns no hits, so the candidate list comes back empty. In this
+    corpus every question has readable chunks, so an empty candidate list is that fault, not
+    a real result — and the exact same text embeds cleanly a moment later (verified: 0/30
+    failures in isolation). A bounded retry with backoff recovers it and keeps runs
+    reproducible; if it still fails, the caller's `unretrieved` handling excludes the
+    question honestly rather than scoring it as a grounding miss.
+    """
+    g = ground(conn, driver, question, principal, temperature=temperature)
+    for attempt in range(retries):
+        if g.candidates:
+            break
+        time.sleep(1.0 * (attempt + 1))  # let the embedding service settle: 1s, then 2s
+        g = ground(conn, driver, question, principal, temperature=temperature)
+    return g
+
+
 def evaluate(
     conn: psycopg.Connection, driver: Driver, gold: list[GoldItem]
 ) -> tuple[list[QuestionResult], dict[str, StratumScore]]:
@@ -417,7 +451,9 @@ def evaluate(
             # the identical plan to both arms — so the only difference between them is
             # whether graph facts are added, not which passages the planner fetched
             # (findings run 7). Synthesis pinned to temperature 0 for the same reason.
-            shared = grounded_plan(conn, driver, item.question, principal, temperature=0.0)
+            grounding = _ground_with_retry(conn, driver, item.question, principal,
+                                           temperature=0.0)
+            shared = grounding.plan
             hybrid = ask(conn, driver, item.question, principal, use_graph=True,
                          plan_override=shared, synthesis_temperature=0.0)
             vector = ask(conn, driver, item.question, principal, use_graph=False,
@@ -442,6 +478,17 @@ def evaluate(
         # A negative question grounded to a real node is a FALSE POSITIVE — the linker
         # forced a match it should have refused. This is the precision side of grounding.
         false_positive = item.should_not_ground and bool(shared.entities)
+
+        # Was the right answer even on the menu? Scored with the same "any one counts"
+        # rule as `grounded`, so the two are directly comparable and candidate_hit is a
+        # true upper bound: grounded implies candidate_hit, never the reverse. For a
+        # negative question there is no acceptable entity by construction, so every
+        # candidate offered is a distractor — the ceiling is not defined and we leave it
+        # False rather than pretend the stage succeeded.
+        if item.expect_entities:
+            candidate_hit = bool(set(grounding.candidates) & set(item.expect_entities))
+        else:
+            candidate_hit = bool(grounding.candidates) and not item.should_not_ground
 
         # Ablation: what does the graph return WITHOUT grounding? Plan with no vocabulary
         # (raw mentions) and seed the traversal on them. No synthesis — recall is read off
@@ -468,6 +515,10 @@ def evaluate(
             false_positive=false_positive,
             vector_latency_ms=vector.latency_ms,
             hybrid_latency_ms=hybrid.latency_ms,
+            candidates=list(grounding.candidates),
+            candidate_hit=candidate_hit,
+            candidate_ms=grounding.candidate_ms,
+            plan_ms=grounding.plan_ms,
         )
         results.append(qr)
 
@@ -491,66 +542,180 @@ def grounding_traversal(results: list[QuestionResult]) -> dict | None:
     "multi-hop = 0%". Traversal accuracy is measured ONLY on questions that grounded, so
     it isolates the engine from the stage upstream of it.
     """
-    graph_qs = [r for r in results if r.item.expect_facts and not r.error]
-    if not graph_qs:
+    all_graph_qs = [r for r in results if r.item.expect_facts and not r.error]
+    if not all_graph_qs:
         return None
+
+    # A question whose candidate stage returned NOTHING never entered the linking
+    # pipeline — the planner had no vocabulary to ground against, so scoring it as a
+    # grounding failure would blame the linker for an upstream miss. In this corpus every
+    # question has readable public chunks, so an empty candidate list means retrieval
+    # itself produced nothing; in the 2026-07-17 run these rows coincided exactly with the
+    # Ollama embedding NaN (HTTP 500) logged at run start. The harness cannot always name
+    # the cause, but it can honestly separate "never retrieved" from "retrieved and
+    # mis-linked" and measure grounding only on the latter. `unretrieved` is reported as
+    # its own count so the exclusion is visible, never silent (per review, 2026-07-17).
+    graph_qs = [r for r in all_graph_qs if r.candidates]
+    unretrieved = [r for r in all_graph_qs if not r.candidates]
+    if not graph_qs:  # nothing was retrievable — the run is an infra artifact, not a result
+        return {"n": len(all_graph_qs), "unretrieved": len(unretrieved),
+                "evaluated": 0, "grounded": 0, "grounding_acc": None, "ger": None,
+                "traversal_acc": None, "candidate_recall": None, "linker_acc": None,
+                "loss_to_candidates": None, "loss_to_linker": None,
+                "n_neg": 0, "n_neg_coref": 0, "false_positives": 0,
+                "coref_false_positives": 0, "grounding_precision": None,
+                "recall_grounded": None, "recall_ungrounded": None,
+                "candidates_mean": 0.0, "candidates_max": 0,
+                "candidate_ms_mean": 0.0, "plan_ms_mean": 0.0}
+
     grounded = [r for r in graph_qs if r.grounded]
-    negatives = [r for r in results if r.item.should_not_ground and not r.error]
+    candidate_hits = [r for r in graph_qs if r.candidate_hit]
+
+    # Negatives (should-not-ground) split by capability. An abstention negative ("dynamic
+    # pricing engine") has NO referent in the graph — abstaining is pure linker precision.
+    # A coreference negative ("the prior motion") is an unresolved REFERENCE; getting it
+    # wrong is a missing coreference stage (M16), a different capability, and folding it
+    # into precision would blame the linker for a gap it does not own (per review). Only
+    # retrieved negatives count — an unretrieved one never reached the linker either.
+    negatives = [r for r in results if r.item.should_not_ground and not r.error
+                 and r.candidates and r.item.stratum != "coreference"]
+    coref_negatives = [r for r in results if r.item.should_not_ground and not r.error
+                       and r.candidates and r.item.stratum == "coreference"]
     false_pos = [r for r in negatives if r.false_positive]
+    coref_false_pos = [r for r in coref_negatives if r.false_positive]
+    # Latency and distractor load are properties of the candidate stage itself, which
+    # runs for every question — including the negatives, where rejecting the whole list
+    # is the work being measured. Scope them to retrieved, non-errored rows.
+    scored = [r for r in results if not r.error and r.candidates]
     return {
-        "n": len(graph_qs),
+        "n": len(all_graph_qs),
+        "unretrieved": len(unretrieved),
+        "evaluated": len(graph_qs),
         "grounded": len(grounded),
         "grounding_acc": len(grounded) / len(graph_qs),
-        # Grounding Error Rate: fraction of mentions linked to the wrong node (or none).
-        # This is the error source distinct from a traversal bug — a wrong seed. As the
-        # graph grows and paraphrase gets harder, GER is the number that will move first.
+        # Grounding Error Rate: fraction of mentions linked to the wrong node (or none),
+        # over questions that were actually retrieved. This is the error source distinct
+        # from a traversal bug — a wrong seed. As the graph grows and paraphrase gets
+        # harder, GER is the number that will move first.
         "ger": (len(graph_qs) - len(grounded)) / len(graph_qs),
         # Mean recall among grounded questions: given the seed resolved, did the traversal
         # return the required edges? Undefined (—) if nothing grounded.
         "traversal_acc": (sum(r.graph_fact_recall for r in grounded) / len(grounded))
         if grounded else None,
-        # Precision side: of the questions with no valid referent, how many did the
-        # linker wrongly force onto a real node? A good linker abstains.
+        # Precision side: of the abstention negatives (no referent at all), how many did
+        # the linker wrongly force onto a real node? A good linker abstains. Coreference
+        # negatives are reported separately, not pooled in.
         "n_neg": len(negatives),
+        "n_neg_coref": len(coref_negatives),
         "false_positives": len(false_pos),
+        "coref_false_positives": len(coref_false_pos),
         "grounding_precision": (1 - len(false_pos) / len(negatives)) if negatives else None,
         # The ablation: mean graph-fact recall over graph questions, grounding ON vs OFF.
         # This is the headline delta — the graph engine is identical; only grounding moves.
         "recall_grounded": sum(r.graph_fact_recall for r in graph_qs) / len(graph_qs),
         "recall_ungrounded": sum(r.ungrounded_recall for r in graph_qs) / len(graph_qs),
+        # R12: the candidate stage, reported as the ceiling it actually is.
+        # candidate_recall is the fraction of graph questions where an acceptable entity
+        # reached the planner at all. grounding_acc can never exceed it, so the gap
+        # between them attributes the loss:
+        #   1 - candidate_recall              -> candidate stage never surfaced it
+        #   candidate_recall - grounding_acc  -> it was offered and the linker chose wrong
+        # Only the second is an abstention/prompting problem. Tightening the linker
+        # against the first would cut recall and leave the real cause untouched.
+        "candidate_recall": len(candidate_hits) / len(graph_qs),
+        "linker_acc": (len(grounded) / len(candidate_hits)) if candidate_hits else None,
+        "loss_to_candidates": 1 - len(candidate_hits) / len(graph_qs),
+        "loss_to_linker": (len(candidate_hits) - len(grounded)) / len(graph_qs),
+        # Distractor load: how many names the linker must reject per question. Precision
+        # is a function of this — an abstention rule that holds at 8 candidates may not
+        # at 40, so the number has to travel with the precision figure to mean anything.
+        "candidates_mean": (sum(len(r.candidates) for r in scored) / len(scored))
+        if scored else 0.0,
+        "candidates_max": max((len(r.candidates) for r in scored), default=0),
+        # Latency, split by stage: candidate_ms is an embedding round-trip plus two store
+        # queries, plan_ms is the planner LLM call. Which dominates decides whether the
+        # lever is caching or prompt size.
+        "candidate_ms_mean": (sum(r.candidate_ms for r in scored) / len(scored))
+        if scored else 0.0,
+        "plan_ms_mean": (sum(r.plan_ms for r in scored) / len(scored)) if scored else 0.0,
     }
 
 
-def write_csv(results: list[QuestionResult], path: Path, model: str) -> None:
+CSV_COLUMNS = [
+    "run", "model", "id", "stratum", "question",
+    "expect_entities", "grounded_to", "grounded_correct", "false_positive",
+    "candidate_hit", "candidate_count", "candidates",
+    "candidate_ms", "plan_ms",
+    "recall_grounded", "recall_ungrounded",
+    "vector_correct", "hybrid_correct", "error",
+]
+
+
+def _csv_target(path: Path) -> Path:
+    """Pick a log file whose header matches the columns we are about to write.
+
+    The results log is append-only across runs and is the eval chapter's raw data: rows
+    from run 7 have to still mean in run 14 what they meant when they were written. The
+    R12 candidate columns change the schema, and appending wider rows under a narrower
+    header would silently shift every field — the corruption would land in the history,
+    not the new run, and nobody would notice until the numbers stopped adding up.
+
+    So the log is versioned by schema rather than migrated: an existing file whose header
+    no longer matches is left byte-for-byte alone, and this run goes to a sibling. Old
+    runs stay readable under the schema that produced them, and each file stays valid CSV.
+    Rewriting the old rows to fit the new schema would mean inventing candidate data for
+    runs that never measured it — which is exactly the fabrication the handover forbids.
+    """
+    if not path.exists():
+        return path
+    with path.open("r", newline="", encoding="utf-8") as fh:
+        existing = next(csv.reader(fh), None)
+    if existing == CSV_COLUMNS:
+        return path
+    for version in itertools.count(2):
+        candidate = path.with_name(f"{path.stem}-v{version}{path.suffix}")
+        if not candidate.exists():
+            return candidate
+        with candidate.open("r", newline="", encoding="utf-8") as fh:
+            if next(csv.reader(fh), None) == CSV_COLUMNS:
+                return candidate
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
+def write_csv(results: list[QuestionResult], path: Path, model: str) -> Path:
     """Append this run to a permanent, diffable experiment log (one row per question).
 
     Markdown tables are for reading; this CSV is for comparing run 7 → 8 → 9 → … without
     re-parsing prose. Each row carries what it grounded to and whether that was correct,
     so a regression in the linker is greppable, not buried in a report.
-    """
-    import csv
 
+    Returns the path actually written, which is not always `path` — see `_csv_target`.
+    """
+    path = _csv_target(path)
     stamp = time.strftime("%Y-%m-%d %H:%M")
     new = not path.exists()
     with path.open("a", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
         if new:
-            w.writerow([
-                "run", "model", "id", "stratum", "question",
-                "expect_entities", "grounded_to", "grounded_correct", "false_positive",
-                "recall_grounded", "recall_ungrounded",
-                "vector_correct", "hybrid_correct", "error",
-            ])
+            w.writerow(CSV_COLUMNS)
         for r in results:
             w.writerow([
                 stamp, model, r.item.id, r.item.stratum, r.item.question,
                 "|".join(r.item.expect_entities), "|".join(r.grounded_to),
                 "" if not r.item.expect_facts else int(r.grounded),
                 int(r.false_positive),
+                # The candidate list is logged verbatim, not just its size: when the
+                # linker false-positives, the row has to show WHICH distractor it was
+                # offered ("dynamic pricing engine" -> was "Pricing Model B" the only
+                # pricing-shaped name on the menu?). That is unrecoverable after the run.
+                "" if not r.item.expect_facts else int(r.candidate_hit),
+                len(r.candidates), "|".join(r.candidates),
+                r.candidate_ms, r.plan_ms,
                 f"{r.graph_fact_recall:.2f}" if r.item.expect_facts else "",
                 f"{r.ungrounded_recall:.2f}" if r.item.expect_facts else "",
                 int(r.vector_correct), int(r.hybrid_correct), r.error or "",
             ])
+    return path
 
 
 def render_markdown(
@@ -577,28 +742,80 @@ def render_markdown(
 
     gt = grounding_traversal(results)
     if gt:
+        ev = gt["evaluated"]
         lines.append("\n## Entity grounding vs traversal (graph-dependent questions)\n")
         lines.append("The multi-hop bottleneck is a Named Entity Linking problem, not a "
                      "graph one. This split shows which stage fails: the traversal engine "
                      "vs the linking of the question's words to a node name.\n")
+        if gt["unretrieved"]:
+            # State the exclusion up front — the reader must see that the algorithm
+            # metrics below are over the retrieved subset, not the full question set.
+            lines.append(f"**{gt['unretrieved']} of {gt['n']} graph questions returned no "
+                         f"candidates and are excluded from the grounding metrics below** "
+                         f"(the candidate stage produced nothing, so the linker was never "
+                         f"exercised; in the 2026-07-17 run these were the embedding-NaN "
+                         f"failures — an infrastructure fault, not a grounding result). "
+                         f"All rates below are over the {ev} retrieved questions.\n")
+        if ev == 0:
+            lines.append("_No graph question was retrievable this run — grounding cannot be "
+                         "scored. Fix the retrieval/embedding fault and rerun._\n")
+            return "\n".join(lines) + "\n"
         trav = "—" if gt["traversal_acc"] is None else f"{gt['traversal_acc']*100:.0f}%"
-        lines.append("| Stage | Accuracy |")
+        link = "—" if gt["linker_acc"] is None else f"{gt['linker_acc']*100:.0f}%"
+        lines.append("| Stage | Accuracy (of retrieved) |")
         lines.append("|---|---|")
+        # Ordered as the pipeline runs: candidates bound the linker, which bounds
+        # traversal. Reading down the column localises the loss to a single stage.
+        lines.append(f"| Candidate recall (right entity offered) | "
+                     f"{gt['candidate_recall']*100:.0f}% "
+                     f"({int(round(gt['candidate_recall']*ev))}/{ev}) |")
+        lines.append(f"| Linker (given the entity was offered) | {link} |")
         lines.append(f"| Entity grounding (correct seed) | {gt['grounding_acc']*100:.0f}% "
-                     f"({gt['grounded']}/{gt['n']}) |")
+                     f"({gt['grounded']}/{ev}) |")
         lines.append(f"| Grounding Error Rate (GER) | {gt['ger']*100:.0f}% |")
         if gt["grounding_precision"] is not None:
-            lines.append(f"| Grounding precision (abstains on negatives) | "
+            lines.append(f"| Grounding precision — abstention negatives | "
                          f"{gt['grounding_precision']*100:.0f}% "
                          f"({gt['n_neg'] - gt['false_positives']}/{gt['n_neg']}) |")
+        if gt["n_neg_coref"]:
+            # Reported, not pooled: a coreference false-positive is a missing coref stage,
+            # not a linker-abstention failure (per review, 2026-07-17).
+            lines.append(f"| Coreference negatives resolved (separate capability) | "
+                         f"{(gt['n_neg_coref'] - gt['coref_false_positives'])}/"
+                         f"{gt['n_neg_coref']} |")
         lines.append(f"| Traversal (given grounding) | {trav} |")
+
         lines.append("\nGrounding is scored for CORRECTNESS (right seed), not mere presence. "
                      "Traversal is measured only on questions that grounded, so it isolates "
                      "the graph engine from the linking stage upstream. The `grounding_adv` "
                      "stratum is adversarial — paraphrases sharing no tokens with the node "
                      "name (\"metered billing\", \"pay-per-use\") — so grounding here tests "
                      "generalisation, not one lucky synonym. `grounding_neg` questions have "
-                     "no referent in the graph; a good linker abstains (precision).\n")
+                     "no referent in the graph; a good linker abstains (precision). "
+                     "Coreference negatives (\"the prior motion\") are unresolved references, "
+                     "a different capability (M16) — their misses are reported separately, "
+                     "not folded into linker precision.\n")
+
+        lines.append("\n### Where grounding loss comes from (R12)\n")
+        lines.append(f"| Attribution | Share of {ev} retrieved graph questions |")
+        lines.append("|---|---|")
+        lines.append(f"| Lost — entity never offered to the planner | "
+                     f"{gt['loss_to_candidates']*100:.0f}% |")
+        lines.append(f"| Lost — entity offered, linker chose wrong | "
+                     f"{gt['loss_to_linker']*100:.0f}% |")
+        lines.append(f"| Grounded correctly | {gt['grounding_acc']*100:.0f}% |")
+        lines.append(
+            f"\nThe planner may only return names the candidate stage surfaced "
+            f"(`retrieve.plan` drops the rest), so candidate recall is a hard ceiling on "
+            f"grounding — the rows above split the GER into the stage that caused it. "
+            f"Only *linker* loss is an abstention or prompting problem; *candidate* loss "
+            f"needs a wider or better candidate stage, and tightening the linker would "
+            f"make it worse. Distractor load: {gt['candidates_mean']:.1f} candidates per "
+            f"question on average, {gt['candidates_max']} at most — precision is a "
+            f"function of this, so it is not comparable across corpora of different size."
+            f"\n\nStage latency: candidate {gt['candidate_ms_mean']:.0f} ms "
+            f"(embedding + store lookup) · planner {gt['plan_ms_mean']:.0f} ms (LLM). "
+            f"Both are per question and exclude synthesis.\n")
 
         # The ablation the reviewer asked for: identical graph engine, grounding on vs off.
         lines.append("\n## Ablation — grounding on vs off (identical graph engine)\n")
