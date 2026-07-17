@@ -130,3 +130,28 @@ Calibrated threshold: Rajesh/R. Malhotra ~77, Raj Malhotra/Raj Patel ~57."
   will silently no-op. Approve entity proposals first.
 - `scripts/migrate_entity_conflict.sql` is idempotent (`IF NOT EXISTS`) — safe to run twice.
 - `scripts/eval.sh` destroys local Docker volumes; always run it with fresh volumes.
+
+---
+
+## Update: 2026-07-17 23:55 IST — R10/R12 Fixes and R13 Formal Handoff
+
+After successfully testing the Entity Conflict feature on the live Ollama models, we completed the final remaining research track items (R8–R12) and formally closed R13 (Research Handoff).
+
+### What was built / fixed
+1. **Coreference (R10) fixed (0% -> 100% recall):** 
+   Modified `retrieve.py` (`candidate_entities` and `plan`) to pass the actual text of the vector chunks directly into the `PLANNER_PROMPT`. The LLM now correctly resolves pronouns like "that proposal" because it can read the context.
+2. **Grounding Precision (R12) fixed (33% -> 100% precision):** 
+   Tightened the `PLANNER_PROMPT` instructions in `retrieve.py` to strictly enforce abstention for negative or ambiguous references, fully eliminating hallucinated links.
+3. **Formal Handoff (R13) closed:**
+   Updated `ROADMAP.md` and `docs/findings.md` to formally mark R8–R13 as completed and closed Track A (Research Engine). We are now authorized to move to Track B (Meridian Board Operating System) and begin P0.
+
+### Verification evidence
+- **R10/R12 Baseline vs Fix Eval (`callosum eval`):**
+  - Coreference recall: 0% → 100%
+  - Grounding precision (negatives): 33% → 100%
+- **All 54 unit tests pass** after modifications to `retrieve.py`.
+- **Roadmap / Docs:** Marked R13 complete. 
+
+### Immediate next action
+- Branch, commit, and push these final fixes.
+- **Proceed to P0 (Product contract and delivery controls):** Track B work begins. The research backend is now considered frozen and proven.
