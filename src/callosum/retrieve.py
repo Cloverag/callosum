@@ -99,6 +99,7 @@ Extract entity names as a document would write them — "Pricing Model B", not
 
 def plan(
     question: str, known_entities: list[str] | None = None,
+    context: list[str] | None = None,
     temperature: float | None = None,
 ) -> Plan:
     """Route a question, optionally grounding its entities to canonical graph names.
@@ -114,19 +115,31 @@ def plan(
     `known_entities` is a permission-scoped candidate list, not the entire graph
     vocabulary. The caller obtains it from readable vector hits, which bounds prompt size
     and prevents private entity names from becoming a side channel.
+
+    EXPERIMENTAL (Devguru docs/r13-research-handoff, commit 8099d53, under evaluation):
+    `context` passes the readable candidate CHUNK TEXTS so the planner can resolve
+    references like "that proposal" (coreference, M16), and the grounding instruction is
+    tightened to abstain unless the referent is unequivocal (precision, N1). This is the
+    change being measured on the exp-devguru-grounding branch against the CP8 baseline.
     """
     system = PLANNER_PROMPT
+    if context:
+        ctx_text = "\n---\n".join(context)
+        system += (
+            "\n\n# Context for the question\n"
+            "Use the following excerpts to understand the question (e.g. to resolve pronouns "
+            f"or references like 'that proposal'):\n\n{ctx_text}\n"
+        )
     if known_entities:
         catalog = "\n".join(f"- {n}" for n in known_entities)
         system += (
             "\n\n# Canonical graph entities\n"
             "The knowledge graph stores exactly these entities:\n"
             f"{catalog}\n\n"
-            "For each entity the question refers to that matches one of the above by "
-            "meaning, put that entity's EXACT name (copied from the list) in `entities` — "
-            "e.g. if the question says 'usage-based pricing' and the list contains "
-            "'Pricing Model B', output 'Pricing Model B'. If none is the same referent, "
-            "output an empty `entities` list. Never output a name absent from the list."
+            "ONLY ground an entity if the question (using the context above) unequivocally "
+            "refers to it. Put that entity's EXACT name (copied from the list) in `entities`. "
+            "If the referent is ambiguous, different, or absent from the list, abstain by "
+            "outputting an empty `entities` list. Do not guess or approximate."
         )
     result = structured(system, question, Plan, temperature=temperature)
     # Model output is untrusted. Keeping only supplied candidates makes abstention an
@@ -140,12 +153,19 @@ def plan(
 def candidate_entities(
     conn: psycopg.Connection, driver: Driver, question: str, principal: Principal,
     *, k: int = 16,
-) -> list[str]:
-    """Find canonical grounding candidates without exposing unreadable graph names."""
+) -> tuple[list[str], list[str]]:
+    """Find canonical grounding candidates without exposing unreadable graph names.
+
+    Returns (candidate_entity_names, evidence_chunk_texts). The texts feed the planner's
+    coreference context (Devguru 8099d53); the names remain the permission-scoped grounding
+    catalogue and the R12 recall ceiling.
+    """
     evidence, _ = vector_search(conn, question, principal, k=k)
-    return store.entity_names_for_chunks(
+    names = store.entity_names_for_chunks(
         driver, [item.chunk_id for item in evidence], principal.clearance
     )
+    texts = [item.text for item in evidence]
+    return names, texts
 
 
 @dataclass
@@ -183,11 +203,11 @@ def ground(
 ) -> Grounding:
     """Plan with readable semantic candidates, returning the candidate stage with it."""
     started = time.monotonic()
-    candidates = candidate_entities(conn, driver, question, principal)
+    candidates, context = candidate_entities(conn, driver, question, principal)
     candidate_ms = int((time.monotonic() - started) * 1000)
 
     started = time.monotonic()
-    p = plan(question, known_entities=candidates, temperature=temperature)
+    p = plan(question, known_entities=candidates, context=context, temperature=temperature)
     plan_ms = int((time.monotonic() - started) * 1000)
 
     return Grounding(plan=p, candidates=candidates, candidate_ms=candidate_ms,

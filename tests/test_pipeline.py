@@ -492,7 +492,7 @@ def test_ground_reports_the_candidates_it_offered_the_planner(monkeypatch):
     import callosum.retrieve as retrieve
 
     monkeypatch.setattr(retrieve, "candidate_entities",
-                        lambda *_a, **_k: ["Pricing Model B", "Board Meeting 12"])
+                        lambda *_a, **_k: (["Pricing Model B", "Board Meeting 12"], ["ctx"]))
     monkeypatch.setattr(
         retrieve, "structured",
         lambda *_a, **_k: Plan(entities=["Pricing Model B"], needs_graph=True,
@@ -510,7 +510,7 @@ def test_grounded_plan_still_returns_a_plan(monkeypatch):
     """`ground` is the richer call; the old signature stays honest for existing callers."""
     import callosum.retrieve as retrieve
 
-    monkeypatch.setattr(retrieve, "candidate_entities", lambda *_a, **_k: ["Pricing Model B"])
+    monkeypatch.setattr(retrieve, "candidate_entities", lambda *_a, **_k: (["Pricing Model B"], ["ctx"]))
     monkeypatch.setattr(
         retrieve, "structured",
         lambda *_a, **_k: Plan(entities=["Pricing Model B"], needs_graph=True,
