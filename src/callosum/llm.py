@@ -11,7 +11,8 @@ That comparison is a Phase 7 result.
 """
 
 import json
-import time
+import math
+import sys
 from typing import Any, TypeVar
 
 import httpx
@@ -250,6 +251,43 @@ def text(
 # ---------------------------------------------------------------------------
 
 
+def _normalize_for_retry(text: str) -> str:
+    """Minimally perturb an input that triggered the deterministic bge-m3 NaN fault.
+
+    The fault is input-specific: a particular tokenization overflows to NaN. A trivial
+    change to the trailing characters dodges it while barely moving the embedding — the
+    investigation showed dropping a single trailing '?' recovers the failing query. Strip
+    trailing whitespace and one trailing '?'. Never return empty (that path is handled
+    separately in embed). This changes only inputs the model could not encode at all.
+    """
+    t = text.rstrip()
+    if t.endswith("?"):
+        t = t[:-1].rstrip()
+    return t or text
+
+
+def _embed_batch_ollama(cfg, batch: list[str]) -> list[list[float]] | None:
+    """POST one batch to Ollama's embed endpoint.
+
+    Return the vectors, or ``None`` if the batch hit the recoverable NaN fault — either
+    HTTP 500 because Ollama could not JSON-encode a NaN, or a 200 whose vectors contain
+    NaN/Inf. Non-NaN errors (404 missing model, 401 auth) still raise immediately via
+    `_raise_for_ollama`; they are not the recoverable case and must not be silently retried.
+    """
+    response = httpx.post(
+        f"{cfg.ollama_host}/api/embed",
+        timeout=OLLAMA_TIMEOUT,
+        json={"model": cfg.ollama_embedding_model, "input": batch, "keep_alive": "30m"},
+    )
+    if response.status_code == 500 and "nan" in response.text.lower():
+        return None
+    _raise_for_ollama(response)
+    vecs = response.json()["embeddings"]
+    if any(any(math.isnan(x) or math.isinf(x) for x in v) for v in vecs):
+        return None
+    return vecs
+
+
 def embed(texts: list[str], input_type: str = "document") -> list[list[float]]:
     """Embed texts. Both backends produce 1024-dim vectors, so the `chunk.embedding`
     column does not change when you switch providers — a corpus embedded with one
@@ -283,35 +321,38 @@ def embed(texts: list[str], input_type: str = "document") -> list[list[float]]:
         # is a lot of tokens and the local model has no server-side batching.
         for i in range(0, len(texts), 16):
             batch = texts[i : i + 16]
-            # bge-m3 occasionally computes a NaN embedding and then fails to JSON-encode
-            # its own response (HTTP 500, "unsupported value: NaN") — a server-side fault
-            # we cannot sanitise client-side. It is transient: the same text embeds fine
-            # moments later once the model is warm (verified — the failures cluster at the
-            # start of a run, when Ollama is loading bge-m3 into VRAM, then vanish). Two
-            # things make it survivable:
-            #   1. Back off between retries. Retrying in the same microsecond hits the same
-            #      bad instant three times and is no better than one attempt; a short,
-            #      growing sleep lets the load settle. This is why the run still saw NaNs
-            #      despite the retry loop — the sleep was missing.
-            #   2. keep_alive pins the model resident so later queries never pay the cold
-            #      reload that triggers the fault in the first place.
-            # Other errors (404 missing model, 401 auth) are not transient — surface at once.
-            attempts = 4
-            for attempt in range(attempts):
-                response = httpx.post(
-                    f"{cfg.ollama_host}/api/embed",
-                    timeout=OLLAMA_TIMEOUT,
-                    json={
-                        "model": cfg.ollama_embedding_model,
-                        "input": batch,
-                        "keep_alive": "30m",
-                    },
+            vecs = _embed_batch_ollama(cfg, batch)
+            if vecs is None:
+                # This batch triggered the bge-m3 NaN fault (HTTP 500 "unsupported value:
+                # NaN", or a 200 whose vectors contain NaN/Inf). The fault is input-specific
+                # and DETERMINISTIC, not transient (root cause + evidence in docs/reviews/
+                # 2026-07-17-nan-investigation.md): a specific tokenization overflows to NaN,
+                # so retrying the identical string re-hits it. Retry ONCE with a minimally
+                # normalized input — trailing whitespace and a single trailing '?' removed —
+                # which changes the tokenization enough to dodge the fault while barely moving
+                # the vector (verified: dropping the trailing '?' recovers the failing query).
+                # This is infrastructure hardening, not retrieval logic: it never changes a
+                # readable input's result, only rescues one the model cannot encode. Exactly
+                # one retry — not a general multi-retry loop — then exclude with an audit line.
+                normalized = [_normalize_for_retry(t) for t in batch]
+                vecs = _embed_batch_ollama(cfg, normalized)
+                if vecs is None:
+                    print(
+                        f"[embed] bge-m3 returned an invalid (NaN/Inf) embedding for "
+                        f"{batch!r}; normalized retry {normalized!r} also failed — "
+                        f"infrastructure failure, excluding this input.",
+                        file=sys.stderr,
+                    )
+                    raise RuntimeError(
+                        f"bge-m3 returned an invalid embedding (NaN/Inf) for {batch!r} "
+                        f"and the normalized retry {normalized!r} also failed"
+                    )
+                print(
+                    f"[embed] recovered a bge-m3 NaN via input normalization: "
+                    f"{batch!r} -> {normalized!r}",
+                    file=sys.stderr,
                 )
-                if response.status_code != 500 or attempt == attempts - 1:
-                    break
-                time.sleep(0.5 * (attempt + 1))  # 0.5s, 1.0s, 1.5s — let the reload settle
-            _raise_for_ollama(response)
-            vectors.extend(response.json()["embeddings"])
+            vectors.extend(vecs)
 
     from callosum.config import EMBEDDING_DIM
 
