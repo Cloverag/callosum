@@ -238,6 +238,41 @@ def pending(conn: psycopg.Connection, limit: int = 50) -> list[dict[str, Any]]:
     ).fetchall()
 
 
+def pending_entity_conflicts(
+    conn: psycopg.Connection, *, clearance: int = 4, limit: int = 50
+) -> list[dict[str, Any]]:
+    """Entity name conflict review queue, filtered by the reviewer's clearance.
+
+    Ordered by similarity descending — highest-confidence alias candidates first,
+    because those are cheapest to confirm and most damaging if silently merged.
+    """
+    return conn.execute(
+        """
+        SELECT id, name_a, type_a, name_b, type_b,
+               similarity, quote_a, quote_b, sensitivity, created_at
+        FROM entity_conflict
+        WHERE status = 'pending' AND sensitivity <= %s
+        ORDER BY similarity DESC, created_at ASC
+        LIMIT %s
+        """,
+        (clearance, limit),
+    ).fetchall()
+
+
+def conflict_stats(conn: psycopg.Connection) -> dict[str, int]:
+    """Summary counts for the entity conflict queue (for doctor / status commands)."""
+    row = conn.execute(
+        """
+        SELECT
+            count(*) FILTER (WHERE status = 'pending')  AS pending,
+            count(*) FILTER (WHERE status = 'approved') AS approved,
+            count(*) FILTER (WHERE status = 'rejected') AS rejected
+        FROM entity_conflict
+        """
+    ).fetchone()
+    return dict(row) if row else {"pending": 0, "approved": 0, "rejected": 0}
+
+
 # ---------------------------------------------------------------------------
 # Neo4j
 # ---------------------------------------------------------------------------
