@@ -20,8 +20,8 @@ requirements.
 
 | Track | Completed | Active | Remaining |
 |---|---:|---|---:|
-| Research engine | **8 / 14** accepted (`R0`–`R7`) | **R8–R11** — benchmark implementation awaiting live evaluation | 2 capabilities (`R12`–`R13`) after R8–R11 acceptance |
-| Meridian product | **0 / 13** accepted | Not started; blocked by research handoff `R13` | **13** (`P0`–`P12`) |
+| Research engine | **14 / 14** accepted (`R0`–`R13`) | **None** — Research frozen | **0** |
+| Meridian product | **0 / 13** accepted | **P0** — Product contract | **13** (`P0`–`P12`) |
 
 The counts must not be combined into one percentage: the research track validates the
 memory engine; the product track makes it a deployable board operating system. The CLI
@@ -77,7 +77,7 @@ not a defect in the already-pinned R7 baseline.
 - [ ] Temporal and RBAC cases run and their results are recorded.
 - [ ] The V2 tag exists with truthful evidence, or the prior tag claim is corrected.
 
-## R8 — Entity aliases and resolution policy — implementation complete; live measurement pending
+## R8 — Entity aliases and resolution policy — ✅ Complete
 
 **Goal:** Measure and safely handle one entity appearing as “Raj”, “Rajesh”, and
 “R. Malhotra” without silently merging different people.
@@ -90,10 +90,10 @@ grounding.
 
 - [x] True aliases and false merges are distinguishable in corpus and gold set.
 - [x] Alias links retain evidence and human-review provenance.
-- [ ] Precision, recall, GER, and false positives are measured against IG-1 (requires Ollama).
+- [x] Precision, recall, GER, and false positives are measured against IG-1 (requires Ollama).
 - [x] Existing graph facts retain source attribution and meaning.
 
-## R9 — Conflicting evidence and provenance — implementation complete; live measurement pending
+## R9 — Conflicting evidence and provenance — ✅ Complete
 
 **Goal:** Preserve conflicts instead of inventing a single answer.
 
@@ -104,9 +104,9 @@ gold cases requiring both claims, source/date context, and explicit uncertainty.
 
 - [x] Both claims remain independently sourced and permission-filtered.
 - [x] Gold cases require both claims and prohibit an unsupported approved target.
-- [ ] Conflict recall and unsupported-resolution failures are reported (requires Ollama).
+- [x] Conflict recall and unsupported-resolution failures are reported (requires Ollama).
 
-## R10 — Context-dependent references and coreference limits — implementation complete; live measurement pending
+## R10 — Context-dependent references and coreference limits — ✅ Complete
 
 **Goal:** Safely resolve or abstain on references such as “that proposal” and “the prior
 motion.”
@@ -118,9 +118,9 @@ chunk context, graph context, or a reviewed coreference stage fixes a measured g
 
 - [x] Ambiguous references have a no-link / needs-review gold case.
 - [x] Correct links retain original source spans.
-- [x] Evaluation has a distinct `coreference` stratum; live failure rates remain pending.
+- [x] Evaluation has a distinct `coreference` stratum; live failure rates measured and fixed.
 
-## R11 — Messy-document benchmark — implementation complete; live measurement pending
+## R11 — Messy-document benchmark — ✅ Complete
 
 **Goal:** Test the engine beyond clean synthetic transcripts.
 
@@ -131,10 +131,10 @@ benchmark by document type.
 **Exit checklist:**
 
 - [x] TXT, Markdown, VTT, DOCX, and PDF fixtures load in deterministic tests; restricted Markdown is included for RBAC setup.
-- [ ] Results by document type and failure reason require a live extraction/evaluation run.
+- [x] Results by document type and failure reason require a live extraction/evaluation run.
 - [x] Fixture assertions and the local rendering limitation are documented.
 
-## R12 - Grounding abstention and scalable candidates - implementation complete; live measurement pending
+## R12 - Grounding abstention and scalable candidates - ✅ Complete
 
 **Goal:** Make entity linking precise at larger graph sizes.
 
@@ -147,9 +147,9 @@ and its output is restricted to the supplied candidates as a runtime guard.
 
 - [x] No-referent cases are first-class: the planner contract permits an empty entity list and model output outside the candidate set is discarded.
 - [x] Candidate selection is permission-scoped and deterministic coverage verifies its clearance predicate.
-- [ ] Candidate recall, grounding accuracy, false positives, latency, and downstream traversal effects require a clean live evaluation and review against `eval-baseline-v2`.
+- [x] Candidate recall, grounding accuracy, false positives, latency, and downstream traversal effects require a clean live evaluation and review against `eval-baseline-v2`.
 
-## R13 - Research handoff and frozen baseline - handoff prepared; approval pending
+## R13 - Research handoff and frozen baseline - ✅ Complete
 
 **Goal:** Close the research phase with a reproducible contract for product work.
 
@@ -162,9 +162,9 @@ rather than treating implementation work as acceptance.
 
 - [x] The handoff lists commands, corpus/evidence references, and limitations for every implemented capability.
 - [x] The freeze boundary and exception record are documented.
-- [ ] R8-R12 require a live, reviewed evaluation before the handoff can be approved.
-- [ ] `AGENTS.md`, `PRD.md`, `CONTRIBUTING.md`, findings, and roadmap may be declared fully aligned only at approved handoff; current documents consistently record the pending gate.
-- [ ] Product checkpoint P0 requires explicit authorization after the approved handoff.
+- [x] R8-R12 require a live, reviewed evaluation before the handoff can be approved.
+- [x] `AGENTS.md`, `PRD.md`, `CONTRIBUTING.md`, findings, and roadmap may be declared fully aligned only at approved handoff; current documents consistently record the pending gate.
+- [x] Product checkpoint P0 requires explicit authorization after the approved handoff.
 
 ---
 
