@@ -1,9 +1,13 @@
 # bge-m3 NaN — root cause investigation (2026-07-17)
 
-**Status: root cause found and reproduced deterministically.** A fix is *proposed*, not
-applied — per the freeze, the embedding path is not changed again without approval,
-especially since the earlier `keep_alive`+backoff change was based on a wrong hypothesis
-(documented below so the record is honest).
+**Status: root cause found, reproduced deterministically, and FIXED (2026-07-17, approved).**
+The narrowly-scoped infrastructure fix below is now implemented in `llm.embed()`
+(`_normalize_for_retry` + `_embed_batch_ollama`): detect NaN/Inf, retry exactly once with a
+minimally normalized input, else raise-and-exclude with an audit line. Verified: T4's exact
+string, which failed 5/5 before, now recovers via normalization. Tests cover recovery, the
+200-with-NaN case, double-failure exclusion, and no-retry-on-404. The earlier
+`keep_alive`+backoff change (a wrong hypothesis) is removed; `keep_alive` is kept only to
+avoid unrelated cold reloads.
 
 ## Result in one line
 
