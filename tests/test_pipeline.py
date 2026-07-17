@@ -506,6 +506,26 @@ def test_ground_reports_the_candidates_it_offered_the_planner(monkeypatch):
     assert g.candidate_ms >= 0 and g.plan_ms >= 0
 
 
+def test_coreference_gate_fires_only_on_referential_questions():
+    """Context is injected only for genuine coreference, not every question (the salvage).
+
+    Universal injection cost 5 grounding questions in the A/B; the gate must catch the
+    referential cases ('that proposal', 'the prior motion', 'refer to') and leave ordinary
+    grounding questions untouched so they stay byte-identical to baseline.
+    """
+    from callosum.retrieve import _needs_coreference_context as need
+
+    # Genuine coreference — must inject context.
+    assert need("What does “that proposal” refer to in Meeting 16, and who owns it?")
+    assert need("What does “the prior motion” refer to in Meeting 16?")
+    assert need("Who owns the aforementioned plan?")
+    # Ordinary grounding / definite descriptions — must NOT inject context.
+    assert not need("Who argued against the consumption-pricing model the board rejected?")
+    assert not need("Who changed their position on usage-based pricing between the two board meetings?")
+    assert not need("What decision reversed the earlier pricing rejection, and who made the call?")
+    assert not need("Which FY27 ARR forecast should the board treat as the winner?")
+
+
 def test_grounded_plan_still_returns_a_plan(monkeypatch):
     """`ground` is the richer call; the old signature stays honest for existing callers."""
     import callosum.retrieve as retrieve
