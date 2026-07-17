@@ -651,3 +651,77 @@ grounding. Provider: ollama / gpt-oss:120b-cloud + bge-m3. Full rows appended to
 **Status:** metrics recorded, NOT accepted. Per the R8-R13 handoff, acceptance requires a
 reviewer decision — see the review record's Decision fields, left open for the reviewer.
 This run supplies the live evidence the handoff required; it does not authorize P0.
+
+## 2026-07-17 (R12 instrumentation) — the grounding deficit was partly a measurement artifact.
+
+Branch `r12-abstention-hardening`. The R8-R13 run named grounding precision (33%) the
+headline weakness and pointed at abstention as the fix. Before building an algorithm, the
+candidate stage was instrumented to attribute the loss — and the attribution moved the
+whole diagnosis. **No grounding, verifier, traversal, or RBAC code changed this session.**
+
+**What was built (measurement only):** `retrieve.ground()` now returns the plan *plus* the
+candidate list it was given and per-stage timings (zero behaviour change to `ask()`, so no
+frozen-core exception). The eval records, per question, the candidates, whether an
+acceptable entity was among them (`candidate_hit`), and `candidate_ms`/`plan_ms`. Because
+`plan()` discards any name outside the candidate list, **candidate recall is a hard ceiling
+on grounding** — grounding_acc can never exceed it. The report splits GER into the stage
+that caused it: `loss_to_candidates` (never offered) vs `loss_to_linker` (offered, chosen
+wrong). Runs log to `eval/results-v2.csv` (schema changed; the runs-7..13 log is preserved
+untouched under the old header).
+
+**Finding 1 — the candidate stage is not the bottleneck (on retrieved questions).** Over
+the questions that were actually retrieved, **candidate recall is 100%**: every real
+grounding failure was the linker choosing wrong from a list that contained the right answer,
+never the candidate stage failing to surface it. `loss_to_candidates` = 0%. Tightening the
+linker's abstention — the planned fix — would only have traded recall away against a ceiling
+that was already perfect. *Caveat (per review): this holds on the evaluated subset; it must
+be revalidated whenever the corpus or the embedding path changes.*
+
+**Finding 2 — latency is the planner, not the candidate stage.** Mean candidate stage
+~245 ms (one embed + two store queries); mean planner ~5000 ms (the LLM). **~20:1.**
+Candidate caching would buy nothing end-to-end; if latency ever becomes a product concern,
+the planner/LLM is the only lever worth pulling. Concrete engineering result, worth stating.
+
+**Finding 3 — the bge-m3 NaN is an infrastructure fault, and it was corrupting the metric.**
+The recurring `Ollama 500: unsupported value: NaN` is not a retrieval result: the affected
+questions never entered the pipeline. Worse, a forced-empty candidate list makes `plan()`
+abstain, which scores as recall-down *and* precision-**up** — so a bad enough embedding run
+would make the abstention metric look like it improved. Three fixes: (a) `embed()` keeps
+bge-m3 resident (`keep_alive`) and backs off between 500-retries instead of hammering the
+same instant; (b) a bounded, explicitly-labelled harness retry re-attempts the empty-
+candidate signature; (c) the harness now separates `unretrieved` (infra) from `evaluated`
+and scores grounding only on the latter. The same text embeds 0/30 in isolation yet still
+fails intermittently *inside* the eval when local embeds interleave with cloud planner
+calls — reduced run-to-run from 3→2→1 unretrieved, not yet zero. **The metric is now robust
+to it either way** (excluded, not mis-scored); closing it fully is an open infra task.
+
+**Finding 4 — several "linker errors" were benchmark defects, and fixing them exposed a
+deeper decoupling.** Inspecting every miss against gold: C2 rejected exactly the forecast
+nodes C1 rewards (an outright inconsistency, corrected). The pricing questions were
+genuinely ambiguous — after M13 added the reversal, `Reject Pricing Model B` and `Adopt
+Usage-Based Pricing` are two decision nodes sharing one topic, so "pay-per-use" no longer
+identifies one. The questions were rewritten to name the intended decision (per review:
+refine the benchmark, don't dumb down the linker); details in `eval/gold-traceability.md`.
+
+But the rewrite only half-worked, and the *why* is the real finding. M1, M2, A2, A4 still
+ground to `Adopt Usage-Based Pricing` even when the question says "the board **rejected**"
+— the linker anchors on the lexically-near node and does not honour the polarity qualifier.
+**Yet those same four answer correctly (graph-fact recall 1.00, hybrid ✓):** the two
+decisions are linked (`SUPERSEDES` + shared `ABOUT`), so 2-hop traversal recovers the
+required edges regardless of which of the two it seeds on. The inverse also occurred: A1
+grounded to the *correct* seed but produced a *wrong* answer. **On a densely-linked graph,
+seed-grounding accuracy does not track answer correctness** — which means "grounding
+accuracy" over-reports failure, and neither the reversal-preference nor A1's answer error is
+an abstention problem. The one genuine, repeatable abstention fault remains a single case:
+N1 ("dynamic pricing engine" → Pricing Model B). Coreference (K1/K2) is a separate missing
+capability (M16) and is now reported outside linker precision.
+
+**Decision — abstention is NOT justified yet, and this is the freeze.** The evidence says:
+candidate recall is full, traversal is full, the precision "weakness" is one example plus
+mislabelled golds plus a coreference gap, and the headline grounding deficit was partly an
+artifact of benchmark design and a partly-fixed infra bug. Designing a new grounding
+algorithm against that would be tuning to noise. **The research contribution of this session
+is that the instrumentation improved the benchmark and the measurement itself before any
+algorithm was written** — the project's discipline (every feature justified by a measured,
+repeatable gap) held. Frozen again pending a clean rerun that still shows a clear,
+repeatable bottleneck. Review record: `docs/reviews/2026-07-17-r12-instrumentation.md`.

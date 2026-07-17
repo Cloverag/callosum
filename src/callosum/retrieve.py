@@ -148,16 +148,58 @@ def candidate_entities(
     )
 
 
+@dataclass
+class Grounding:
+    """A plan plus the candidate stage that produced it — the audit trail for R12.
+
+    Grounding is two stages, and they fail differently. The candidate stage (vector
+    search → readable chunks → their entity names) decides what the planner is even
+    ALLOWED to say; the planner then links the question's mention onto one of those
+    names. Because `plan()` discards any name outside the candidate list, a missing
+    candidate is an unrecoverable grounding failure: no prompt wording and no
+    abstention tuning can ground to a name that was never offered.
+
+    That makes `candidates` a measurable CEILING on grounding recall, not a debug
+    detail — grounding_acc <= candidate_recall always. Reporting only the final
+    grounding number conflates "the linker chose wrong" with "the linker was never
+    shown the right answer", and those have opposite fixes: the first wants stricter
+    linking, the second wants a wider or better candidate stage. Tightening abstention
+    against an unmeasured ceiling would trade recall for precision and call it progress.
+
+    Timings are split for the same reason: `candidate_ms` is an embedding round-trip
+    plus two store queries, `plan_ms` is an LLM call. Knowing which dominates decides
+    whether the fix is caching or a smaller prompt.
+    """
+
+    plan: Plan
+    candidates: list[str]
+    candidate_ms: int
+    plan_ms: int
+
+
+def ground(
+    conn: psycopg.Connection, driver: Driver, question: str, principal: Principal,
+    *, temperature: float | None = None,
+) -> Grounding:
+    """Plan with readable semantic candidates, returning the candidate stage with it."""
+    started = time.monotonic()
+    candidates = candidate_entities(conn, driver, question, principal)
+    candidate_ms = int((time.monotonic() - started) * 1000)
+
+    started = time.monotonic()
+    p = plan(question, known_entities=candidates, temperature=temperature)
+    plan_ms = int((time.monotonic() - started) * 1000)
+
+    return Grounding(plan=p, candidates=candidates, candidate_ms=candidate_ms,
+                     plan_ms=plan_ms)
+
+
 def grounded_plan(
     conn: psycopg.Connection, driver: Driver, question: str, principal: Principal,
     *, temperature: float | None = None,
 ) -> Plan:
     """Plan with readable semantic candidates and an enforceable abstention path."""
-    return plan(
-        question,
-        known_entities=candidate_entities(conn, driver, question, principal),
-        temperature=temperature,
-    )
+    return ground(conn, driver, question, principal, temperature=temperature).plan
 
 
 # ---------------------------------------------------------------------------

@@ -11,6 +11,7 @@ That comparison is a Phase 7 result.
 """
 
 import json
+import time
 from typing import Any, TypeVar
 
 import httpx
@@ -284,17 +285,31 @@ def embed(texts: list[str], input_type: str = "document") -> list[list[float]]:
             batch = texts[i : i + 16]
             # bge-m3 occasionally computes a NaN embedding and then fails to JSON-encode
             # its own response (HTTP 500, "unsupported value: NaN") — a server-side fault
-            # we cannot sanitise client-side. It is often transient (a GPU hiccup), so
-            # retry a 500 a couple of times before giving up. Other errors (404 missing
-            # model, 401 auth) are not transient — surface them immediately.
-            for attempt in range(3):
+            # we cannot sanitise client-side. It is transient: the same text embeds fine
+            # moments later once the model is warm (verified — the failures cluster at the
+            # start of a run, when Ollama is loading bge-m3 into VRAM, then vanish). Two
+            # things make it survivable:
+            #   1. Back off between retries. Retrying in the same microsecond hits the same
+            #      bad instant three times and is no better than one attempt; a short,
+            #      growing sleep lets the load settle. This is why the run still saw NaNs
+            #      despite the retry loop — the sleep was missing.
+            #   2. keep_alive pins the model resident so later queries never pay the cold
+            #      reload that triggers the fault in the first place.
+            # Other errors (404 missing model, 401 auth) are not transient — surface at once.
+            attempts = 4
+            for attempt in range(attempts):
                 response = httpx.post(
                     f"{cfg.ollama_host}/api/embed",
                     timeout=OLLAMA_TIMEOUT,
-                    json={"model": cfg.ollama_embedding_model, "input": batch},
+                    json={
+                        "model": cfg.ollama_embedding_model,
+                        "input": batch,
+                        "keep_alive": "30m",
+                    },
                 )
-                if response.status_code == 200 or response.status_code != 500 or attempt == 2:
+                if response.status_code != 500 or attempt == attempts - 1:
                     break
+                time.sleep(0.5 * (attempt + 1))  # 0.5s, 1.0s, 1.5s — let the reload settle
             _raise_for_ollama(response)
             vectors.extend(response.json()["embeddings"])
 
