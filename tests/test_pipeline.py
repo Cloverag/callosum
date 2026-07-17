@@ -253,9 +253,20 @@ def test_aliases_and_conflicting_forecasts_keep_distinct_provenance():
 
     edges_by_title = {title: edges for title, _ents, edges, _conf in GOLD_GROUPS}
     aliases = edges_by_title["board_meeting_14_transcript"]
-    assert ("Raj", RelationType.ALIAS_OF, "Rajesh Malhotra",
-            "Raj, short for Rajesh Malhotra") in aliases
-    assert not any(src == "Raj Patel" and rel == RelationType.ALIAS_OF for src, rel, _tgt, _q in aliases)
+    # Two alias clusters that share surface tokens must resolve to DIFFERENT people.
+    assert ("R. Malhotra", RelationType.ALIAS_OF, "Raj Malhotra",
+            "R. Malhotra is Raj, our CEO") in aliases
+    assert ("R. Kumar", RelationType.ALIAS_OF, "Rajesh Kumar",
+            "R. Kumar — that's me, Rajesh Kumar — approved the deploy window") in aliases
+    # The collision must never collapse: no spelling of one person aliases the other.
+    alias_pairs = {(src, tgt) for src, rel, tgt, _q in aliases if rel == RelationType.ALIAS_OF}
+    assert ("R. Malhotra", "Rajesh Kumar") not in alias_pairs
+    assert ("R. Kumar", "Raj Malhotra") not in alias_pairs
+    # The adjacent decisions are attributed to the right similar-named person.
+    assert ("Rajesh Kumar", RelationType.APPROVED, "Approve billing pipeline deploy",
+            "Rajesh Kumar approved the deploy") in aliases
+    assert ("Raj Malhotra", RelationType.APPROVED, "Approve rollback and customer credits",
+            "Raj Malhotra approved the rollback and the credits") in aliases
 
     finance = edges_by_title["finance_fy27_forecast"]
     sales = edges_by_title["sales_fy27_forecast"]

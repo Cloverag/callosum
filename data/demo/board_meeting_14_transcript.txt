@@ -1,8 +1,25 @@
 Meridian Inc — Board Meeting 14
 Date: 2026-11-18
-Attendees: Rajesh Malhotra (CEO, co-founder), Priya Nair (CFO), Marcus Webb (Sequoia, board), Raj Patel (guest observer, not Rajesh Malhotra)
+Attendees: Raj Malhotra (CEO, co-founder), Priya Nair (CFO), Marcus Webb (Sequoia, board), Rajesh Kumar (Staff Engineer, Platform)
 
-PRIYA: For the record, Raj, short for Rajesh Malhotra, approved the operating plan before this meeting.
-MARCUS: The written update calls him R. Malhotra, the same CEO; we should preserve both spellings rather than guessing later.
-RAJ PATEL: I am Raj Patel, the guest observer, and I am not Rajesh Malhotra.
-RAJESH: Agreed. Any link between a spelling and a person should stay pending until a reviewer can see the exact source sentence.
+---
+
+RAJ: We're opening with the November 9th billing outage before the standing agenda. Rajesh Kumar led the response, so he'll walk us through it.
+
+RAJESH: On the 9th we deployed the new billing pipeline to production. The migration held a lock longer than staging predicted and checkout backed up — forty-one minutes of failed charges before we rolled back. R. Kumar — that's me, Rajesh Kumar — approved the deploy window. Engineering owns deploy windows, so that call was mine.
+
+PRIYA: I want the record precise, because we have two R's in this room. The last board packet said "R. Malhotra approved the pipeline change," and that is wrong. R. Malhotra is Raj, our CEO, and the deploy approval was Rajesh Kumar's, not Raj's. Someone merged the initials.
+
+RAJ: Correct. I did not approve the deploy. What I approved was the rollback and the customer credits, because refunding customers needed an exec to authorize it. Raj Malhotra approved the rollback and the credits; Rajesh Kumar approved the deploy. Two people, two decisions.
+
+MARCUS: For the minutes, then, and so this never happens again: Raj is short for Raj Malhotra, the CEO, and Rajesh is Rajesh Kumar, the engineer. They are not the same person, and R. Malhotra and R. Kumar must never be merged.
+
+RAJ: On action items. Rajesh Kumar owns the billing pipeline remediation and will bring the revised rollout plan back before anything ships again.
+
+RAJESH: I own the remediation.
+
+RAJ: And Priya Nair owns the customer-credit reconciliation from the failed charges.
+
+PRIYA: I own the reconciliation.
+
+RAJ: Settled. Rajesh Kumar on remediation, Priya on reconciliation, and my rollback authorization stands. Let's move to the standing agenda.
