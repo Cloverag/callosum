@@ -13,7 +13,7 @@ export type EntityConflict = {
 };
 
 // In-memory mock data store to allow interactive testing of Approve/Reject
-let mockConflicts: EntityConflict[] = [
+const mockConflicts: EntityConflict[] = [
   {
     id: "3f1c019d-a442-491b-90f7-5264b387cf3e",
     name_a: "Raj Patel",
