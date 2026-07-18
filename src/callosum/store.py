@@ -35,7 +35,10 @@ DEFAULT_WORKSPACE_ID = "00000000-0000-0000-0000-000000000001"
 
 @contextmanager
 def pg(workspace_id: str | None = None) -> Iterator[psycopg.Connection]:
-    conn = psycopg.connect(settings().postgres_dsn, row_factory=dict_row)
+    # Runtime connections use the non-superuser app role so Row-Level Security is
+    # actually enforced (a superuser would bypass it). Migrations/admin use the
+    # superuser DSN directly, not this helper.
+    conn = psycopg.connect(settings().postgres_app_dsn, row_factory=dict_row)
     try:
         register_vector(conn)
         # Tenant context for Row-Level Security (Meridian P1, brick 2b). Defaults to
