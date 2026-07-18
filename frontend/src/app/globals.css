@@ -23,47 +23,47 @@
 
 @layer base {
   :root {
-    --background: #f8f9fa;
-    --foreground: #111827;
+    --background: #e2e8f0;
+    --foreground: #0f172a;
     --primary: #000000;
     --primary-foreground: #ffffff;
-    --muted: #e5e7eb;
-    --muted-foreground: #6b7280;
-    --border: rgba(0, 0, 0, 0.1);
-    --border-hover: rgba(0, 0, 0, 0.2);
+    --muted: #cbd5e1;
+    --muted-foreground: #64748b;
+    --border: rgba(0, 0, 0, 0.15);
+    --border-hover: rgba(0, 0, 0, 0.25);
     --accent: #3b82f6;
-    --accent-glow: rgba(59, 130, 246, 0.2);
+    --accent-glow: rgba(59, 130, 246, 0.3);
     
-    --glass-bg: rgba(255, 255, 255, 0.7);
-    --glass-border: rgba(0, 0, 0, 0.05);
-    --glass-highlight: rgba(255, 255, 255, 0.8);
-    --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.04);
+    --glass-bg: #ffffff;
+    --glass-border: rgba(0, 0, 0, 0.1);
+    --glass-highlight: rgba(255, 255, 255, 1);
+    --glass-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
     
-    --card-bg: rgba(255, 255, 255, 0.5);
-    --card-border: rgba(0, 0, 0, 0.03);
+    --card-bg: #f8fafc;
+    --card-border: rgba(0, 0, 0, 0.08);
 
     --page-gradient: radial-gradient(circle at 50% -20%, rgba(59, 130, 246, 0.08), transparent 60%);
   }
 
   .dark {
-    --background: #000000;
-    --foreground: #ededed;
+    --background: #020617;
+    --foreground: #f8fafc;
     --primary: #ffffff;
-    --primary-foreground: #000000;
-    --muted: #262626;
-    --muted-foreground: #a3a3a3;
-    --border: rgba(255, 255, 255, 0.1);
-    --border-hover: rgba(255, 255, 255, 0.2);
+    --primary-foreground: #020617;
+    --muted: #334155;
+    --muted-foreground: #94a3b8;
+    --border: rgba(255, 255, 255, 0.15);
+    --border-hover: rgba(255, 255, 255, 0.25);
     --accent: #3b82f6;
-    --accent-glow: rgba(59, 130, 246, 0.5);
+    --accent-glow: rgba(59, 130, 246, 0.6);
     
-    --glass-bg: rgba(10, 10, 10, 0.6);
-    --glass-border: rgba(255, 255, 255, 0.1);
-    --glass-highlight: rgba(255, 255, 255, 0.05);
-    --glass-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+    --glass-bg: #0f172a;
+    --glass-border: rgba(255, 255, 255, 0.15);
+    --glass-highlight: rgba(255, 255, 255, 0.08);
+    --glass-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
     
-    --card-bg: rgba(0, 0, 0, 0.4);
-    --card-border: rgba(255, 255, 255, 0.03);
+    --card-bg: #1e293b;
+    --card-border: rgba(255, 255, 255, 0.1);
 
     --page-gradient: radial-gradient(circle at 50% -20%, rgba(59, 130, 246, 0.05), transparent 60%);
   }
