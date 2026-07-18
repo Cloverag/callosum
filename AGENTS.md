@@ -35,7 +35,8 @@ execution → retrieve history for the next meeting. Callosum provides the trust
 memory layer in that lifecycle: raw source retention, source-backed graph proposals,
 human approval, hybrid graph/vector retrieval, and pre-retrieval RBAC. It does **not**
 yet provide the workspace, meeting, agenda, board-pack, resolution, external action,
-integration, or frontend capabilities of Meridian.
+or integration capabilities of Meridian. A foundational Next.js frontend shell exists,
+starting with the Entity Conflict resolution UI.
 
 Product priorities from the original research are:
 
@@ -136,6 +137,15 @@ readable chunk; a vector result can follow `Chunk -[:MENTIONS]-> Entity` into th
 | `retrieve.py` | Planner, canonical entity grounding, permission-filtered vector and graph search, graph-chunk resolution, context rendering, LLM answer synthesis, and query audit logging. It includes the graph-vs-vector ablation hook used only by evaluation. |
 | `evaluate.py` | Deterministic gold graph seed, JSONL gold-set loader, hybrid/vector-only evaluation, grounding/traversal metrics, append-only CSV recording, and Markdown results rendering. |
 | `cli.py` | Typer interface for health checking, initialization, ingest, approval review/commit, query, Anthropic batch collection, gold seeding, evaluation, and failure reporting. |
+
+### Frontend Application: `frontend/`
+
+| Path | Responsibility |
+|---|---|
+| `src/app/` | Next.js App Router providing the Meridian shell (Sidebar, Header, Layout) and feature pages (e.g., `entity-conflicts`). |
+| `src/app/globals.css` | Implements the **Cinematic Luxury Aesthetic**: deep void/slate dark modes, premium off-white light modes, semantic CSS variables for `next-themes`, and glassmorphic utilities. |
+| `src/components/` | Reusable UI components. Heavily relies on Framer Motion for micro-interactions (e.g., fluid layout animations, theme toggling) and `lucide-react` for iconography. |
+| `src/lib/api.ts` | The typed API client layer. Currently implements in-memory mock endpoints with simulated latency; designed to be swapped for real backend integration in P1. |
 
 ### Persistence: `schema/`
 
@@ -282,8 +292,7 @@ the graph-fact mechanism measure, provider/model, corpus, and baseline compariso
 - The corpus is still synthetic/small. Board Meeting 12 tests polarity; Meeting 13 tests
   temporal reversal. The findings document identifies aliasing, conflicting evidence, and
   contextual references as future corpus capabilities.
-- No frontend, connectors, real-time transcription, role inheritance, robust entity
-  resolution, or automatic migration framework currently exists.
+- A foundational Next.js frontend exists, but full workspace data integration, real-time transcription, role inheritance, robust entity resolution, and automatic migration frameworks do not yet exist.
 - `acl_grant` exists in the schema as an escape hatch, but the current retrieval predicates
   use clearance only. Do not state that per-object ACL grants are enforced until the query
   paths actually incorporate them.
