@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { apiClient, EntityConflict } from '@/lib/api';
 import { ShieldAlert, Check, X, User } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function EntityConflictsPage() {
   const [conflicts, setConflicts] = useState<EntityConflict[]>([]);
@@ -27,7 +28,6 @@ export default function EntityConflictsPage() {
     setProcessingId(id);
     try {
       await apiClient.approveConflict(id);
-      // Optimistic update
       setConflicts((prev) => prev.filter((c) => c.id !== id));
     } catch (e) {
       console.error(e);
@@ -40,7 +40,6 @@ export default function EntityConflictsPage() {
     setProcessingId(id);
     try {
       await apiClient.rejectConflict(id);
-      // Optimistic update
       setConflicts((prev) => prev.filter((c) => c.id !== id));
     } catch (e) {
       console.error(e);
@@ -52,111 +51,139 @@ export default function EntityConflictsPage() {
   if (loading) {
     return (
       <div className="p-8 flex items-center justify-center h-full">
-        <div className="text-[#8691a7] text-lg animate-pulse">Loading conflicts...</div>
+        <motion.div 
+          initial={{ opacity: 0 }} 
+          animate={{ opacity: 1 }} 
+          className="text-neutral-500 text-sm tracking-widest uppercase font-medium"
+        >
+          Initializing neural matrix...
+        </motion.div>
       </div>
     );
   }
 
   return (
-    <div className="p-8 max-w-5xl mx-auto">
-      <div className="mb-8 flex items-center gap-3 border-b border-[#273647] pb-6">
-        <div className="bg-[#1E293B] p-2 rounded-lg border border-[#273647]">
-          <ShieldAlert className="w-6 h-6 text-[#c0c1ff]" />
+    <div className="p-10 max-w-6xl mx-auto">
+      <motion.div 
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="mb-10 flex items-center gap-4 border-b border-[rgba(255,255,255,0.05)] pb-6"
+      >
+        <div className="bg-black/50 p-2.5 rounded-xl border border-[rgba(255,255,255,0.1)] shadow-[0_0_20px_rgba(59,130,246,0.1)] relative group">
+          <div className="absolute inset-0 bg-blue-500/20 blur-xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
+          <ShieldAlert className="w-6 h-6 text-blue-400 relative z-10" />
         </div>
         <div>
-          <h1 className="text-2xl font-semibold text-[#d4e4fa] tracking-tight">Entity Conflicts</h1>
-          <p className="text-sm text-[#8691a7] mt-1">
-            Review and resolve potential duplicate entities detected across the workspace.
+          <h1 className="text-3xl font-light text-white tracking-tight">Entity Conflicts</h1>
+          <p className="text-sm text-neutral-400 mt-1 font-light">
+            Review and resolve potential duplicate entities detected across the workspace memory graph.
           </p>
         </div>
-      </div>
+      </motion.div>
 
       {conflicts.length === 0 ? (
-        <div className="bg-[#122131]/50 backdrop-blur-xl border border-[#273647] rounded-xl p-12 text-center">
-          <Check className="w-12 h-12 text-[#bec6e0] mx-auto mb-4 opacity-50" />
-          <h3 className="text-lg font-medium text-[#d4e4fa]">All clear</h3>
-          <p className="text-[#8691a7] mt-2">No pending entity conflicts require review.</p>
-        </div>
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="glass-panel rounded-2xl p-16 text-center relative overflow-hidden"
+        >
+          <div className="absolute inset-0 bg-gradient-to-b from-blue-500/5 to-transparent" />
+          <Check className="w-12 h-12 text-blue-400/50 mx-auto mb-6 drop-shadow-[0_0_15px_rgba(59,130,246,0.5)]" />
+          <h3 className="text-xl font-medium text-white tracking-wide">System optimal</h3>
+          <p className="text-neutral-500 mt-2 font-light">No pending entity conflicts require review.</p>
+        </motion.div>
       ) : (
-        <div className="space-y-6">
-          {conflicts.map((conflict) => (
-            <div
-              key={conflict.id}
-              className={`bg-[#1E293B]/60 backdrop-blur-[20px] border border-[#273647] rounded-xl overflow-hidden shadow-lg transition-all ${
-                processingId === conflict.id ? 'opacity-50 scale-[0.99] pointer-events-none' : ''
-              }`}
-            >
-              {/* Header */}
-              <div className="flex items-center justify-between p-5 border-b border-[#273647]/50 bg-[#122131]/30">
-                <div className="flex items-center gap-2">
-                  <span className="px-2.5 py-1 text-[10px] font-bold tracking-wider rounded-full bg-[#3f465c] text-[#bec6e0]">
-                    {conflict.type_a}
-                  </span>
-                  <span className="text-xs text-[#8691a7]">Detected {new Date(conflict.created_at).toLocaleDateString()}</span>
-                </div>
-                <div className="flex items-center gap-2 bg-[#051424] px-3 py-1 rounded-full border border-[#273647]">
-                  <span className="text-xs text-[#8691a7]">Similarity</span>
-                  <span className="text-sm font-semibold text-[#c0c1ff]">
-                    {Math.round(conflict.similarity * 100)}%
-                  </span>
-                </div>
-              </div>
-
-              {/* Body */}
-              <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-8 relative">
-                {/* Visual Separator for Desktop */}
-                <div className="hidden md:block absolute left-1/2 top-6 bottom-6 w-px bg-[#273647] -translate-x-1/2" />
+        <div className="space-y-8">
+          <AnimatePresence>
+            {conflicts.map((conflict) => (
+              <motion.div
+                key={conflict.id}
+                layout
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, filter: "blur(10px)" }}
+                transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                className={`glass-panel rounded-2xl overflow-hidden relative group ${
+                  processingId === conflict.id ? 'opacity-50 pointer-events-none' : ''
+                }`}
+              >
+                {/* Subtle gradient hover effect */}
+                <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
                 
-                {/* Entity A */}
-                <div className="space-y-4">
+                {/* Header */}
+                <div className="flex items-center justify-between p-6 border-b border-[rgba(255,255,255,0.05)] bg-black/40">
                   <div className="flex items-center gap-3">
-                    <div className="bg-[#2c3a4c] p-2 rounded-lg">
-                      <User className="w-5 h-5 text-[#bcc7de]" />
-                    </div>
-                    <h3 className="text-xl font-semibold text-[#d4e4fa]">{conflict.name_a}</h3>
+                    <span className="px-3 py-1 text-[10px] font-bold tracking-widest rounded bg-neutral-900 text-neutral-300 border border-neutral-800">
+                      {conflict.type_a}
+                    </span>
+                    <span className="text-xs text-neutral-500 uppercase tracking-wider">Detected {new Date(conflict.created_at).toLocaleDateString()}</span>
                   </div>
-                  <div className="bg-[#0d1c2d] p-4 rounded-lg border border-[#1c2b3c] relative">
-                    <div className="absolute -top-3 left-4 bg-[#1E293B] px-2 text-[10px] uppercase tracking-wider text-[#8691a7]">Source context</div>
-                    <p className="text-sm text-[#adb4ce] leading-relaxed italic">&quot;{conflict.quote_a}&quot;</p>
+                  <div className="flex items-center gap-3 bg-black/60 px-4 py-1.5 rounded-full border border-[rgba(255,255,255,0.05)] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)]">
+                    <span className="text-[10px] text-neutral-500 uppercase tracking-widest">Similarity</span>
+                    <span className="text-sm font-medium text-blue-400 text-glow-accent">
+                      {Math.round(conflict.similarity * 100)}%
+                    </span>
                   </div>
                 </div>
 
-                {/* Entity B */}
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3">
-                    <div className="bg-[#2c3a4c] p-2 rounded-lg">
-                      <User className="w-5 h-5 text-[#bcc7de]" />
+                {/* Body */}
+                <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-12 relative bg-black/20">
+                  {/* Visual Separator for Desktop */}
+                  <div className="hidden md:block absolute left-1/2 top-8 bottom-8 w-px bg-gradient-to-b from-transparent via-[rgba(255,255,255,0.1)] to-transparent -translate-x-1/2" />
+                  
+                  {/* Entity A */}
+                  <div className="space-y-6 relative z-10">
+                    <div className="flex items-center gap-4">
+                      <div className="bg-neutral-900 p-2.5 rounded-lg border border-neutral-800">
+                        <User className="w-5 h-5 text-neutral-400" />
+                      </div>
+                      <h3 className="text-2xl font-light text-white tracking-tight">{conflict.name_a}</h3>
                     </div>
-                    <h3 className="text-xl font-semibold text-[#d4e4fa]">{conflict.name_b}</h3>
+                    <div className="bg-black/40 p-5 rounded-xl border border-[rgba(255,255,255,0.03)] relative overflow-hidden group/quote hover:border-[rgba(255,255,255,0.1)] transition-colors">
+                      <div className="absolute top-0 left-0 w-1 h-full bg-blue-500/20 group-hover/quote:bg-blue-500 transition-colors" />
+                      <div className="absolute -top-3 left-4 bg-[#0a0a0a] px-2 text-[9px] uppercase tracking-widest text-neutral-500">Source context</div>
+                      <p className="text-sm text-neutral-300 leading-relaxed font-light mt-2">&quot;{conflict.quote_a}&quot;</p>
+                    </div>
                   </div>
-                  <div className="bg-[#0d1c2d] p-4 rounded-lg border border-[#1c2b3c] relative">
-                    <div className="absolute -top-3 left-4 bg-[#1E293B] px-2 text-[10px] uppercase tracking-wider text-[#8691a7]">Source context</div>
-                    <p className="text-sm text-[#adb4ce] leading-relaxed italic">&quot;{conflict.quote_b}&quot;</p>
+
+                  {/* Entity B */}
+                  <div className="space-y-6 relative z-10">
+                    <div className="flex items-center gap-4">
+                      <div className="bg-neutral-900 p-2.5 rounded-lg border border-neutral-800">
+                        <User className="w-5 h-5 text-neutral-400" />
+                      </div>
+                      <h3 className="text-2xl font-light text-white tracking-tight">{conflict.name_b}</h3>
+                    </div>
+                    <div className="bg-black/40 p-5 rounded-xl border border-[rgba(255,255,255,0.03)] relative overflow-hidden group/quote hover:border-[rgba(255,255,255,0.1)] transition-colors">
+                      <div className="absolute top-0 left-0 w-1 h-full bg-purple-500/20 group-hover/quote:bg-purple-500 transition-colors" />
+                      <div className="absolute -top-3 left-4 bg-[#0a0a0a] px-2 text-[9px] uppercase tracking-widest text-neutral-500">Source context</div>
+                      <p className="text-sm text-neutral-300 leading-relaxed font-light mt-2">&quot;{conflict.quote_b}&quot;</p>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Footer / Actions */}
-              <div className="p-5 border-t border-[#273647]/50 bg-[#122131]/30 flex justify-end gap-3">
-                <button
-                  onClick={() => handleReject(conflict.id)}
-                  disabled={!!processingId}
-                  className="px-5 py-2 text-sm font-medium text-[#d4e4fa] hover:text-white bg-transparent hover:bg-[#273647] border border-[#464554] rounded-lg transition-colors flex items-center gap-2"
-                >
-                  <X className="w-4 h-4" />
-                  Reject (Keep Distinct)
-                </button>
-                <button
-                  onClick={() => handleApprove(conflict.id)}
-                  disabled={!!processingId}
-                  className="px-5 py-2 text-sm font-medium text-white bg-[#6366f1] hover:bg-[#4f52c1] shadow-[0_0_15px_rgba(99,102,241,0.2)] rounded-lg transition-all flex items-center gap-2 border border-transparent shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
-                >
-                  <Check className="w-4 h-4" />
-                  Approve (Merge)
-                </button>
-              </div>
-            </div>
-          ))}
+                {/* Footer / Actions */}
+                <div className="p-6 border-t border-[rgba(255,255,255,0.05)] bg-black/40 flex justify-end gap-4 relative z-10">
+                  <button
+                    onClick={() => handleReject(conflict.id)}
+                    disabled={!!processingId}
+                    className="cinematic-button px-6 py-2.5 text-sm font-medium text-neutral-300 hover:text-white bg-transparent hover:bg-white/5 border border-neutral-800 rounded-lg transition-colors flex items-center gap-2"
+                  >
+                    <X className="w-4 h-4" />
+                    Reject
+                  </button>
+                  <button
+                    onClick={() => handleApprove(conflict.id)}
+                    disabled={!!processingId}
+                    className="cinematic-button px-6 py-2.5 text-sm font-medium text-black bg-white hover:bg-neutral-200 shadow-[0_0_20px_rgba(255,255,255,0.3)] rounded-lg transition-all flex items-center gap-2"
+                  >
+                    <Check className="w-4 h-4" />
+                    Approve (Merge)
+                  </button>
+                </div>
+              </motion.div>
+            ))}
+          </AnimatePresence>
         </div>
       )}
     </div>
