@@ -1,0 +1,75 @@
+export type EntityConflict = {
+  id: string;
+  name_a: string;
+  type_a: string;
+  name_b: string;
+  type_b: string;
+  similarity: number;
+  quote_a: string;
+  quote_b: string;
+  sensitivity: number;
+  status: 'pending' | 'approved' | 'rejected';
+  created_at: string;
+};
+
+// In-memory mock data store to allow interactive testing of Approve/Reject
+let mockConflicts: EntityConflict[] = [
+  {
+    id: "3f1c019d-a442-491b-90f7-5264b387cf3e",
+    name_a: "Raj Patel",
+    type_a: "PERSON",
+    name_b: "Rajesh Patel",
+    type_b: "PERSON",
+    similarity: 0.91,
+    quote_a: "Raj Patel expressed concerns about the Q3 pricing model.",
+    quote_b: "Rajesh Patel strongly disagreed with the board's new direction.",
+    sensitivity: 2,
+    status: "pending",
+    created_at: "2026-07-19T10:00:00Z"
+  },
+  {
+    id: "9d8b1e4c-1234-4abc-8def-112233445566",
+    name_a: "Sequoia",
+    type_a: "ORGANIZATION",
+    name_b: "Sequoia Capital",
+    type_b: "ORGANIZATION",
+    similarity: 0.82,
+    quote_a: "The term sheet from Sequoia requires an answer by Friday.",
+    quote_b: "Sequoia Capital has requested additional cap table details.",
+    sensitivity: 3,
+    status: "pending",
+    created_at: "2026-07-19T10:15:00Z"
+  }
+];
+
+const DEFAULT_REVIEWER_ID = "00000000-0000-0000-0000-000000000000";
+
+/**
+ * Mocked API client for Meridian backend.
+ * All functions simulate network latency.
+ */
+export const apiClient = {
+  async getPendingConflicts(): Promise<EntityConflict[]> {
+    // Simulate network delay
+    await new Promise(resolve => setTimeout(resolve, 600));
+    return mockConflicts.filter(c => c.status === 'pending');
+  },
+
+  async approveConflict(id: string, reviewerId: string = DEFAULT_REVIEWER_ID): Promise<{ id: string, status: string }> {
+    await new Promise(resolve => setTimeout(resolve, 400));
+    const conflict = mockConflicts.find(c => c.id === id);
+    if (!conflict) throw new Error("Conflict not found");
+    conflict.status = 'approved';
+    console.log(`Conflict ${id} approved by ${reviewerId}`);
+    return { id, status: 'approved' };
+  },
+
+  async rejectConflict(id: string, reviewerId: string = DEFAULT_REVIEWER_ID): Promise<{ id: string, status: string }> {
+    await new Promise(resolve => setTimeout(resolve, 400));
+    const conflict = mockConflicts.find(c => c.id === id);
+    if (!conflict) throw new Error("Conflict not found");
+    conflict.status = 'rejected';
+    console.log(`Conflict ${id} rejected by ${reviewerId}`);
+    return { id, status: 'rejected' };
+  }
+};
