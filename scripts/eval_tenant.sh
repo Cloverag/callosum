@@ -12,12 +12,15 @@
 #
 #   Run from anywhere:  bash scripts/eval_tenant.sh
 #
-# COMPARE against eval-baseline-v3:
-#   * Candidate recall        MUST be 21/21 (100%)   <- the RLS-sensitive metric
-#   * Traversal-given-ground. MUST be 100%
-#   * Grounding recall ~17/21 and precision ~50% are LLM-dependent (gpt-oss cloud);
-#     429s / small wobble there are model noise, NOT an RLS regression. STOP only if
-#     CANDIDATE RECALL or TRAVERSAL drops.
+# ACCEPTANCE (vs eval-baseline-v3), two tiers:
+#   REQUIRED (hard gate — a change here means an RLS regression, STOP):
+#     * Candidate recall           = 21/21 (100%)
+#     * Traversal-given-grounding  = 100%
+#   OBSERVED (recorded in eval/results.md, NOT a gate — do not ignore, do not gate on):
+#     * Grounding recall / precision (~17/21, ~50%) — LLM-dependent (gpt-oss cloud)
+#     * Any 429s / planner failures — note them in the run record so eval history stays honest
+# Grounding is downstream of retrieval: with candidate recall held at 21/21, any grounding
+# movement is model noise (429s, sampling), not tenancy. Record it; don't gate on it.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -38,6 +41,19 @@ hr() { printf '\n\033[1;36m━━━ %s ━━━\033[0m\n' "$1"; }
 hr "Resetting Postgres + Neo4j (fresh volumes)"
 docker compose down -v
 docker compose up -d
+
+# On a fresh volume Postgres runs its init scripts and restarts once before it accepts
+# TCP — connecting too early gets "server closed the connection unexpectedly". Probe the
+# exact DSN alembic will use, over TCP, until a real connect+close succeeds.
+hr "Waiting for Postgres to accept TCP connections (post-initdb)"
+for i in $(seq 1 60); do
+    if .venv/bin/python -c "import psycopg; from callosum.config import settings; psycopg.connect(settings().postgres_dsn, connect_timeout=2).close()" 2>/dev/null; then
+        echo "postgres ready after ${i}s"
+        break
+    fi
+    if [ "$i" -eq 60 ]; then echo "ERROR: postgres never became ready" >&2; exit 1; fi
+    sleep 1
+done
 
 hr "Applying tenancy migrations (creates callosum_app + RLS) — BEFORE the app starts"
 $ALEMBIC upgrade head
@@ -69,4 +85,6 @@ $CLI seed-eval
 hr "Running the stratified eval (hybrid vs vector-only) — through RLS as callosum_app"
 $CLI eval
 
-hr "Done. Compare CANDIDATE RECALL (must be 21/21) + traversal (100%) to eval-baseline-v3."
+hr "Done."
+echo "REQUIRED gate: candidate recall must be 21/21 and traversal 100% (vs eval-baseline-v3)."
+echo "OBSERVED (record, don't gate): grounding recall/precision + any 429s in eval/results.md."
