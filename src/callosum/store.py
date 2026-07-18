@@ -28,11 +28,24 @@ from callosum.config import settings
 # ---------------------------------------------------------------------------
 
 
+# Well-known Default Workspace id (see Meridian migration 0001). Single-tenant /
+# frozen-era callers land here, so their behaviour is unchanged once RLS is on.
+DEFAULT_WORKSPACE_ID = "00000000-0000-0000-0000-000000000001"
+
+
 @contextmanager
-def pg() -> Iterator[psycopg.Connection]:
+def pg(workspace_id: str | None = None) -> Iterator[psycopg.Connection]:
     conn = psycopg.connect(settings().postgres_dsn, row_factory=dict_row)
     try:
         register_vector(conn)
+        # Tenant context for Row-Level Security (Meridian P1, brick 2b). Defaults to
+        # the Default Workspace so the frozen single-tenant ingest/eval path is
+        # unchanged — every existing row already carries this id. Product code passes
+        # its own workspace_id. Nothing reads this until RLS policies are enabled.
+        conn.execute(
+            "SELECT set_config('app.workspace_id', %s, false)",
+            (workspace_id or DEFAULT_WORKSPACE_ID,),
+        )
         yield conn
         conn.commit()
     except Exception:
