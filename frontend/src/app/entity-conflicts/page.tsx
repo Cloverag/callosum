@@ -54,7 +54,7 @@ export default function EntityConflictsPage() {
         <motion.div 
           initial={{ opacity: 0 }} 
           animate={{ opacity: 1 }} 
-          className="text-neutral-500 text-sm tracking-widest uppercase font-medium"
+          className="text-muted-foreground text-sm tracking-widest uppercase font-medium"
         >
           Initializing neural matrix...
         </motion.div>
@@ -67,15 +67,15 @@ export default function EntityConflictsPage() {
       <motion.div 
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="mb-10 flex items-center gap-4 border-b border-[rgba(255,255,255,0.05)] pb-6"
+        className="mb-10 flex items-center gap-4 border-b border-glass-border pb-6"
       >
-        <div className="bg-black/50 p-2.5 rounded-xl border border-[rgba(255,255,255,0.1)] shadow-[0_0_20px_rgba(59,130,246,0.1)] relative group">
-          <div className="absolute inset-0 bg-blue-500/20 blur-xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
-          <ShieldAlert className="w-6 h-6 text-blue-400 relative z-10" />
+        <div className="bg-card-bg p-2.5 rounded-xl border border-glass-border shadow-[0_0_20px_var(--color-accent-glow)] relative group">
+          <div className="absolute inset-0 bg-accent/20 blur-xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
+          <ShieldAlert className="w-6 h-6 text-accent relative z-10" />
         </div>
         <div>
-          <h1 className="text-3xl font-light text-white tracking-tight">Entity Conflicts</h1>
-          <p className="text-sm text-neutral-400 mt-1 font-light">
+          <h1 className="text-3xl font-light text-foreground tracking-tight">Entity Conflicts</h1>
+          <p className="text-sm text-muted-foreground mt-1 font-light">
             Review and resolve potential duplicate entities detected across the workspace memory graph.
           </p>
         </div>
@@ -87,10 +87,10 @@ export default function EntityConflictsPage() {
           animate={{ opacity: 1, scale: 1 }}
           className="glass-panel rounded-2xl p-16 text-center relative overflow-hidden"
         >
-          <div className="absolute inset-0 bg-gradient-to-b from-blue-500/5 to-transparent" />
-          <Check className="w-12 h-12 text-blue-400/50 mx-auto mb-6 drop-shadow-[0_0_15px_rgba(59,130,246,0.5)]" />
-          <h3 className="text-xl font-medium text-white tracking-wide">System optimal</h3>
-          <p className="text-neutral-500 mt-2 font-light">No pending entity conflicts require review.</p>
+          <div className="absolute inset-0 bg-gradient-to-b from-accent/5 to-transparent" />
+          <Check className="w-12 h-12 text-accent/50 mx-auto mb-6 drop-shadow-[0_0_15px_var(--color-accent-glow)]" />
+          <h3 className="text-xl font-medium text-foreground tracking-wide">System optimal</h3>
+          <p className="text-muted-foreground mt-2 font-light">No pending entity conflicts require review.</p>
         </motion.div>
       ) : (
         <div className="space-y-8">
@@ -108,66 +108,66 @@ export default function EntityConflictsPage() {
                 }`}
               >
                 {/* Subtle gradient hover effect */}
-                <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
                 
                 {/* Header */}
-                <div className="flex items-center justify-between p-6 border-b border-[rgba(255,255,255,0.05)] bg-black/40">
+                <div className="flex items-center justify-between p-6 border-b border-glass-border bg-card-bg">
                   <div className="flex items-center gap-3">
-                    <span className="px-3 py-1 text-[10px] font-bold tracking-widest rounded bg-neutral-900 text-neutral-300 border border-neutral-800">
+                    <span className="px-3 py-1 text-[10px] font-bold tracking-widest rounded bg-primary/5 text-foreground border border-glass-border">
                       {conflict.type_a}
                     </span>
-                    <span className="text-xs text-neutral-500 uppercase tracking-wider">Detected {new Date(conflict.created_at).toLocaleDateString()}</span>
+                    <span className="text-xs text-muted-foreground uppercase tracking-wider">Detected {new Date(conflict.created_at).toLocaleDateString()}</span>
                   </div>
-                  <div className="flex items-center gap-3 bg-black/60 px-4 py-1.5 rounded-full border border-[rgba(255,255,255,0.05)] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)]">
-                    <span className="text-[10px] text-neutral-500 uppercase tracking-widest">Similarity</span>
-                    <span className="text-sm font-medium text-blue-400 text-glow-accent">
+                  <div className="flex items-center gap-3 bg-background/50 px-4 py-1.5 rounded-full border border-glass-border shadow-[inset_0_1px_0_0_var(--color-glass-highlight)]">
+                    <span className="text-[10px] text-muted-foreground uppercase tracking-widest">Similarity</span>
+                    <span className="text-sm font-medium text-accent text-glow-accent">
                       {Math.round(conflict.similarity * 100)}%
                     </span>
                   </div>
                 </div>
 
                 {/* Body */}
-                <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-12 relative bg-black/20">
+                <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-12 relative bg-card-bg/50">
                   {/* Visual Separator for Desktop */}
-                  <div className="hidden md:block absolute left-1/2 top-8 bottom-8 w-px bg-gradient-to-b from-transparent via-[rgba(255,255,255,0.1)] to-transparent -translate-x-1/2" />
+                  <div className="hidden md:block absolute left-1/2 top-8 bottom-8 w-px bg-gradient-to-b from-transparent via-glass-border to-transparent -translate-x-1/2" />
                   
                   {/* Entity A */}
                   <div className="space-y-6 relative z-10">
                     <div className="flex items-center gap-4">
-                      <div className="bg-neutral-900 p-2.5 rounded-lg border border-neutral-800">
-                        <User className="w-5 h-5 text-neutral-400" />
+                      <div className="bg-primary/5 p-2.5 rounded-lg border border-glass-border">
+                        <User className="w-5 h-5 text-muted-foreground" />
                       </div>
-                      <h3 className="text-2xl font-light text-white tracking-tight">{conflict.name_a}</h3>
+                      <h3 className="text-2xl font-light text-foreground tracking-tight">{conflict.name_a}</h3>
                     </div>
-                    <div className="bg-black/40 p-5 rounded-xl border border-[rgba(255,255,255,0.03)] relative overflow-hidden group/quote hover:border-[rgba(255,255,255,0.1)] transition-colors">
-                      <div className="absolute top-0 left-0 w-1 h-full bg-blue-500/20 group-hover/quote:bg-blue-500 transition-colors" />
-                      <div className="absolute -top-3 left-4 bg-[#0a0a0a] px-2 text-[9px] uppercase tracking-widest text-neutral-500">Source context</div>
-                      <p className="text-sm text-neutral-300 leading-relaxed font-light mt-2">&quot;{conflict.quote_a}&quot;</p>
+                    <div className="bg-background/40 p-5 rounded-xl border border-glass-border relative overflow-hidden group/quote hover:border-border-hover transition-colors">
+                      <div className="absolute top-0 left-0 w-1 h-full bg-accent/20 group-hover/quote:bg-accent transition-colors" />
+                      <div className="absolute -top-3 left-4 bg-background px-2 text-[9px] uppercase tracking-widest text-muted-foreground border border-glass-border rounded-full">Source context</div>
+                      <p className="text-sm text-foreground/80 leading-relaxed font-light mt-2">&quot;{conflict.quote_a}&quot;</p>
                     </div>
                   </div>
 
                   {/* Entity B */}
                   <div className="space-y-6 relative z-10">
                     <div className="flex items-center gap-4">
-                      <div className="bg-neutral-900 p-2.5 rounded-lg border border-neutral-800">
-                        <User className="w-5 h-5 text-neutral-400" />
+                      <div className="bg-primary/5 p-2.5 rounded-lg border border-glass-border">
+                        <User className="w-5 h-5 text-muted-foreground" />
                       </div>
-                      <h3 className="text-2xl font-light text-white tracking-tight">{conflict.name_b}</h3>
+                      <h3 className="text-2xl font-light text-foreground tracking-tight">{conflict.name_b}</h3>
                     </div>
-                    <div className="bg-black/40 p-5 rounded-xl border border-[rgba(255,255,255,0.03)] relative overflow-hidden group/quote hover:border-[rgba(255,255,255,0.1)] transition-colors">
+                    <div className="bg-background/40 p-5 rounded-xl border border-glass-border relative overflow-hidden group/quote hover:border-border-hover transition-colors">
                       <div className="absolute top-0 left-0 w-1 h-full bg-purple-500/20 group-hover/quote:bg-purple-500 transition-colors" />
-                      <div className="absolute -top-3 left-4 bg-[#0a0a0a] px-2 text-[9px] uppercase tracking-widest text-neutral-500">Source context</div>
-                      <p className="text-sm text-neutral-300 leading-relaxed font-light mt-2">&quot;{conflict.quote_b}&quot;</p>
+                      <div className="absolute -top-3 left-4 bg-background px-2 text-[9px] uppercase tracking-widest text-muted-foreground border border-glass-border rounded-full">Source context</div>
+                      <p className="text-sm text-foreground/80 leading-relaxed font-light mt-2">&quot;{conflict.quote_b}&quot;</p>
                     </div>
                   </div>
                 </div>
 
                 {/* Footer / Actions */}
-                <div className="p-6 border-t border-[rgba(255,255,255,0.05)] bg-black/40 flex justify-end gap-4 relative z-10">
+                <div className="p-6 border-t border-glass-border bg-card-bg flex justify-end gap-4 relative z-10">
                   <button
                     onClick={() => handleReject(conflict.id)}
                     disabled={!!processingId}
-                    className="cinematic-button px-6 py-2.5 text-sm font-medium text-neutral-300 hover:text-white bg-transparent hover:bg-white/5 border border-neutral-800 rounded-lg transition-colors flex items-center gap-2"
+                    className="cinematic-button px-6 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground bg-transparent hover:bg-black/5 dark:hover:bg-white/5 border border-glass-border rounded-lg transition-colors flex items-center gap-2"
                   >
                     <X className="w-4 h-4" />
                     Reject
@@ -175,7 +175,7 @@ export default function EntityConflictsPage() {
                   <button
                     onClick={() => handleApprove(conflict.id)}
                     disabled={!!processingId}
-                    className="cinematic-button px-6 py-2.5 text-sm font-medium text-black bg-white hover:bg-neutral-200 shadow-[0_0_20px_rgba(255,255,255,0.3)] rounded-lg transition-all flex items-center gap-2"
+                    className="cinematic-button px-6 py-2.5 text-sm font-medium text-primary-foreground bg-primary hover:opacity-90 shadow-[0_0_20px_var(--color-glass-highlight)] rounded-lg transition-all flex items-center gap-2"
                   >
                     <Check className="w-4 h-4" />
                     Approve (Merge)
