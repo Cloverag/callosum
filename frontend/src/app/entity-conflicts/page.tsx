@@ -117,7 +117,7 @@ export default function EntityConflictsPage() {
                   </div>
                   <div className="bg-[#0d1c2d] p-4 rounded-lg border border-[#1c2b3c] relative">
                     <div className="absolute -top-3 left-4 bg-[#1E293B] px-2 text-[10px] uppercase tracking-wider text-[#8691a7]">Source context</div>
-                    <p className="text-sm text-[#adb4ce] leading-relaxed italic">"{conflict.quote_a}"</p>
+                    <p className="text-sm text-[#adb4ce] leading-relaxed italic">&quot;{conflict.quote_a}&quot;</p>
                   </div>
                 </div>
 
@@ -131,7 +131,7 @@ export default function EntityConflictsPage() {
                   </div>
                   <div className="bg-[#0d1c2d] p-4 rounded-lg border border-[#1c2b3c] relative">
                     <div className="absolute -top-3 left-4 bg-[#1E293B] px-2 text-[10px] uppercase tracking-wider text-[#8691a7]">Source context</div>
-                    <p className="text-sm text-[#adb4ce] leading-relaxed italic">"{conflict.quote_b}"</p>
+                    <p className="text-sm text-[#adb4ce] leading-relaxed italic">&quot;{conflict.quote_b}&quot;</p>
                   </div>
                 </div>
               </div>
