@@ -19,7 +19,7 @@ describe('EntityConflictsPage', () => {
   it('renders loading state initially', () => {
     (apiClient.getPendingConflicts as jest.Mock).mockReturnValue(new Promise(() => {}));
     render(<EntityConflictsPage />);
-    expect(screen.getByText(/Loading conflicts.../i)).toBeInTheDocument();
+    expect(screen.getByText(/Initializing neural matrix.../i)).toBeInTheDocument();
   });
 
   it('renders empty state when no conflicts', async () => {
@@ -27,7 +27,7 @@ describe('EntityConflictsPage', () => {
     render(<EntityConflictsPage />);
     
     await waitFor(() => {
-      expect(screen.getByText(/All clear/i)).toBeInTheDocument();
+      expect(screen.getByText(/System optimal/i)).toBeInTheDocument();
     });
   });
 
