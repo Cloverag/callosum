@@ -103,6 +103,27 @@ def test_entity_names_for_chunks_is_workspace_scoped():
         driver.close()
 
 
+def test_conflict_scan_cannot_cross_workspace():
+    """F2 regression: the entity-conflict scan is workspace-scoped.
+
+    Two tenants hold the same 'Shared' name plus a workspace-local peer. A scan run for
+    workspace A must see only A's entities, so a colliding name can never be paired with
+    another tenant's entity into a conflict proposal.
+    """
+    from callosum.conflicts import _entity_mentions
+    driver = store.neo(wait=5)
+    store.ensure_constraints(driver)
+    tok = uuid.uuid4().hex[:8]
+    shared, aonly, bonly, ids = _seed_pair(driver, tok)
+    try:
+        names_a = {m["name"] for m in _entity_mentions(driver, workspace_id=WA)}
+        assert shared in names_a and aonly in names_a   # sees its own workspace
+        assert bonly not in names_a                      # never the other tenant's entities
+    finally:
+        _cleanup(driver, [shared, aonly, bonly], ids.values())
+        driver.close()
+
+
 def test_wrong_workspace_principal_sees_nothing():
     """A principal in a third workspace sees neither tenant's graph."""
     driver = store.neo(wait=5)
