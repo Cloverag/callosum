@@ -28,11 +28,27 @@ from callosum.config import settings
 # ---------------------------------------------------------------------------
 
 
+# Well-known Default Workspace id (see Meridian migration 0001). Single-tenant /
+# frozen-era callers land here, so their behaviour is unchanged once RLS is on.
+DEFAULT_WORKSPACE_ID = "00000000-0000-0000-0000-000000000001"
+
+
 @contextmanager
-def pg() -> Iterator[psycopg.Connection]:
-    conn = psycopg.connect(settings().postgres_dsn, row_factory=dict_row)
+def pg(workspace_id: str | None = None) -> Iterator[psycopg.Connection]:
+    # Runtime connections use the non-superuser app role so Row-Level Security is
+    # actually enforced (a superuser would bypass it). Migrations/admin use the
+    # superuser DSN directly, not this helper.
+    conn = psycopg.connect(settings().postgres_app_dsn, row_factory=dict_row)
     try:
         register_vector(conn)
+        # Tenant context for Row-Level Security (Meridian P1, brick 2b). Defaults to
+        # the Default Workspace so the frozen single-tenant ingest/eval path is
+        # unchanged — every existing row already carries this id. Product code passes
+        # its own workspace_id. Nothing reads this until RLS policies are enabled.
+        conn.execute(
+            "SELECT set_config('app.workspace_id', %s, false)",
+            (workspace_id or DEFAULT_WORKSPACE_ID,),
+        )
         yield conn
         conn.commit()
     except Exception:
@@ -270,12 +286,18 @@ def neo(wait: float = 60.0) -> Driver:
 
 CONSTRAINTS = [
     "CREATE CONSTRAINT chunk_id IF NOT EXISTS FOR (c:Chunk) REQUIRE c.id IS UNIQUE",
-    # Entities are identified by (name, type). Two people called "Raj" collapse into
-    # one node — that is entity resolution by exact name, and it is the honest
-    # limitation of this prototype. Real resolution (aliases, "Raj" vs "Rajesh Kumar",
-    # embedding-similarity blocking) is scoped as future work; say so in the report
-    # rather than pretending the problem does not exist.
-    "CREATE CONSTRAINT entity_key IF NOT EXISTS FOR (e:Entity) REQUIRE (e.name, e.type) IS UNIQUE",
+    # Entities are identified by (name, type, workspace_id). The workspace_id is what
+    # makes the graph multi-tenant (Meridian P1, Brick 3): "Raj / PERSON" in one
+    # workspace is a DIFFERENT node from "Raj / PERSON" in another, so a colliding
+    # name can never bridge two customers' graphs. Within a single workspace this is
+    # still exact-name resolution — two real people called "Raj" collapse into one
+    # node — which remains the honest limitation of the prototype (alias/embedding
+    # resolution is future work). The old (name, type) key is dropped first because
+    # it is stricter and would forbid the same name across workspaces.
+    "DROP CONSTRAINT entity_key IF EXISTS",
+    "CREATE CONSTRAINT entity_key_ws IF NOT EXISTS FOR (e:Entity) REQUIRE (e.name, e.type, e.workspace_id) IS UNIQUE",
+    "CREATE INDEX chunk_workspace IF NOT EXISTS FOR (c:Chunk) ON (c.workspace_id)",
+    "CREATE INDEX entity_workspace IF NOT EXISTS FOR (e:Entity) ON (e.workspace_id)",
 ]
 
 
@@ -298,13 +320,17 @@ def entity_names(driver: Driver) -> list[str]:
 
 
 def entity_names_for_chunks(
-    driver: Driver, chunk_ids: list[uuid.UUID], clearance: int
+    driver: Driver, chunk_ids: list[uuid.UUID], clearance: int,
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
 ) -> list[str]:
     """Return canonical names mentioned by readable candidate chunks only.
 
     A grounding prompt is a disclosure channel: sending it the whole graph vocabulary can
     reveal a confidential name. Candidate chunks come from a clearance-filtered vector
     query; this Cypher repeats the predicate so it fails closed for direct callers too.
+
+    workspace_id (Meridian P1, Brick 3) scopes the lookup to one tenant, so a chunk id
+    supplied for another workspace yields nothing. Defaults to the Default Workspace.
     """
     if not chunk_ids:
         return []
@@ -313,46 +339,62 @@ def entity_names_for_chunks(
             """
             MATCH (c:Chunk)-[:MENTIONS]->(e:Entity)
             WHERE c.id IN $chunk_ids AND c.sensitivity <= $clearance
+              AND c.workspace_id = $workspace_id AND e.workspace_id = $workspace_id
             RETURN DISTINCT e.name AS name
             ORDER BY name
             """,
             chunk_ids=[str(chunk_id) for chunk_id in set(chunk_ids)],
             clearance=clearance,
+            workspace_id=workspace_id,
         )
         return [r["name"] for r in result]
 
 
 def upsert_chunk_node(driver: Driver, *, chunk_id: uuid.UUID, document_id: uuid.UUID,
-                      ordinal: int, sensitivity: int) -> None:
-    """The graph half of the bridge. Text stays in Postgres; only the handle lives here."""
+                      ordinal: int, sensitivity: int,
+                      workspace_id: str = DEFAULT_WORKSPACE_ID) -> None:
+    """The graph half of the bridge. Text stays in Postgres; only the handle lives here.
+
+    workspace_id defaults to the Default Workspace so the single-tenant / frozen ingest
+    path is unchanged; product ingest passes the real workspace (Meridian P1, Brick 3).
+    """
     with driver.session() as session:
         session.run(
             """
             MERGE (c:Chunk {id: $id})
-            SET c.document_id = $document_id,
-                c.ordinal     = $ordinal,
-                c.sensitivity = $sensitivity
+            SET c.document_id  = $document_id,
+                c.ordinal      = $ordinal,
+                c.sensitivity  = $sensitivity,
+                c.workspace_id = $workspace_id
             """,
             id=str(chunk_id),
             document_id=str(document_id),
             ordinal=ordinal,
             sensitivity=sensitivity,
+            workspace_id=workspace_id,
         )
 
 
 def apply_entity(driver: Driver, payload: dict[str, Any]) -> None:
-    """Commit an approved entity, and wire it to the chunk that mentions it."""
+    """Commit an approved entity, and wire it to the chunk that mentions it.
+
+    workspace_id (from the payload, default Default Workspace) is part of the entity's
+    identity — this is what partitions the graph per tenant (Meridian P1, Brick 3). The
+    MENTIONS edge is attached only to a chunk in the same workspace.
+    """
+    workspace_id = payload.get("workspace_id", DEFAULT_WORKSPACE_ID)
     with driver.session() as session:
         session.run(
             """
-            MERGE (e:Entity {name: $name, type: $type})
+            MERGE (e:Entity {name: $name, type: $type, workspace_id: $workspace_id})
             SET e += $attributes
             WITH e
-            MATCH (c:Chunk {id: $chunk_id})
+            MATCH (c:Chunk {id: $chunk_id, workspace_id: $workspace_id})
             MERGE (c)-[:MENTIONS]->(e)
             """,
             name=payload["name"],
             type=payload["type"],
+            workspace_id=workspace_id,
             attributes=payload.get("attributes", {}),
             chunk_id=payload["chunk_id"],
         )
@@ -372,16 +414,18 @@ def apply_relationship(driver: Driver, payload: dict[str, Any]) -> None:
     if rel_type not in RelationType.__members__.values():
         raise ValueError(f"Refusing to write unknown relationship type: {rel_type!r}")
 
+    workspace_id = payload.get("workspace_id", DEFAULT_WORKSPACE_ID)
     with driver.session() as session:
         session.run(
             f"""
-            MATCH (s:Entity {{name: $source}})
-            MATCH (t:Entity {{name: $target}})
+            MATCH (s:Entity {{name: $source, workspace_id: $workspace_id}})
+            MATCH (t:Entity {{name: $target, workspace_id: $workspace_id}})
             MERGE (s)-[r:{rel_type}]->(t)
             SET r.quote = $quote, r.chunk_id = $chunk_id
             """,
             source=payload["source"],
             target=payload["target"],
+            workspace_id=workspace_id,
             quote=payload.get("quote", ""),
             chunk_id=payload["chunk_id"],
         )

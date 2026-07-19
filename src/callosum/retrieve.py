@@ -32,6 +32,11 @@ class Principal:
     name: str
     role: str        # founder | exec | employee | investor | advisor
     clearance: int   # 0 public .. 4 restricted
+    # Which tenant this caller belongs to (Meridian P1, Brick 3). Defaults to the
+    # Default Workspace so single-tenant / eval principals are unchanged. Neo4j has no
+    # session, so this value is passed as a Cypher parameter on every graph read; the
+    # Postgres side is scoped separately by the RLS session (store.pg).
+    workspace_id: str = store.DEFAULT_WORKSPACE_ID
 
 
 @dataclass
@@ -169,7 +174,8 @@ def candidate_entities(
     """
     evidence, _ = vector_search(conn, question, principal, k=k)
     names = store.entity_names_for_chunks(
-        driver, [item.chunk_id for item in evidence], principal.clearance
+        driver, [item.chunk_id for item in evidence], principal.clearance,
+        workspace_id=principal.workspace_id,
     )
     texts = [item.text for item in evidence]
     return names, texts
@@ -369,7 +375,7 @@ def graph_search(
     # EXISTS subquery inside a list predicate, which is brittle across Neo4j 5.x points.
     cypher = f"""
         MATCH (seed:Entity)
-        WHERE seed.name IN $names
+        WHERE seed.name IN $names AND seed.workspace_id = $workspace_id
         MATCH path = (seed)-[rels*1..{max_hops}]-(other:Entity)
         WITH path, rels
         UNWIND rels AS r
@@ -377,6 +383,7 @@ def graph_search(
         WITH path, rels,
              count(r) AS edge_count,
              sum(CASE WHEN src IS NOT NULL AND src.sensitivity <= $clearance
+                      AND src.workspace_id = $workspace_id
                       THEN 1 ELSE 0 END) AS readable_edges
         WHERE readable_edges = edge_count
         RETURN [n IN nodes(path)         | n.name]           AS node_names,
@@ -390,7 +397,10 @@ def graph_search(
     """
 
     with driver.session() as session:
-        result = session.run(cypher, names=entities, clearance=principal.clearance)
+        result = session.run(
+            cypher, names=entities, clearance=principal.clearance,
+            workspace_id=principal.workspace_id,
+        )
 
         for record in result:
             names = record["node_names"]
