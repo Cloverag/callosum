@@ -1,0 +1,1 @@
+﻿export default function Page() { return <div className="p-8"><h1 className="text-2xl font-bold text-[#d4e4fa]">Documents</h1><p className="mt-4 text-[#8691a7]">This page is under construction.</p></div>; }
