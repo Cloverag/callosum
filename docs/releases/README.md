@@ -54,4 +54,5 @@ merge → freeze → tag → graphify → publish → postmortem
 
 | Tag | Commit | Date | Notes | Postmortem |
 |-----|--------|------|-------|-----------|
-| `meridian-p1` | `04dfd2f` | 2026-07-19 | [meridian-p1.md](meridian-p1.md) — P1 multi-tenancy (Postgres RLS + Neo4j entity partitioning) + entity_conflict + Next.js frontend shell | [postmortem](meridian-p1-postmortem.md) |
+| `meridian-p1` | `04dfd2f` | 2026-07-19 | [meridian-p1.md](meridian-p1.md) — P1 multi-tenancy (Postgres RLS + Neo4j entity partitioning) + entity_conflict + Next.js frontend shell |
+| `meridian-p1.0.1` | `43d64f3` | 2026-07-20 | [meridian-p1.0.1.md](meridian-p1.0.1.md) — patch: scope entity-conflict detection to workspace (F2); restores the P1 Cypher-isolation invariant | [postmortem](meridian-p1-postmortem.md) |
