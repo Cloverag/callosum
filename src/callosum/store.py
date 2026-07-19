@@ -342,18 +342,6 @@ def ensure_constraints(driver: Driver) -> None:
             session.run(stmt)
 
 
-def entity_names(driver: Driver) -> list[str]:
-    """Every entity name in the graph.
-
-    Evaluation seeding and administrative tooling may need the complete vocabulary. Runtime
-    question planning must instead use :func:`entity_names_for_chunks`, which scopes the
-    candidate list to source chunks already readable by the caller.
-    """
-    with driver.session() as session:
-        result = session.run("MATCH (e:Entity) RETURN e.name AS name ORDER BY name")
-        return [r["name"] for r in result]
-
-
 def entity_names_for_chunks(
     driver: Driver, chunk_ids: list[uuid.UUID], clearance: int,
     workspace_id: str = DEFAULT_WORKSPACE_ID,

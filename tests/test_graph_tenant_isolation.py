@@ -110,13 +110,14 @@ def test_conflict_scan_cannot_cross_workspace():
     workspace A must see only A's entities, so a colliding name can never be paired with
     another tenant's entity into a conflict proposal.
     """
-    from callosum.conflicts import _entity_mentions
+    from callosum.graph import GraphContext, GraphGateway
     driver = store.neo(wait=5)
     store.ensure_constraints(driver)
     tok = uuid.uuid4().hex[:8]
     shared, aonly, bonly, ids = _seed_pair(driver, tok)
     try:
-        names_a = {m["name"] for m in _entity_mentions(driver, workspace_id=WA)}
+        gw = GraphGateway(driver)
+        names_a = {m["name"] for m in gw.entity_mentions(GraphContext(workspace_id=WA))}
         assert shared in names_a and aonly in names_a   # sees its own workspace
         assert bonly not in names_a                      # never the other tenant's entities
     finally:

@@ -1,5 +1,8 @@
 """D-001 ban-test — no Neo4j session may be opened outside the gateway.
 
+**The invariant:** opening a Neo4j session outside the gateway or the explicit frozen allowlist
+is a D-001 violation.
+
 Per **P2-RFC-001**, all Neo4j access must flow through the single gateway module. Opening a
 driver session (``driver.session()``) anywhere else is a Defect Class **D-001** violation —
 the class of bug that caused F2 (``conflicts.py`` ran raw, workspace-blind Cypher). Opening the
@@ -28,10 +31,8 @@ GATEWAY_MODULE = "graph.py"
 
 # (module, enclosing function) sites grandfathered per P2-RFC-001. TEMPORARY — each entry is
 # removed when its query is migrated into the gateway at the next retrieval change.
-# `entity_names` is dead code (F3) and is allowlisted only until it is deleted.
 FROZEN_ALLOWLIST = {
     ("store.py", "ensure_constraints"),
-    ("store.py", "entity_names"),
     ("store.py", "entity_names_for_chunks"),
     ("store.py", "upsert_chunk_node"),
     ("store.py", "apply_entity"),
