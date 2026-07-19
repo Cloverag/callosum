@@ -1,0 +1,130 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-border-hover: var(--border-hover);
+  --color-accent: var(--accent);
+  --color-accent-glow: var(--accent-glow);
+  
+  --color-glass-bg: var(--glass-bg);
+  --color-glass-border: var(--glass-border);
+  --color-glass-highlight: var(--glass-highlight);
+  --color-glass-shadow: var(--glass-shadow);
+  
+  --color-card-bg: var(--card-bg);
+  --color-card-border: var(--card-border);
+}
+
+@layer base {
+  :root {
+    --background: #e2e8f0;
+    --foreground: #0f172a;
+    --primary: #000000;
+    --primary-foreground: #ffffff;
+    --muted: #cbd5e1;
+    --muted-foreground: #64748b;
+    --border: rgba(0, 0, 0, 0.15);
+    --border-hover: rgba(0, 0, 0, 0.25);
+    --accent: #3b82f6;
+    --accent-glow: rgba(59, 130, 246, 0.3);
+    
+    --glass-bg: #ffffff;
+    --glass-border: rgba(0, 0, 0, 0.1);
+    --glass-highlight: rgba(255, 255, 255, 1);
+    --glass-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    
+    --card-bg: #f8fafc;
+    --card-border: rgba(0, 0, 0, 0.08);
+
+    --page-gradient: radial-gradient(circle at 50% -20%, rgba(59, 130, 246, 0.08), transparent 60%);
+  }
+
+  .dark {
+    --background: #020617;
+    --foreground: #f8fafc;
+    --primary: #ffffff;
+    --primary-foreground: #020617;
+    --muted: #334155;
+    --muted-foreground: #94a3b8;
+    --border: rgba(255, 255, 255, 0.15);
+    --border-hover: rgba(255, 255, 255, 0.25);
+    --accent: #3b82f6;
+    --accent-glow: rgba(59, 130, 246, 0.6);
+    
+    --glass-bg: #0f172a;
+    --glass-border: rgba(255, 255, 255, 0.15);
+    --glass-highlight: rgba(255, 255, 255, 0.08);
+    --glass-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    
+    --card-bg: #1e293b;
+    --card-border: rgba(255, 255, 255, 0.1);
+
+    --page-gradient: radial-gradient(circle at 50% -20%, rgba(59, 130, 246, 0.05), transparent 60%);
+  }
+}
+
+@layer base {
+  body {
+    background-color: var(--background);
+    background-image: var(--page-gradient);
+    color: var(--foreground);
+    min-height: 100vh;
+    font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+}
+
+@layer utilities {
+  .glass-panel {
+    background: var(--glass-bg);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow), inset 0 1px 0 0 var(--glass-highlight);
+  }
+
+  .text-glow {
+    text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+  }
+  
+  .dark .text-glow {
+    text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+  }
+  
+  :root .text-glow {
+    text-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+  }
+
+  .text-glow-accent {
+    text-shadow: 0 0 20px var(--accent-glow);
+  }
+
+  .cinematic-button {
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s ease;
+  }
+
+  .cinematic-button::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, var(--glass-border), transparent);
+    transition: left 0.5s ease;
+  }
+
+  .cinematic-button:hover::before {
+    left: 100%;
+  }
+}
