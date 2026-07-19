@@ -320,13 +320,17 @@ def entity_names(driver: Driver) -> list[str]:
 
 
 def entity_names_for_chunks(
-    driver: Driver, chunk_ids: list[uuid.UUID], clearance: int
+    driver: Driver, chunk_ids: list[uuid.UUID], clearance: int,
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
 ) -> list[str]:
     """Return canonical names mentioned by readable candidate chunks only.
 
     A grounding prompt is a disclosure channel: sending it the whole graph vocabulary can
     reveal a confidential name. Candidate chunks come from a clearance-filtered vector
     query; this Cypher repeats the predicate so it fails closed for direct callers too.
+
+    workspace_id (Meridian P1, Brick 3) scopes the lookup to one tenant, so a chunk id
+    supplied for another workspace yields nothing. Defaults to the Default Workspace.
     """
     if not chunk_ids:
         return []
@@ -335,11 +339,13 @@ def entity_names_for_chunks(
             """
             MATCH (c:Chunk)-[:MENTIONS]->(e:Entity)
             WHERE c.id IN $chunk_ids AND c.sensitivity <= $clearance
+              AND c.workspace_id = $workspace_id AND e.workspace_id = $workspace_id
             RETURN DISTINCT e.name AS name
             ORDER BY name
             """,
             chunk_ids=[str(chunk_id) for chunk_id in set(chunk_ids)],
             clearance=clearance,
+            workspace_id=workspace_id,
         )
         return [r["name"] for r in result]
 
