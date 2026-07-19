@@ -45,21 +45,28 @@ DEFAULT_THRESHOLD = 75.0
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _entity_mentions(driver: Driver) -> list[dict]:
+def _entity_mentions(
+    driver: Driver, workspace_id: str = store.DEFAULT_WORKSPACE_ID
+) -> list[dict]:
     """Fetch every entity with its earliest source chunk from Neo4j + Postgres join.
 
     Returns list of dicts: {name, type, chunk_id, ordinal, sensitivity}.
     The chunk chosen per entity is the one with the lowest ordinal (earliest mention),
     which gives the most likely introductory sentence — the best evidence quote.
+
+    Scoped to one workspace: Neo4j has no RLS, so the predicate here is the only thing
+    keeping the scan from pairing entities across tenants (F2).
     """
     with driver.session() as session:
         result = session.run(
             """
             MATCH (c:Chunk)-[:MENTIONS]->(e:Entity)
+            WHERE c.workspace_id = $workspace_id AND e.workspace_id = $workspace_id
             RETURN e.name AS name, e.type AS type,
                    c.id AS chunk_id, c.ordinal AS ordinal, c.sensitivity AS sensitivity
             ORDER BY e.name, c.ordinal ASC
-            """
+            """,
+            workspace_id=workspace_id,
         )
         seen: dict[tuple, dict] = {}
         for r in result:
@@ -92,7 +99,8 @@ def _chunk_quote(conn: psycopg.Connection, chunk_id: str) -> str | None:
 
 
 def _already_known(
-    conn: psycopg.Connection, driver: Driver, name_a: str, type_a: str, name_b: str, type_b: str
+    conn: psycopg.Connection, driver: Driver, name_a: str, type_a: str, name_b: str, type_b: str,
+    workspace_id: str = store.DEFAULT_WORKSPACE_ID,
 ) -> bool:
     """Return True if this pair should be skipped.
 
@@ -116,10 +124,12 @@ def _already_known(
     with driver.session() as session:
         result = session.run(
             """
-            MATCH (a:Entity {name: $na, type: $ta})-[:ALIAS_OF]->(b:Entity {name: $nb, type: $tb})
+            MATCH (a:Entity {name: $na, type: $ta, workspace_id: $ws})
+                  -[:ALIAS_OF]->
+                  (b:Entity {name: $nb, type: $tb, workspace_id: $ws})
             RETURN count(*) AS n
             """,
-            na=name_a, ta=type_a, nb=name_b, tb=type_b,
+            na=name_a, ta=type_a, nb=name_b, tb=type_b, ws=workspace_id,
         )
         rec = result.single()
         if rec and rec["n"] > 0:
@@ -157,9 +167,14 @@ def detect_conflicts(
     conn: psycopg.Connection,
     driver: Driver,
     *,
+    workspace_id: str = store.DEFAULT_WORKSPACE_ID,
     threshold: float = DEFAULT_THRESHOLD,
 ) -> int:
     """Scan entities for similar name pairs and queue new conflict proposals.
+
+    Scoped to a single workspace: the scan, the already-known check, and the queued row
+    all carry `workspace_id`, so tenants are never cross-paired and the row lands in the
+    caller's tenant (must match the RLS session on `conn`).
 
     For each candidate pair above `threshold` (token-sort ratio, 0–100):
     - Skip if a conflict row or ALIAS_OF edge already exists.
@@ -168,7 +183,7 @@ def detect_conflicts(
 
     Returns the count of newly queued conflicts.
     """
-    entities = _entity_mentions(driver)
+    entities = _entity_mentions(driver, workspace_id=workspace_id)
     queued = 0
 
     for entity_a, entity_b, score in _candidate_pairs(entities, threshold):
@@ -181,7 +196,7 @@ def detect_conflicts(
             name_a, type_a, name_b, type_b = name_b, type_b, name_a, type_a
             entity_a, entity_b = entity_b, entity_a
 
-        if _already_known(conn, driver, name_a, type_a, name_b, type_b):
+        if _already_known(conn, driver, name_a, type_a, name_b, type_b, workspace_id):
             continue
 
         chunk_id_a = entity_a.get("chunk_id")
@@ -200,8 +215,8 @@ def detect_conflicts(
                 """
                 INSERT INTO entity_conflict
                     (name_a, type_a, name_b, type_b, similarity,
-                     chunk_id_a, chunk_id_b, quote_a, quote_b, sensitivity)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     chunk_id_a, chunk_id_b, quote_a, quote_b, sensitivity, workspace_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (name_a, type_a, name_b, type_b) DO NOTHING
                 """,
                 (
@@ -210,6 +225,7 @@ def detect_conflicts(
                     uuid.UUID(chunk_id_b) if chunk_id_b else None,
                     quote_a, quote_b,
                     sensitivity,
+                    uuid.UUID(workspace_id),
                 ),
             )
             queued += 1
@@ -234,7 +250,7 @@ def approve_conflict(
     approved). Returns the change_id of the approved proposal.
     """
     row = conn.execute(
-        "SELECT name_a, type_a, name_b, type_b, chunk_id_a FROM entity_conflict "
+        "SELECT name_a, type_a, name_b, type_b, chunk_id_a, workspace_id FROM entity_conflict "
         "WHERE id = %s AND status = 'pending'",
         (conflict_id,),
     ).fetchone()
@@ -250,6 +266,9 @@ def approve_conflict(
         "target": row["name_b"],
         "quote": f"{row['name_a']} is an alias of {row['name_b']}",
         "chunk_id": chunk_id,
+        # Stamp the conflict's workspace so apply_relationship matches the right tenant's
+        # entities, not the default workspace.
+        "workspace_id": str(row["workspace_id"]),
     }
 
     # Queue the proposed_change (entities must already be in the graph — they are, since

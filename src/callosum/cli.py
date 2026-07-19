@@ -268,7 +268,9 @@ def approve(
     
     if committed > 0:
         with store.pg() as conn:
-            n_conflicts = conflicts.detect_conflicts(conn, driver)
+            n_conflicts = conflicts.detect_conflicts(
+                conn, driver, workspace_id=store.DEFAULT_WORKSPACE_ID
+            )
             if n_conflicts > 0:
                 console.print(
                     f"\n[yellow]⚠ {n_conflicts} potential entity name alias(es) flagged.[/] "
@@ -486,7 +488,9 @@ def detect_conflicts(
     driver = store.neo()
     try:
         with store.pg() as conn:
-            n = conflicts.detect_conflicts(conn, driver, threshold=threshold)
+            n = conflicts.detect_conflicts(
+                conn, driver, workspace_id=store.DEFAULT_WORKSPACE_ID, threshold=threshold
+            )
     except Exception as exc:
         console.print(f"[red]ERROR[/] {_terminal_safe(exc)}")
         console.print(
