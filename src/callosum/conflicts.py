@@ -29,6 +29,7 @@ from neo4j import Driver
 from rapidfuzz import fuzz
 
 from callosum import store
+from callosum.graph import GraphContext, GraphGateway
 from callosum.ontology import ONTOLOGY_VERSION, RelationType
 
 # ---------------------------------------------------------------------------
@@ -44,43 +45,6 @@ DEFAULT_THRESHOLD = 75.0
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
-
-def _entity_mentions(
-    driver: Driver, workspace_id: str = store.DEFAULT_WORKSPACE_ID
-) -> list[dict]:
-    """Fetch every entity with its earliest source chunk from Neo4j + Postgres join.
-
-    Returns list of dicts: {name, type, chunk_id, ordinal, sensitivity}.
-    The chunk chosen per entity is the one with the lowest ordinal (earliest mention),
-    which gives the most likely introductory sentence — the best evidence quote.
-
-    Scoped to one workspace: Neo4j has no RLS, so the predicate here is the only thing
-    keeping the scan from pairing entities across tenants (F2).
-    """
-    with driver.session() as session:
-        result = session.run(
-            """
-            MATCH (c:Chunk)-[:MENTIONS]->(e:Entity)
-            WHERE c.workspace_id = $workspace_id AND e.workspace_id = $workspace_id
-            RETURN e.name AS name, e.type AS type,
-                   c.id AS chunk_id, c.ordinal AS ordinal, c.sensitivity AS sensitivity
-            ORDER BY e.name, c.ordinal ASC
-            """,
-            workspace_id=workspace_id,
-        )
-        seen: dict[tuple, dict] = {}
-        for r in result:
-            key = (r["name"], r["type"])
-            if key not in seen:
-                seen[key] = {
-                    "name": r["name"],
-                    "type": r["type"],
-                    "chunk_id": r["chunk_id"],
-                    "ordinal": r["ordinal"],
-                    "sensitivity": r["sensitivity"] or 1,
-                }
-        return list(seen.values())
-
 
 def _chunk_quote(conn: psycopg.Connection, chunk_id: str) -> str | None:
     """Return the first sentence of a chunk as the introductory quote."""
@@ -99,16 +63,17 @@ def _chunk_quote(conn: psycopg.Connection, chunk_id: str) -> str | None:
 
 
 def _already_known(
-    conn: psycopg.Connection, driver: Driver, name_a: str, type_a: str, name_b: str, type_b: str,
-    workspace_id: str = store.DEFAULT_WORKSPACE_ID,
+    conn: psycopg.Connection, gw: GraphGateway, ctx: GraphContext,
+    name_a: str, type_a: str, name_b: str, type_b: str,
 ) -> bool:
     """Return True if this pair should be skipped.
 
     Skips if:
     - An entity_conflict row already exists in either direction (pending/approved/rejected)
-    - An ALIAS_OF edge already exists in Neo4j in either direction
+    - An ALIAS_OF edge already exists in Neo4j (workspace-scoped via the gateway)
     """
-    # Check Postgres conflict table (both directions)
+    # Check Postgres conflict table (both directions). RLS on entity_conflict scopes this to the
+    # caller's workspace already.
     existing = conn.execute(
         """
         SELECT 1 FROM entity_conflict
@@ -120,21 +85,9 @@ def _already_known(
     if existing:
         return True
 
-    # Check Neo4j for an existing ALIAS_OF edge
-    with driver.session() as session:
-        result = session.run(
-            """
-            MATCH (a:Entity {name: $na, type: $ta, workspace_id: $ws})
-                  -[:ALIAS_OF]->
-                  (b:Entity {name: $nb, type: $tb, workspace_id: $ws})
-            RETURN count(*) AS n
-            """,
-            na=name_a, ta=type_a, nb=name_b, tb=type_b, ws=workspace_id,
-        )
-        rec = result.single()
-        if rec and rec["n"] > 0:
-            return True
-    return False
+    # Check Neo4j for an existing ALIAS_OF edge — through the gateway, so it is workspace-scoped
+    # by construction (no raw session here; D-001).
+    return gw.alias_edge_exists(ctx, name_a, type_a, name_b, type_b)
 
 
 def _candidate_pairs(
@@ -183,7 +136,9 @@ def detect_conflicts(
 
     Returns the count of newly queued conflicts.
     """
-    entities = _entity_mentions(driver, workspace_id=workspace_id)
+    ctx = GraphContext(workspace_id=workspace_id)
+    gw = GraphGateway(driver)
+    entities = gw.entity_mentions(ctx)
     queued = 0
 
     for entity_a, entity_b, score in _candidate_pairs(entities, threshold):
@@ -196,7 +151,7 @@ def detect_conflicts(
             name_a, type_a, name_b, type_b = name_b, type_b, name_a, type_a
             entity_a, entity_b = entity_b, entity_a
 
-        if _already_known(conn, driver, name_a, type_a, name_b, type_b, workspace_id):
+        if _already_known(conn, gw, ctx, name_a, type_a, name_b, type_b):
             continue
 
         chunk_id_a = entity_a.get("chunk_id")
