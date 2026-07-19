@@ -200,3 +200,5 @@ CREATE TABLE query_log (
     latency_ms    INT,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+

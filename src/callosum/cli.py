@@ -8,7 +8,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from callosum import extract, ingest, llm, store
+from callosum import conflicts, extract, ingest, llm, store
 from callosum.retrieve import Principal, ask
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
@@ -188,6 +188,9 @@ def ingest_doc(
             "in source. Inspect with: [dim]callosum failures[/]"
         )
     console.print("[dim]Review with: callosum pending[/]")
+
+    # After queuing proposals, scan for entity name conflicts (e.g. "Raj" vs "Rajesh Malhotra").
+    # This is a read-only scan on the graph — nothing reaches Neo4j without a human approval.
     driver.close()
 
 
@@ -262,6 +265,16 @@ def approve(
 
     console.print(f"[green]✓[/] {committed} change(s) committed to the graph")
     console.print("[dim]See it: http://localhost:7474 → MATCH (n) RETURN n[/]")
+    
+    if committed > 0:
+        with store.pg() as conn:
+            n_conflicts = conflicts.detect_conflicts(conn, driver)
+            if n_conflicts > 0:
+                console.print(
+                    f"\n[yellow]⚠ {n_conflicts} potential entity name alias(es) flagged.[/] "
+                    "Run: [bold]callosum review-conflicts[/]"
+                )
+                
     driver.close()
 
 
@@ -456,6 +469,190 @@ def eval(
                       f"schema differs, so it was left untouched and this run went to "
                       f"{written}.")
     console.print("[dim]Read it by row: lookup should tie, multi_hop should separate.[/]")
+
+
+@app.command()
+def detect_conflicts(
+    threshold: float = typer.Option(75.0, "--threshold",
+                                    help="Token-sort similarity threshold (0–100). "
+                                         "75 catches 'R. Malhotra'/'Rajesh Malhotra' (~77) "
+                                         "while keeping 'Raj Malhotra'/'Raj Patel' (~57) separate."),
+) -> None:
+    """Scan entity names for potential aliases and queue them for human review.
+
+    Runs automatically at the end of `callosum ingest-doc`. Use this command to
+    re-scan after graph changes without re-ingesting a document.
+    """
+    driver = store.neo()
+    try:
+        with store.pg() as conn:
+            n = conflicts.detect_conflicts(conn, driver, threshold=threshold)
+    except Exception as exc:
+        console.print(f"[red]ERROR[/] {_terminal_safe(exc)}")
+        console.print(
+            "[dim]If the entity_conflict table is missing, run:\n"
+            "  docker exec -i callosum-postgres-1 psql -U callosum -d callosum "
+            "< scripts/migrate_entity_conflict.sql[/]"
+        )
+        raise typer.Exit(1)
+    finally:
+        driver.close()
+
+    if n:
+        console.print(
+            f"[yellow]⚠ {n} new entity conflict(s) queued.[/] "
+            "Run: [dim]callosum review-conflicts[/]"
+        )
+    else:
+        console.print("[green]No new entity conflicts detected.[/]")
+
+
+@app.command()
+def review_conflicts(
+    limit: int = typer.Option(20, "--limit"),
+    as_user: str = typer.Option("Raj Malhotra", "--as", help="Who is reviewing (sets clearance)"),
+) -> None:
+    """Show entity name conflicts awaiting human review.
+
+    Each row shows both names, their similarity score, and the exact source sentence
+    that introduced each name. Decide per row:
+      Approve (creates ALIAS_OF edge): callosum approve-conflict <id>
+      Reject  (marks as distinct):     callosum reject-conflict <id>
+    """
+    with store.pg() as conn:
+        row = conn.execute(
+            "SELECT id, name, role, clearance FROM principal WHERE name ILIKE %s",
+            (f"%{as_user}%",),
+        ).fetchone()
+        if not row:
+            console.print(f"[red]No principal matching '{as_user}'. Run: callosum init[/]")
+            raise typer.Exit(1)
+        clearance = row["clearance"]
+        rows = store.pending_entity_conflicts(conn, clearance=clearance, limit=limit)
+
+    if not rows:
+        console.print("[green]No entity conflicts pending review.[/] "
+                      "(Either none detected, or all above your clearance.")
+        return
+
+    table = Table(
+        title="Entity name conflicts — you decide whether these are the same",
+        show_lines=True,
+    )
+    table.add_column("id", style="dim", no_wrap=True)
+    table.add_column("sim", justify="right")
+    table.add_column("type")
+    table.add_column("name A")
+    table.add_column("evidence A")
+    table.add_column("name B")
+    table.add_column("evidence B")
+
+    for r in rows:
+        sim_pct = f"{r['similarity']*100:.0f}%"
+        table.add_row(
+            str(r["id"])[:8],
+            sim_pct,
+            r["type_a"],
+            f"[bold]{r['name_a']}[/]",
+            f"[dim]{(r['quote_a'] or '—')[:120]}[/]",
+            f"[bold]{r['name_b']}[/]",
+            f"[dim]{(r['quote_b'] or '—')[:120]}[/]",
+        )
+
+    console.print(table)
+    console.print(
+        "\n[dim]Approve (ALIAS_OF edge written to graph): [/]"
+        "[bold]callosum approve-conflict <id>[/]"
+    )
+    console.print(
+        "[dim]Reject  (mark as distinct, never re-queued): [/]"
+        "[bold]callosum reject-conflict <id>[/]"
+    )
+
+
+@app.command()
+def approve_conflict(
+    conflict_id: str,
+    as_user: str = typer.Option("Raj Malhotra", "--as", help="Who is approving"),
+) -> None:
+    """Approve an entity alias conflict — writes an ALIAS_OF edge to the graph.
+
+    This is a human decision. The ALIAS_OF edge goes through the normal
+    proposed_change → approve() path so all provenance is preserved.
+    """
+    import uuid as _uuid
+    driver = store.neo()
+    try:
+        with store.pg() as conn:
+            reviewer = conn.execute(
+                "SELECT id FROM principal WHERE name ILIKE %s",
+                (f"%{as_user}%",),
+            ).fetchone()
+            reviewer_id = reviewer["id"] if reviewer else None
+
+            # Resolve short id prefix to full UUID
+            full = conn.execute(
+                "SELECT id FROM entity_conflict WHERE id::text LIKE %s AND status = 'pending'",
+                (f"{conflict_id}%",),
+            ).fetchone()
+            if not full:
+                console.print(f"[red]No pending conflict matching {conflict_id}[/]")
+                raise typer.Exit(1)
+
+            change_id = conflicts.approve_conflict(
+                conn, driver, full["id"], reviewer_id
+            )
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        console.print(f"[red]ERROR[/] {_terminal_safe(exc)}")
+        raise typer.Exit(1)
+    finally:
+        driver.close()
+
+    console.print(
+        f"[green]✓[/] ALIAS_OF edge written to graph. "
+        f"[dim]Change: {str(change_id)[:8]}[/]"
+    )
+    console.print("[dim]Verify: http://localhost:7474 → MATCH (a)-[:ALIAS_OF]->(b) RETURN a,b[/]")
+
+
+@app.command()
+def reject_conflict(
+    conflict_id: str,
+    as_user: str = typer.Option("Raj Malhotra", "--as", help="Who is rejecting"),
+) -> None:
+    """Reject an entity alias conflict — marks these as definitively distinct entities.
+
+    This pair will never appear in the review queue again. No graph change is made.
+    """
+    try:
+        with store.pg() as conn:
+            reviewer = conn.execute(
+                "SELECT id FROM principal WHERE name ILIKE %s",
+                (f"%{as_user}%",),
+            ).fetchone()
+            reviewer_id = reviewer["id"] if reviewer else None
+
+            full = conn.execute(
+                "SELECT id FROM entity_conflict WHERE id::text LIKE %s AND status = 'pending'",
+                (f"{conflict_id}%",),
+            ).fetchone()
+            if not full:
+                console.print(f"[red]No pending conflict matching {conflict_id}[/]")
+                raise typer.Exit(1)
+
+            conflicts.reject_conflict(conn, full["id"], reviewer_id)
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        console.print(f"[red]ERROR[/] {_terminal_safe(exc)}")
+        raise typer.Exit(1)
+
+    console.print(
+        f"[green]✓[/] Conflict rejected — {conflict_id} marked as distinct entities. "
+        "Will not re-appear in review queue."
+    )
 
 
 @app.command()
