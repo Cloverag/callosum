@@ -43,7 +43,15 @@ class Settings(BaseSettings):
 
     # --- Stores ---
     # 5433, not 5432 — dodges any Postgres already running on the host.
+    #
+    # Two roles, one database (Meridian P1 tenancy):
+    #   postgres_dsn      — the `callosum` SUPERUSER. Migrations + admin only. Bypasses
+    #                       Row-Level Security, which is why the app must NOT use it.
+    #   postgres_app_dsn  — the `callosum_app` non-superuser (created by migration 0004).
+    #                       Every runtime connection (store.pg) uses this, so RLS is
+    #                       actually enforced. Requires migrations to have run first.
     postgres_dsn: str = "postgresql://callosum:callosum@localhost:5433/callosum"
+    postgres_app_dsn: str = "postgresql://callosum_app:callosum_app@localhost:5433/callosum"
     neo4j_uri: str = "bolt://localhost:7687"
     neo4j_user: str = "neo4j"
     neo4j_password: str = "callosum123"
