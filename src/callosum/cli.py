@@ -473,6 +473,57 @@ def eval(
     console.print("[dim]Read it by row: lookup should tie, multi_hop should separate.[/]")
 
 
+@app.command(name="eval-mechanism")
+def eval_mechanism(
+    gold_path: Path = typer.Option(Path("eval/gold.jsonl"), "--gold", help="Stratified gold set (JSONL)"),
+    csv_out: Path = typer.Option(Path("eval/mechanism.csv"), "--csv", help="Deterministic mechanism log"),
+) -> None:
+    """Deterministic mechanism gate — candidate retrieval, gold-seeded traversal, RBAC.
+
+    Makes ZERO cloud-LLM calls (no planner, no synthesis): fast, reproducible, CI-safe.
+    This is the REQUIRED release gate; `callosum eval` runs the OBSERVED (LLM-noisy)
+    planner + answer tiers. Exits non-zero if any mechanism invariant regresses.
+    """
+    from callosum import evaluate as ev
+
+    if not gold_path.exists():
+        console.print(f"[red]No gold set at {gold_path}[/]")
+        raise typer.Exit(1)
+
+    gold = ev.load_gold(gold_path)
+    console.print(f"[dim]Loaded {len(gold)} gold questions — running the deterministic "
+                  f"mechanism tier (no LLM)[/]\n")
+
+    driver = store.neo()
+    with store.pg() as conn:
+        with console.status("Candidate retrieval + gold-seeded traversal + RBAC..."):
+            report = ev.evaluate_mechanism(conn, driver, gold)
+    driver.close()
+
+    written = ev.write_mechanism_csv(report, csv_out)
+
+    table = Table(title="Mechanism gate (deterministic — no cloud LLM)")
+    table.add_column("check")
+    table.add_column("result", justify="right")
+    table.add_column("required", justify="right")
+    table.add_row("candidate recall",
+                  f"{report.candidate_hits}/{report.candidate_total}", "= total")
+    table.add_row("traversal recall (gold seeds)",
+                  f"{report.traversal_full}/{report.traversal_total} full "
+                  f"({report.traversal_recall_mean * 100:.0f}% mean)", "= 100%")
+    table.add_row("RBAC fail-closed",
+                  f"{report.rbac_pass}/{report.rbac_total}", "= total")
+    console.print(table)
+    console.print(f"[dim]Appended {written} — these rows are identical every run; a diff "
+                  f"is a real regression, not model noise.[/]")
+
+    if report.passed:
+        console.print("[green]✓ mechanism gate PASSED[/] — deterministic invariants hold")
+    else:
+        console.print("[red]✗ mechanism gate FAILED[/] — a deterministic invariant regressed")
+        raise typer.Exit(1)
+
+
 @app.command()
 def detect_conflicts(
     threshold: float = typer.Option(75.0, "--threshold",
