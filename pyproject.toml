@@ -28,6 +28,10 @@ local = ["sentence-transformers>=3.3"]
 dev = ["pytest>=8.3"]
 
 [tool.pytest.ini_options]
+# callosum is installed (src/ layout); the meridian product package lives at the repo
+# root and is imported CWD-relative (alembic, the API). Put the root on the test path
+# too so `from meridian import ...` resolves under pytest.
+pythonpath = ["."]
 markers = [
     "llm: hits the live model (slow, non-deterministic, costs on the paid provider). Run with -m llm.",
     "integration: requires live local Postgres and Neo4j. Run with CALLOSUM_RUN_INTEGRATION=1 pytest -m integration.",
