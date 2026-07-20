@@ -12,9 +12,9 @@ export default function Header() {
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Fetch conflict count
-    apiClient.getConflicts({ status: 'pending' }).then((res) => {
-      setConflictCount(res.totalCount);
+    // Fetch conflict count (getConflicts returns the full array; count pending client-side)
+    apiClient.getConflicts().then((all) => {
+      setConflictCount(all.filter((c) => c.status === 'pending').length);
     });
 
     // Handle outside click
