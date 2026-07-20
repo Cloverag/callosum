@@ -9,7 +9,23 @@ every applicable check must be perfect AND each tier must actually have run (a t
 zero applicable items means a broken harness, not a pass).
 """
 
-from callosum.evaluate import GoldItem, MechanismReport, MechanismResult
+from callosum.evaluate import GoldItem, MechanismReport, MechanismResult, _rbac_applicable
+
+
+def _rbac_gold(id_: str, stratum: str, forbid: list[str]) -> GoldItem:
+    return GoldItem(id=id_, stratum=stratum, question="q", as_user="x",
+                    expect_answer=[], forbid_answer=forbid, expect_facts=[])
+
+
+def test_rbac_applicable_only_for_clearance_stratum():
+    # X1: rbac stratum + a forbidden secret → the one real clearance case.
+    assert _rbac_applicable(_rbac_gold("X1", "rbac", ["185"]))
+    # forbid_answer OUTSIDE the rbac stratum is a semantic-answer guard, NOT a leak test —
+    # this is the bug the live run caught (7 false positives run as a founder).
+    for stratum in ("conflict", "coreference", "aliases", "messy_email", "temporal"):
+        assert not _rbac_applicable(_rbac_gold("G", stratum, ["approved target"]))
+    # X2: rbac stratum but no forbid (the positive-access case) is not a fail-closed check.
+    assert not _rbac_applicable(_rbac_gold("X2", "rbac", []))
 
 
 def _gold(id_: str, stratum: str = "multi_hop", as_user: str = "raj") -> GoldItem:

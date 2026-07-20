@@ -989,6 +989,19 @@ class MechanismReport:
         )
 
 
+def _rbac_applicable(item: GoldItem) -> bool:
+    """A deterministic fail-closed check applies ONLY to clearance items: the `rbac`
+    stratum with a forbidden secret (X1).
+
+    `forbid_answer` is used more broadly than RBAC — temporal / conflict / coreference /
+    messy_email questions forbid a string so the *answer* doesn't assert the superseded or
+    wrong fact. That forbidden text legitimately lives in a readable chunk, so its presence
+    in a retrieval surface is CORRECT, not a leak. Only the `rbac` stratum encodes a
+    clearance secret that retrieval itself must filter. The stratum label is the intent.
+    """
+    return item.stratum == "rbac" and bool(item.forbid_answer)
+
+
 def _rbac_fails_closed(
     conn: psycopg.Connection, driver: Driver, item: GoldItem, principal: Principal
 ) -> bool:
@@ -1046,8 +1059,8 @@ def evaluate_mechanism(
                 item,
             )
 
-        # RBAC (deterministic): a permissioned question must fail closed on both surfaces.
-        rbac_applicable = bool(item.forbid_answer)
+        # RBAC (deterministic): a clearance question must fail closed on both surfaces.
+        rbac_applicable = _rbac_applicable(item)
         rbac_pass = (
             _rbac_fails_closed(conn, driver, item, principal) if rbac_applicable else True
         )
