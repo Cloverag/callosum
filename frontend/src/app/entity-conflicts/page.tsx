@@ -133,13 +133,9 @@ export default function EntityConflictsPage() {
   if (loading) {
     return (
       <div className="p-8 flex items-center justify-center h-full">
-        <motion.div 
-          initial={{ opacity: 0 }} 
-          animate={{ opacity: 1 }} 
-          className="text-muted-foreground text-sm tracking-widest uppercase font-medium"
-        >
+        <div className="text-muted-foreground text-sm tracking-widest uppercase font-medium animate-in fade-in duration-500">
           Initializing neural matrix...
-        </motion.div>
+        </div>
       </div>
     );
   }
@@ -260,7 +256,7 @@ export default function EntityConflictsPage() {
                         {conflict.type_a}
                       </span>
                       <span className="text-xs text-muted-foreground uppercase tracking-wider">
-                        Detected {new Date(conflict.created_at).toLocaleDateString()}
+                        Detected {new Date(conflict.created_at).toLocaleDateString('en-US', { timeZone: 'UTC', year: 'numeric', month: 'short', day: 'numeric' })}
                       </span>
                       {conflict.status !== 'pending' && (
                         <span className={`px-2 py-0.5 text-[10px] font-bold tracking-widest rounded uppercase ${conflict.status === 'approved' ? 'bg-green-500/10 text-green-500 border border-green-500/20' : 'bg-red-500/10 text-red-500 border border-red-500/20'}`}>

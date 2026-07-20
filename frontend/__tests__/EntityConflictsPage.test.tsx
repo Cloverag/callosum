@@ -27,7 +27,7 @@ describe('EntityConflictsPage', () => {
     render(<EntityConflictsPage />);
     
     await waitFor(() => {
-      expect(screen.getByText(/System optimal/i)).toBeInTheDocument();
+      expect(screen.getByText(/Queue Empty/i)).toBeInTheDocument();
     });
   });
 
