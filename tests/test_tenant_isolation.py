@@ -129,3 +129,43 @@ def test_connection_helper_sets_workspace():
     with store.pg(workspace_id=other) as conn:
         w = conn.execute("SELECT current_setting('app.workspace_id') AS w").fetchone()["w"]
     assert w == other
+
+
+def test_entity_conflict_unique_key_is_workspace_scoped():
+    """The SAME conflict pair is allowed in two workspaces, but rejected twice in one.
+
+    The UNIQUE index on entity_conflict is enforced below RLS — it sees every row — so
+    before migration 0006 the same (name_a, type_a, name_b, type_b) proposed in a second
+    workspace collided with the first tenant's row, coupling tenants that cannot see each
+    other. 0006 adds workspace_id to the key: identity is per-workspace, collisions are
+    per-workspace. This proves both directions.
+    """
+    token = uuid.uuid4().hex[:8]
+    wa, wb = uuid.uuid4(), uuid.uuid4()
+    _admin(
+        "INSERT INTO workspace (id, name, external_id) VALUES (%s, %s, %s), (%s, %s, %s)",
+        (wa, f"A-{token}", f"a-{token}", wb, f"B-{token}", f"b-{token}"),
+    )
+    name_a, name_b = f"Raj-{token}", f"Rajesh-{token}"
+
+    def _insert(ws: uuid.UUID) -> None:
+        with store.pg(workspace_id=str(ws)) as conn:
+            conn.execute(
+                """
+                INSERT INTO entity_conflict
+                    (name_a, type_a, name_b, type_b, similarity, workspace_id)
+                VALUES (%s, 'PERSON', %s, 'PERSON', 77.0, %s)
+                """,
+                (name_a, name_b, str(ws)),
+            )
+
+    try:
+        # Same pair in A and in B: allowed — different workspace, different key.
+        _insert(wa)
+        _insert(wb)
+        # Duplicate within the SAME workspace: rejected by the widened unique key.
+        with pytest.raises(psycopg.errors.UniqueViolation):
+            _insert(wa)
+    finally:
+        _admin("DELETE FROM entity_conflict WHERE name_a = %s", (name_a,))
+        _admin("DELETE FROM workspace WHERE id IN (%s, %s)", (wa, wb))
