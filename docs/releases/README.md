@@ -35,12 +35,17 @@ merge → freeze → tag → graphify → publish → postmortem
    never moves; all future work builds *on* it. Verify single-tenant retrieval still reproduces the
    research baseline `eval-baseline-v3` (candidate recall 21/21, traversal 100%).
 4. **Graphify** — rebuild the knowledge graph *from the tagged tree* so the graph maps exactly to the
-   release. Run in Kitty (fish; claude-cli backend; text/code scope, not media):
+   release. Run in Kitty (fish; claude-cli backend; text/code scope, not media). `--backend claude-cli`
+   is **required** (without it graphify errors "no LLM API key"), and `GRAPHIFY_CLAUDE_CLI_MODEL=haiku`
+   pins the cheap model — the default is **Opus**, which silently drains subscription credit:
    ```
-   graphify . --update --obsidian --obsidian-dir "/home/clover/Documents/Obsidian Vault/Meridian"
+   git checkout <tag>
+   GRAPHIFY_CLAUDE_CLI_MODEL=haiku graphify . --backend claude-cli --obsidian --obsidian-dir "/home/clover/Documents/Obsidian Vault/Meridian"
+   git checkout master
    ```
-   Drop `--update` if there is no existing baseline graph. Do this at the tag, not mid-development —
-   an arbitrary rebuild produces a graph that corresponds to nothing.
+   Do a clean full rebuild at the tag, not mid-development — an arbitrary rebuild produces a graph that
+   corresponds to nothing. If a chunk fails with `claude -p exited 1:` and empty stderr, the real error
+   (usually a usage limit) is on stdout — Haiku both cuts cost and avoids the limit.
 5. **Publish** — write the release notes (`docs/releases/meridian-pN.md`: commit, tag, research
    baseline, capabilities, acceptance metrics, known limitations, deferred RFCs, ADR + freeze links)
    and add the row to the index below. Release-notes and graph commits may land *after* the tag —
