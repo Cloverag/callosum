@@ -42,7 +42,9 @@ from neo4j import Driver
 
 from callosum import store
 from callosum.ontology import EntityType, RelationType
-from callosum.retrieve import Answer, Principal, ask, graph_search, ground, plan
+from callosum.retrieve import (
+    Answer, Principal, ask, candidate_entities, graph_search, ground, plan, vector_search,
+)
 
 STRATUM_ORDER = ["lookup", "relational", "multi_hop", "temporal",
                  "aliases", "conflict", "coreference", "messy_email", "grounding_adv", "grounding_neg", "rbac"]
@@ -899,3 +901,181 @@ def render_markdown(
         "the authorised answer does.\n"
     )
     return "\n".join(lines) + "\n"
+
+
+# ==========================================================================
+# Deterministic mechanism gate — the REQUIRED release tier (no cloud LLM).
+#
+# evaluate() above conflates three tiers that fail for different reasons and
+# with different determinism (see docs/proposals/2026-07-20-eval-mechanism-split.md):
+#
+#   Mechanism (required, deterministic)  candidate retrieval · graph traversal · RBAC
+#   Planner   (observed, LLM-noisy)      grounding recall · GER · precision
+#   Answer    (observed, LLM-noisy)      answer-text / hybrid correctness
+#
+# The functions below compute ONLY the mechanism tier. They CALL the frozen
+# retrieval stages that make no planner/synthesis call — candidate_entities
+# (vector + graph, local bge-m3) and graph_search seeded on the GOLD entities —
+# so the numbers are byte-reproducible and cost zero cloud tokens. Traversal is
+# tested from gold seeds on purpose: the traversal ENGINE is deterministic; only
+# the planner's CHOICE of seed is not, and that choice lives in the observed tier.
+# ==========================================================================
+
+MECHANISM_CSV_COLUMNS = [
+    "id", "stratum", "as_user",
+    "candidate_applicable", "candidate_hit",
+    "traversal_applicable", "traversal_recall",
+    "rbac_applicable", "rbac_pass",
+]
+
+
+@dataclass
+class MechanismResult:
+    item: GoldItem
+    candidate_applicable: bool   # question declares an acceptable gold entity
+    candidate_hit: bool          # the permission-scoped candidate set surfaced one
+    traversal_applicable: bool   # question declares expect_facts + gold seeds
+    traversal_recall: float      # graph-fact recall from the GOLD seeds (engine only)
+    rbac_applicable: bool        # question declares a forbidden string
+    rbac_pass: bool              # neither retrieval surface leaked it
+
+
+@dataclass
+class MechanismReport:
+    results: list[MechanismResult]
+
+    @property
+    def candidate_total(self) -> int:
+        return sum(1 for r in self.results if r.candidate_applicable)
+
+    @property
+    def candidate_hits(self) -> int:
+        return sum(1 for r in self.results if r.candidate_applicable and r.candidate_hit)
+
+    @property
+    def traversal_total(self) -> int:
+        return sum(1 for r in self.results if r.traversal_applicable)
+
+    @property
+    def traversal_full(self) -> int:
+        return sum(1 for r in self.results
+                   if r.traversal_applicable and r.traversal_recall >= 1.0)
+
+    @property
+    def traversal_recall_mean(self) -> float:
+        vals = [r.traversal_recall for r in self.results if r.traversal_applicable]
+        return sum(vals) / len(vals) if vals else 0.0
+
+    @property
+    def rbac_total(self) -> int:
+        return sum(1 for r in self.results if r.rbac_applicable)
+
+    @property
+    def rbac_pass(self) -> int:
+        return sum(1 for r in self.results if r.rbac_applicable and r.rbac_pass)
+
+    @property
+    def passed(self) -> bool:
+        """The gate: every applicable check perfect, AND each tier actually ran.
+
+        An empty tier is a broken harness (wrong DB, unseeded graph), not a pass — so
+        each ``*_total`` must be non-zero. Traversal is gated on FULL recall per item,
+        because with correct seeds the engine must return every expected fact.
+        """
+        return (
+            self.candidate_total > 0 and self.candidate_hits == self.candidate_total
+            and self.traversal_total > 0 and self.traversal_full == self.traversal_total
+            and self.rbac_total > 0 and self.rbac_pass == self.rbac_total
+        )
+
+
+def _rbac_fails_closed(
+    conn: psycopg.Connection, driver: Driver, item: GoldItem, principal: Principal
+) -> bool:
+    """A forbidden string must not reach the principal through EITHER retrieval surface.
+
+    The real leak once found (docs/findings.md) was through graph edge quotes, not the
+    vector arm, so both are checked: the clearance-filtered vector hits AND the facts
+    traversed from the gold seeds. No synthesis — this is the retrieval-level RBAC
+    guarantee, deterministic.
+    """
+    forbid = [f.lower() for f in item.forbid_answer]
+    evidence, _ = vector_search(conn, item.question, principal)
+    if any(f in e.text.lower() for e in evidence for f in forbid):
+        return False
+    if item.expect_entities:
+        facts, _ = graph_search(driver, item.expect_entities, principal)
+        if any(f in fact.lower() for fact in facts for f in forbid):
+            return False
+    return True
+
+
+def evaluate_mechanism(
+    conn: psycopg.Connection, driver: Driver, gold: list[GoldItem]
+) -> MechanismReport:
+    """Run the deterministic mechanism tier: candidate retrieval, gold-seeded traversal, RBAC.
+
+    Makes ZERO planner/synthesis calls. Every number here is reproducible run-to-run and is
+    the REQUIRED release gate (see ``MechanismReport.passed``). Planner grounding and answer
+    quality are the OBSERVED tiers and live in ``evaluate()``.
+    """
+    results: list[MechanismResult] = []
+    for item in gold:
+        principal = _resolve_principal(conn, item.as_user)
+        if principal is None:
+            raise ValueError(
+                f"Gold item {item.id}: no principal matching '{item.as_user}'. Run: callosum init"
+            )
+
+        # Candidate stage (deterministic): did the permission-scoped candidate set surface
+        # an acceptable gold entity? The R12 recall ceiling, measured without the planner.
+        candidate_applicable = bool(item.expect_entities) and not item.should_not_ground
+        candidate_hit = False
+        if candidate_applicable:
+            candidates, _ = candidate_entities(conn, driver, item.question, principal)
+            candidate_hit = bool(set(candidates) & set(item.expect_entities))
+
+        # Traversal engine (deterministic): seeded on the GOLD entities, does 2-hop
+        # traversal recall the expected facts? Isolates the engine from the planner's seed.
+        traversal_applicable = bool(item.expect_facts) and bool(item.expect_entities)
+        traversal_recall = 0.0
+        if traversal_applicable:
+            facts, _ = graph_search(driver, item.expect_entities, principal)
+            traversal_recall = _graph_fact_recall(
+                Answer(text="", evidence=[], graph_facts=facts, withheld=0, latency_ms=0),
+                item,
+            )
+
+        # RBAC (deterministic): a permissioned question must fail closed on both surfaces.
+        rbac_applicable = bool(item.forbid_answer)
+        rbac_pass = (
+            _rbac_fails_closed(conn, driver, item, principal) if rbac_applicable else True
+        )
+
+        results.append(MechanismResult(
+            item, candidate_applicable, candidate_hit,
+            traversal_applicable, traversal_recall, rbac_applicable, rbac_pass,
+        ))
+    return MechanismReport(results)
+
+
+def write_mechanism_csv(report: MechanismReport, path: Path) -> Path:
+    """Append this deterministic run to a diffable log.
+
+    Unlike ``results.csv`` these rows should be IDENTICAL every run — a diff here is a real
+    regression, not model noise. That is the whole point of separating the tier.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fresh = not path.exists()
+    with path.open("a", newline="", encoding="utf-8") as fh:
+        w = csv.writer(fh)
+        if fresh:
+            w.writerow(MECHANISM_CSV_COLUMNS)
+        for r in report.results:
+            w.writerow([
+                r.item.id, r.item.stratum, r.item.as_user,
+                int(r.candidate_applicable), int(r.candidate_hit),
+                int(r.traversal_applicable), f"{r.traversal_recall:.2f}",
+                int(r.rbac_applicable), int(r.rbac_pass),
+            ])
+    return path
