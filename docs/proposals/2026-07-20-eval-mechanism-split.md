@@ -72,8 +72,12 @@ is a broken harness, not a pass):
 
 - candidate recall `== total` (baseline **21/21**)
 - gold-seeded traversal recall `== 100%` on every `expect_facts` item
-- RBAC fail-closed on every `forbid_answer` item (both vector hits and traversed facts — the
-  historical leak was through **graph edge quotes**, so both surfaces are checked)
+- RBAC fail-closed on every **clearance** item — the `rbac` stratum with a forbidden secret
+  (X1), checked on both vector hits and traversed facts (the historical leak was through
+  **graph edge quotes**, so both surfaces are checked). `forbid_answer` outside the `rbac`
+  stratum is a semantic-answer guard whose text legitimately lives in a readable chunk, so it
+  is **not** a leak test — scoping by stratum is what keeps the gate honest (a live run caught
+  this: 7 non-clearance guards, run as a founder, are not leaks).
 
 ## Acceptance for THIS change
 
