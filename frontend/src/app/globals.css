@@ -1,130 +1,167 @@
 @import "tailwindcss";
 
+/* ============================================================================
+   Meridian Board OS — semantic token layer
+   The single source of truth for color, elevation, and motion.
+   Components consume ONLY these semantic tokens — never raw hex, never a
+   palette step (no `violet-500`, no `zinc-800`). See DESIGN.md.
+   All text/surface pairings below are verified to WCAG 2.2 AA (>=4.5:1 body).
+   Palette: violet accent on zinc neutrals.
+   ========================================================================== */
+
 @theme {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
+  /* Brand / interactive ---------------------------------------------------- */
+  --color-accent: var(--accent);                     /* solid fill: primary buttons, selected */
+  --color-accent-foreground: var(--accent-foreground);/* label on an accent fill */
+  --color-accent-emphasis: var(--accent-emphasis);   /* accent AS text/icon on a surface (AA) */
+  --color-accent-subtle: var(--accent-subtle);       /* faint accent wash (backgrounds) */
+
+  /* Status ----------------------------------------------------------------- */
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-emphasis: var(--success-emphasis);
+  --color-success-subtle: var(--success-subtle);
+
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-emphasis: var(--warning-emphasis);
+  --color-warning-subtle: var(--warning-subtle);
+
+  --color-danger: var(--danger);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-danger-emphasis: var(--danger-emphasis);
+  --color-danger-subtle: var(--danger-subtle);
+
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-info-emphasis: var(--info-emphasis);
+  --color-info-subtle: var(--info-subtle);
+
+  /* Text ------------------------------------------------------------------- */
+  --color-foreground: var(--foreground);             /* "Text" — primary */
+  --color-muted-foreground: var(--muted-foreground); /* "Text-muted" — secondary (AA) */
+  --color-subtle-foreground: var(--subtle-foreground);/* decorative / large text only */
+
+  /* Structure -------------------------------------------------------------- */
   --color-border: var(--border);
-  --color-border-hover: var(--border-hover);
-  --color-accent: var(--accent);
-  --color-accent-glow: var(--accent-glow);
-  
-  --color-glass-bg: var(--glass-bg);
-  --color-glass-border: var(--glass-border);
-  --color-glass-highlight: var(--glass-highlight);
-  --color-glass-shadow: var(--glass-shadow);
-  
-  --color-card-bg: var(--card-bg);
-  --color-card-border: var(--card-border);
+  --color-border-strong: var(--border-strong);
+  --color-focus: var(--focus);
+
+  /* Surfaces (tonal-first elevation) --------------------------------------- */
+  --color-surface: var(--surface);                   /* page base */
+  --color-surface-elevated: var(--surface-elevated); /* panels, toolbars, sidebar */
+  --color-surface-raised: var(--surface-raised);     /* cards, dialogs, popovers */
+  --color-surface-sunken: var(--surface-sunken);     /* inset wells, quote blocks */
+  --color-surface-glass: var(--surface-glass);       /* blurred shell / overlay only */
 }
 
 @layer base {
+  /* Light theme (default) — cool zinc, never paper -------------------------- */
   :root {
-    --background: #e2e8f0;
-    --foreground: #0f172a;
-    --primary: #000000;
-    --primary-foreground: #ffffff;
-    --muted: #cbd5e1;
-    --muted-foreground: #64748b;
-    --border: rgba(0, 0, 0, 0.15);
-    --border-hover: rgba(0, 0, 0, 0.25);
-    --accent: #3b82f6;
-    --accent-glow: rgba(59, 130, 246, 0.3);
-    
-    --glass-bg: #ffffff;
-    --glass-border: rgba(0, 0, 0, 0.1);
-    --glass-highlight: rgba(255, 255, 255, 1);
-    --glass-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-    
-    --card-bg: #f8fafc;
-    --card-border: rgba(0, 0, 0, 0.08);
+    --accent: #7c3aed;                 /* violet-600 — white label passes AA */
+    --accent-foreground: #ffffff;
+    --accent-emphasis: #7c3aed;        /* on light surfaces ~4.6:1 */
+    --accent-subtle: rgba(124, 58, 237, 0.10);
 
-    --page-gradient: radial-gradient(circle at 50% -20%, rgba(59, 130, 246, 0.08), transparent 60%);
+    --success: #15803d;                --success-foreground: #ffffff;
+    --success-emphasis: #166534;       --success-subtle: rgba(21, 128, 61, 0.12);
+    --warning: #d97706;                --warning-foreground: #1c1917; /* dark label on amber */
+    --warning-emphasis: #92400e;       --warning-subtle: rgba(217, 119, 6, 0.14);
+    --danger: #dc2626;                 --danger-foreground: #ffffff;
+    --danger-emphasis: #b91c1c;        --danger-subtle: rgba(220, 38, 38, 0.10);
+    --info: #2563eb;                   --info-foreground: #ffffff;
+    --info-emphasis: #1d4ed8;          --info-subtle: rgba(37, 99, 235, 0.10);
+
+    --foreground: #18181b;             /* zinc-900 */
+    --muted-foreground: #52525b;       /* zinc-600 — passes AA on all surfaces */
+    --subtle-foreground: #71717a;      /* zinc-500 — large/decorative only */
+
+    --border: rgba(24, 24, 27, 0.12);
+    --border-strong: rgba(24, 24, 27, 0.22);
+    --focus: #7c3aed;
+
+    --surface: #e4e4e7;                /* zinc-200 base */
+    --surface-elevated: #f4f4f5;       /* zinc-100 panels */
+    --surface-raised: #ffffff;         /* cards */
+    --surface-sunken: #d4d4d8;         /* zinc-300 wells */
+    --surface-glass: rgba(250, 250, 250, 0.72);
+    --surface-glass-border: rgba(24, 24, 27, 0.10);
+    --surface-glass-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    --surface-glass-highlight: rgba(255, 255, 255, 0.9);
   }
 
+  /* Dark theme — deep near-black situation room ----------------------------- */
   .dark {
-    --background: #020617;
-    --foreground: #f8fafc;
-    --primary: #ffffff;
-    --primary-foreground: #020617;
-    --muted: #334155;
-    --muted-foreground: #94a3b8;
-    --border: rgba(255, 255, 255, 0.15);
-    --border-hover: rgba(255, 255, 255, 0.25);
-    --accent: #3b82f6;
-    --accent-glow: rgba(59, 130, 246, 0.6);
-    
-    --glass-bg: #0f172a;
-    --glass-border: rgba(255, 255, 255, 0.15);
-    --glass-highlight: rgba(255, 255, 255, 0.08);
-    --glass-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-    
-    --card-bg: #1e293b;
-    --card-border: rgba(255, 255, 255, 0.1);
+    --accent: #7c3aed;                 --accent-foreground: #ffffff;
+    --accent-emphasis: #a78bfa;        /* violet-400 — AA as text on dark */
+    --accent-subtle: rgba(167, 139, 250, 0.14);
 
-    --page-gradient: radial-gradient(circle at 50% -20%, rgba(59, 130, 246, 0.05), transparent 60%);
+    --success: #15803d;                --success-foreground: #ffffff;
+    --success-emphasis: #4ade80;       --success-subtle: rgba(74, 222, 128, 0.14);
+    --warning: #d97706;                --warning-foreground: #1c1917;
+    --warning-emphasis: #fbbf24;       --warning-subtle: rgba(251, 191, 36, 0.14);
+    --danger: #dc2626;                 --danger-foreground: #ffffff;
+    --danger-emphasis: #f87171;        --danger-subtle: rgba(248, 113, 113, 0.14);
+    --info: #2563eb;                   --info-foreground: #ffffff;
+    --info-emphasis: #60a5fa;          --info-subtle: rgba(96, 165, 250, 0.14);
+
+    --foreground: #fafafa;             /* zinc-50 */
+    --muted-foreground: #a1a1aa;       /* zinc-400 — passes AA on dark surfaces */
+    --subtle-foreground: #71717a;      /* zinc-500 — large/decorative only */
+
+    --border: rgba(255, 255, 255, 0.12);
+    --border-strong: rgba(255, 255, 255, 0.22);
+    --focus: #a78bfa;
+
+    --surface: #09090b;                /* zinc-950 base */
+    --surface-elevated: #18181b;       /* zinc-900 panels */
+    --surface-raised: #27272a;         /* zinc-800 cards */
+    --surface-sunken: #050506;         /* wells */
+    --surface-glass: rgba(24, 24, 27, 0.72);
+    --surface-glass-border: rgba(255, 255, 255, 0.14);
+    --surface-glass-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    --surface-glass-highlight: rgba(255, 255, 255, 0.08);
   }
+}
+
+/* Motion tokens — see DESIGN.md "Motion hierarchy" (L0-L3) -------------------- */
+@theme {
+  --ease-out-quart: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-hover: 120ms;   /* L1: hover / press feedback (100-150ms) */
+  --duration-state: 200ms;   /* L2: page & state transitions (180-250ms) */
 }
 
 @layer base {
   body {
-    background-color: var(--background);
-    background-image: var(--page-gradient);
+    background-color: var(--surface);
     color: var(--foreground);
     min-height: 100vh;
-    font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    transition: background-color 0.3s ease, color 0.3s ease;
+    transition: background-color var(--duration-state) ease, color var(--duration-state) ease;
   }
 }
 
 @layer utilities {
-  .glass-panel {
-    background: var(--glass-bg);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
-    border: 1px solid var(--glass-border);
-    box-shadow: var(--glass-shadow), inset 0 1px 0 0 var(--glass-highlight);
+  /* Glass is ONE surface variant, reserved for the app shell and overlays.
+     Never a default content-card treatment (DESIGN.md: Glass-Is-Structural). */
+  .surface-glass {
+    background: var(--surface-glass);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--surface-glass-border);
+    box-shadow: var(--surface-glass-shadow), inset 0 1px 0 0 var(--surface-glass-highlight);
   }
+}
 
-  .text-glow {
-    text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
-  }
-  
-  .dark .text-glow {
-    text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
-  }
-  
-  :root .text-glow {
-    text-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
-  }
-
-  .text-glow-accent {
-    text-shadow: 0 0 20px var(--accent-glow);
-  }
-
-  .cinematic-button {
-    position: relative;
-    overflow: hidden;
-    transition: all 0.3s ease;
-  }
-
-  .cinematic-button::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: -100%;
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(90deg, transparent, var(--glass-border), transparent);
-    transition: left 0.5s ease;
-  }
-
-  .cinematic-button:hover::before {
-    left: 100%;
+/* Reduced motion: strip all non-essential motion (DESIGN.md motion L: reduced) */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
