@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-21T00:00:00Z",
+  "title": "Design System: Meridian Board OS",
+  "extensions": {
+    "colorMeta": {
+      "accent": {
+        "role": "primary",
+        "displayName": "Signal Blue",
+        "canonical": "#3b82f6",
+        "tonalRamp": ["#172554", "#1e3a8a", "#1e40af", "#2563eb", "#3b82f6", "#60a5fa", "#93c5fd", "#dbeafe"]
+      },
+      "surface-base-dark": {
+        "role": "neutral",
+        "displayName": "Deep Slate (Base, Dark)",
+        "canonical": "#020617",
+        "tonalRamp": ["#020617", "#0f172a", "#1e293b", "#334155", "#475569", "#64748b", "#94a3b8", "#cbd5e1"]
+      },
+      "surface-base-light": {
+        "role": "neutral",
+        "displayName": "Cool Slate (Base, Light)",
+        "canonical": "#e2e8f0",
+        "tonalRamp": ["#0f172a", "#334155", "#475569", "#64748b", "#94a3b8", "#cbd5e1", "#e2e8f0", "#f8fafc"]
+      },
+      "ink-dark": {
+        "role": "neutral",
+        "displayName": "Ink (Dark)",
+        "canonical": "#f8fafc",
+        "tonalRamp": ["#334155", "#475569", "#64748b", "#94a3b8", "#cbd5e1", "#e2e8f0", "#f1f5f9", "#f8fafc"]
+      },
+      "ink-light": {
+        "role": "neutral",
+        "displayName": "Ink (Light)",
+        "canonical": "#0f172a",
+        "tonalRamp": ["#020617", "#0f172a", "#1e293b", "#334155", "#475569", "#64748b", "#94a3b8", "#cbd5e1"]
+      }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "Headline", "purpose": "Page and section titles; the signature light-weight (300) heading." },
+      "title": { "displayName": "Title", "purpose": "Object names, panel titles, entity names." },
+      "body": { "displayName": "Body", "purpose": "Default text: descriptions, quotes, table cells. Prose capped 65-75ch." },
+      "label": { "displayName": "Label", "purpose": "Tiny uppercase tracked metadata: status, similarity, provenance." }
+    },
+    "shadows": [
+      { "name": "panel-light", "value": "0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03), inset 0 1px 0 0 rgba(255,255,255,1)", "purpose": "Glass-panel elevation for shell chrome in light mode." },
+      { "name": "panel-dark", "value": "0 10px 30px rgba(0,0,0,0.5), inset 0 1px 0 0 rgba(255,255,255,0.08)", "purpose": "Glass-panel elevation for shell chrome in dark mode." },
+      { "name": "accent-halo", "value": "0 0 20px rgba(59,130,246,0.3)", "purpose": "Rare focused halo around a single active/critical affordance. Not a default card treatment." }
+    ],
+    "motion": [
+      { "name": "ease-out-quart", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Primary easing for reveals and state transitions." },
+      { "name": "duration-state", "value": "200ms", "purpose": "Default transition duration; keep interactions in 150-250ms." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "xl", "value": "1280px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single most important action on a surface. Contrast-ink fill flipped per theme.",
+      "html": "<button class=\"ds-btn-primary\">Approve</button>",
+      "css": ".ds-btn-primary { display:inline-flex; align-items:center; gap:8px; background:var(--primary); color:var(--primary-foreground); border:none; border-radius:8px; padding:10px 24px; font-size:0.875rem; font-weight:500; line-height:1; cursor:pointer; transition:opacity 0.2s cubic-bezier(0.16,1,0.3,1), transform 0.2s; } .ds-btn-primary:hover { opacity:0.9; } .ds-btn-primary:active { transform:translateY(1px); } .ds-btn-primary:focus-visible { outline:2px solid var(--accent); outline-offset:2px; } .ds-btn-primary:disabled { opacity:0.5; cursor:not-allowed; }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Secondary / dismissive action. Transparent with hairline border and muted label.",
+      "html": "<button class=\"ds-btn-ghost\">Reject</button>",
+      "css": ".ds-btn-ghost { display:inline-flex; align-items:center; gap:8px; background:transparent; color:var(--muted-foreground); border:1px solid var(--glass-border); border-radius:8px; padding:10px 24px; font-size:0.875rem; font-weight:500; line-height:1; cursor:pointer; transition:color 0.2s, background 0.2s; } .ds-btn-ghost:hover { color:var(--foreground); background:rgba(0,0,0,0.05); } .ds-btn-ghost:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }"
+    },
+    {
+      "name": "Search Input",
+      "kind": "input",
+      "refersTo": "input-search",
+      "description": "Workspace search. Card-surface fill, full radius, leading icon, border-shift focus (no glow bloom).",
+      "html": "<div class=\"ds-field\"><svg class=\"ds-field-icon\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"11\" cy=\"11\" r=\"8\"></circle><path d=\"m21 21-4.3-4.3\"></path></svg><input class=\"ds-input-search\" type=\"text\" placeholder=\"Search workspace…\" /></div>",
+      "css": ".ds-field { position:relative; display:inline-flex; align-items:center; } .ds-field-icon { position:absolute; left:12px; color:var(--muted-foreground); pointer-events:none; } .ds-input-search { background:var(--card-bg); color:var(--foreground); border:1px solid var(--glass-border); border-radius:9999px; padding:6px 16px 6px 36px; font-size:0.875rem; width:256px; } .ds-input-search::placeholder { color:var(--muted-foreground); } .ds-input-search:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }"
+    },
+    {
+      "name": "Metadata Badge",
+      "kind": "chip",
+      "refersTo": "badge",
+      "description": "Entity type / status / clearance. Neutral by default; accent tint only on an attention state.",
+      "html": "<span class=\"ds-badge\">PERSON</span>",
+      "css": ".ds-badge { display:inline-flex; align-items:center; background:var(--card-bg); color:var(--foreground); border:1px solid var(--glass-border); border-radius:4px; padding:4px 12px; font-size:0.625rem; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; }"
+    },
+    {
+      "name": "Nav Item",
+      "kind": "nav",
+      "refersTo": "nav-item",
+      "description": "Sidebar navigation row. Muted at rest; active shows a primary wash, accent icon, and inset highlight. Active state is route-derived.",
+      "html": "<a class=\"ds-nav-item ds-nav-item--active\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"3\" width=\"7\" height=\"7\"></rect><rect x=\"14\" y=\"3\" width=\"7\" height=\"7\"></rect><rect x=\"14\" y=\"14\" width=\"7\" height=\"7\"></rect><rect x=\"3\" y=\"14\" width=\"7\" height=\"7\"></rect></svg><span>Dashboard</span></a>",
+      "css": ".ds-nav-item { display:flex; align-items:center; gap:12px; padding:10px 12px; border-radius:8px; color:var(--muted-foreground); font-size:0.875rem; font-weight:500; text-decoration:none; transition:color 0.2s, background 0.2s; } .ds-nav-item:hover { color:var(--foreground); background:rgba(0,0,0,0.05); } .ds-nav-item--active { color:var(--foreground); background:color-mix(in srgb, var(--primary) 10%, transparent); box-shadow:inset 0 1px 0 0 var(--glass-highlight); } .ds-nav-item--active svg { color:var(--accent); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Quiet Situation Room",
+    "overview": "Meridian is where a founder walks in the hour before a board meeting and instantly trusts what they see. The interface is a calm, low-light situation room: a deep slate surface, one disciplined blue accent, and hairline structure that lets dense governance information sit legibly side by side without shouting. It evolves an earlier, more cinematic treatment toward earned executive confidence: glass and depth remain in the vocabulary but as restraint, not spectacle. Trust here is legibility under scrutiny, not atmosphere.",
+    "keyCharacteristics": [
+      "Dual-theme slate system: deep near-black dark, cool slate-grey light — both first-class.",
+      "Exactly one accent (a single blue), reserved for state, selection, and provenance — never decoration.",
+      "Hairline dividers and restrained glass carry structure; density beats whitespace.",
+      "Inter throughout, light-weight headings against small tracked labels for hierarchy without noise.",
+      "WCAG 2.2 AA is a hard floor — every text/surface pairing must pass 4.5:1."
+    ],
+    "rules": [
+      { "name": "The One Signal Rule", "body": "Signal Blue appears on ≤10% of any screen. It marks state, selection, and provenance — nothing else. A blue used to 'brighten up' a panel is a bug.", "section": "colors" },
+      { "name": "The Slate-Not-Paper Rule", "body": "Light mode is cool slate (#e2e8f0), never warm paper/cream. The calm comes from neutral slate, not tint.", "section": "colors" },
+      { "name": "The Fixed-Scale Rule", "body": "Type is a fixed rem scale, never fluid clamp(). A heading that shrinks in a sidebar is a regression, not responsiveness.", "section": "typography" },
+      { "name": "The Tonal-First Rule", "body": "Depth is layered lightness first (base/panel/card), shadow second. If a surface reads as elevated without a shadow, it needs no shadow.", "section": "elevation" },
+      { "name": "The Glass-Is-Structural Rule", "body": "Backdrop-blur glass is reserved for the app shell and overlays. Glass on every content card is prohibited — it is the cinematic reflex this system is retiring.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep Signal Blue (#3b82f6) to ≤10% of any screen — state, selection, focus, and provenance only.",
+      "Do darken light-mode Muted Ink from #64748b to at least #475569 so secondary text clears 4.5:1.",
+      "Do convey depth by tonal layering (base → panel → card) first, shadow second.",
+      "Do derive nav/tab active state from the current route (usePathname).",
+      "Do give every interactive element a visible, non-color-only focus ring and a full keyboard path.",
+      "Do provide a prefers-reduced-motion alternative for every transition; keep state transitions 150-250ms.",
+      "Do add semantic state tokens (error / warning / success / info) before building forms and status surfaces.",
+      "Do keep information density high: tight legible rows and short paths to common actions."
+    ],
+    "donts": [
+      "Don't style like an enterprise board portal (Diligent, Boardvantage) — heavy, dated compliance-software weight.",
+      "Don't style like a generic SaaS dashboard — no gradient hero-metric tiles, no identical icon-heading-text card grids.",
+      "Don't use crypto/fintech neon — no dark-mode neon, saturated purple-to-blue gradients, or trading-terminal flash.",
+      "Don't prioritize decoration over density — no oversized cards, oversized icons, excessive whitespace, or scroll-heavy common tasks.",
+      "Don't use glass on content cards or glow as a default — glass is structural, the accent glow is a rare single-affordance halo.",
+      "Don't ship sci-fi copy — no 'Initializing neural matrix…', 'System optimal', or 'neural' theatrics.",
+      "Don't hardcode off-token hex colors in components; use the semantic tokens so both themes and AA hold.",
+      "Don't use a border-left/border-right greater than 1px as a colored accent stripe.",
+      "Don't signal state with color alone; pair it with an icon, label, or shape."
+    ]
+  }
+}
