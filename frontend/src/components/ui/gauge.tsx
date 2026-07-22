@@ -57,7 +57,7 @@ export function Gauge({
           stroke="currentColor"
           strokeWidth={strokeWidth}
           strokeLinecap="round"
-          className="text-accent-emphasis"
+          className="text-memory-emphasis"
           strokeDasharray={c}
           initial={{ strokeDashoffset: reduce ? c - filled : c }}
           animate={{ strokeDashoffset: c - filled }}

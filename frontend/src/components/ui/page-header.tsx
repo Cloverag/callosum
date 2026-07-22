@@ -19,14 +19,14 @@ export function PageHeader({ title, description, icon, actions, className, ...pr
       <div className="flex items-start gap-3">
         {icon && (
           <span
-            className="mt-0.5 flex rounded-md border border-border bg-surface-elevated p-2 text-accent-emphasis [&_svg]:size-5"
+            className="mt-0.5 flex rounded-[12px] border border-border bg-surface-raised p-2 text-muted-foreground shadow-card [&_svg]:size-5"
             aria-hidden
           >
             {icon}
           </span>
         )}
         <div className="min-w-0">
-          <h1 className="text-2xl font-light tracking-tight text-foreground text-balance">{title}</h1>
+          <h1 className="text-3xl font-bold leading-tight tracking-[-0.02em] text-foreground text-balance">{title}</h1>
           {description && (
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground text-pretty">{description}</p>
           )}

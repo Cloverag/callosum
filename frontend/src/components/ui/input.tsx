@@ -16,13 +16,13 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
         ref={ref}
         aria-invalid={error || ariaInvalid || undefined}
         className={cn(
-          "h-10 w-full rounded-md border bg-surface-raised text-sm text-foreground",
+          "h-10 w-full rounded-[12px] border bg-surface-raised text-sm text-foreground",
           "placeholder:text-muted-foreground transition-colors duration-150",
-          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus/40",
           "disabled:pointer-events-none disabled:opacity-50",
-          icon ? "pl-9 pr-3" : "px-3",
+          icon ? "pl-9 pr-3" : "px-3.5",
           error
-            ? "border-danger focus-visible:border-danger focus-visible:ring-danger"
+            ? "border-danger focus-visible:border-danger focus-visible:ring-danger/40"
             : "border-border focus-visible:border-accent",
           className
         )}

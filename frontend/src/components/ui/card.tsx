@@ -3,10 +3,13 @@ import { cn } from "@/lib/utils";
 
 type CardVariant = "default" | "elevated" | "glass";
 
+// Cards are sheets on a desk: white surface, 1px hairline, 16px radius, a very
+// subtle shadow. `elevated` lifts a little more (the meeting hero); `glass` is
+// reserved for true overlays. See DESIGN.md — Cards / Elevation.
 const surfaces: Record<CardVariant, string> = {
-  default: "bg-surface-raised border border-border",
-  elevated: "bg-surface-elevated border border-border",
-  glass: "surface-glass", // structural glass utility — shell/overlays only
+  default: "bg-surface-raised border border-border shadow-card",
+  elevated: "bg-surface-raised border border-border shadow-raised",
+  glass: "surface-glass", // structural glass utility — overlays only
 };
 
 export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -14,7 +17,7 @@ export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 export function Card({ className, variant = "default", ...props }: CardProps) {
-  return <div className={cn("rounded-xl", surfaces[variant], className)} {...props} />;
+  return <div className={cn("rounded-[16px]", surfaces[variant], className)} {...props} />;
 }
 
 export function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
@@ -22,7 +25,7 @@ export function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDiv
 }
 
 export function CardTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
-  return <h3 className={cn("text-base font-medium tracking-tight text-foreground", className)} {...props} />;
+  return <h3 className={cn("text-base font-semibold tracking-tight text-foreground", className)} {...props} />;
 }
 
 export function CardDescription({ className, ...props }: React.HTMLAttributes<HTMLParagraphElement>) {

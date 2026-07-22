@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 /**
  * A minimal trend line — a whisper, not a finance chart. Faint area under a thin
  * stroke, no axes, no grid. Purely indicative; the real number lives beside it.
+ * Inherits `currentColor`; on memory surfaces set `text-memory-emphasis`.
  */
 export function Sparkline({
   data,
@@ -39,7 +40,7 @@ export function Sparkline({
       width={width}
       height={height}
       viewBox={`0 0 ${width} ${height}`}
-      className={cn("text-accent-emphasis", className)}
+      className={cn("text-memory-emphasis", className)}
       role="img"
       aria-label={ariaLabel}
     >
