@@ -28,17 +28,17 @@ export function NeedsYou({ counts }: { counts: ActionCounts | null }) {
 
   return (
     <Card className="flex h-full flex-col overflow-hidden">
-      <div className="border-b border-border px-5 py-3">
-        <h2 className="text-sm font-medium text-foreground">Needs you</h2>
+      <div className="border-b border-border px-6 py-4">
+        <h2 className="text-sm font-semibold text-foreground">Needs you</h2>
       </div>
 
       {loading ? (
         <div className="space-y-1 p-2.5">
           {ROWS.map((r) => (
             <div key={r.key} className="flex items-center gap-3 px-3 py-2.5">
-              <div className="size-4 rounded bg-surface-raised" />
-              <div className="h-3.5 flex-1 rounded bg-surface-raised" />
-              <div className="size-5 rounded-full bg-surface-raised" />
+              <div className="size-4 rounded bg-surface-sunken" />
+              <div className="h-3.5 flex-1 rounded bg-surface-sunken" />
+              <div className="size-5 rounded-full bg-surface-sunken" />
             </div>
           ))}
         </div>
@@ -69,7 +69,7 @@ export function NeedsYou({ counts }: { counts: ActionCounts | null }) {
               >
                 <Link
                   href={r.href}
-                  className="group flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors duration-150 hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus"
+                  className="group flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors duration-150 hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus"
                 >
                   <span className="text-muted-foreground group-hover:text-foreground [&_svg]:size-4" aria-hidden>
                     {r.icon}

@@ -31,25 +31,25 @@ export function MemoryHealth({
 }) {
   return (
     <Card className="overflow-hidden">
-      <div className="border-b border-border px-5 py-3">
-        <h3 className="text-sm font-medium text-foreground">Graph health</h3>
+      <div className="border-b border-border px-6 py-4">
+        <h3 className="text-sm font-semibold text-foreground">Graph health</h3>
       </div>
 
       {memory === null ? (
-        <div className="grid gap-6 p-5 md:grid-cols-3">
-          <div className="mx-auto size-[132px] rounded-full bg-surface-raised" />
+        <div className="grid gap-6 p-6 md:grid-cols-3">
+          <div className="mx-auto size-[132px] rounded-full bg-surface-sunken" />
           <div className="space-y-3">
             {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="h-4 w-full rounded bg-surface-raised" />
+              <div key={i} className="h-4 w-full rounded bg-surface-sunken" />
             ))}
           </div>
           <div className="space-y-6">
-            <div className="h-8 w-full rounded bg-surface-raised" />
-            <div className="h-8 w-full rounded bg-surface-raised" />
+            <div className="h-8 w-full rounded bg-surface-sunken" />
+            <div className="h-8 w-full rounded bg-surface-sunken" />
           </div>
         </div>
       ) : (
-        <div className="grid gap-x-8 gap-y-6 p-5 md:grid-cols-3">
+        <div className="grid gap-x-8 gap-y-6 p-6 md:grid-cols-3">
           {/* Centerpiece: verified share */}
           <div className="flex flex-col items-center justify-center">
             <Gauge value={memory.verifiedPct} caption="Verified" size={150} strokeWidth={9} />

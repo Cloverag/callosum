@@ -11,7 +11,7 @@ export function DailyBrief({ brief }: { brief: string | null }) {
       <div className="min-w-0 flex-1">
         <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-subtle-foreground">Daily brief</div>
         {brief === null ? (
-          <div className="mt-1 h-4 w-2/3 rounded bg-surface-raised" />
+          <div className="mt-1 h-4 w-2/3 rounded bg-surface-sunken" />
         ) : (
           <p className="mt-0.5 text-sm text-foreground">{brief}</p>
         )}

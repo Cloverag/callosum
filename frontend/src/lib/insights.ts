@@ -44,9 +44,19 @@ export type Decision = {
   date: string; // ISO
 };
 
+/** Prep completeness for the next board meeting, 0–100 per track. */
+export type BoardReadiness = {
+  agenda: number;
+  metrics: number;
+  documents: number;
+  approvals: number;
+};
+
 export type DashboardInsights = {
   /** One-line, evidence-grounded orientation for the operator. */
   dailyBrief: string;
+  /** How ready the next board pack is, by track. */
+  readiness: BoardReadiness;
   memory: MemoryHealth;
   approvedFacts: ApprovedFact[];
   decisions: Decision[];
@@ -58,6 +68,12 @@ export type DashboardInsights = {
 const insights: DashboardInsights = {
   dailyBrief:
     "3 meetings this week and 5 items awaiting your review. Series B terms are still open ahead of the Q3 board meeting.",
+  readiness: {
+    agenda: 90,
+    metrics: 55,
+    documents: 70,
+    approvals: 40,
+  },
   memory: {
     verifiedPct: 100,
     pendingReview: 5,
