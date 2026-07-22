@@ -16,18 +16,23 @@ export function NavItem({ href, label, icon, active = false }: NavItemProps) {
       href={href}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium",
-        "transition-colors duration-150",
+        "group flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors duration-150",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-surface-elevated",
         active
-          ? "bg-accent-subtle text-foreground"
-          : "text-muted-foreground hover:bg-surface-elevated hover:text-foreground"
+          ? "bg-accent-subtle font-medium text-foreground"
+          : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"
       )}
     >
-      <span className={cn("flex [&_svg]:size-5", active ? "text-accent-emphasis" : "text-current")} aria-hidden>
+      <span
+        className={cn(
+          "flex shrink-0 [&_svg]:size-4",
+          active ? "text-accent-emphasis" : "text-muted-foreground group-hover:text-foreground"
+        )}
+        aria-hidden
+      >
         {icon}
       </span>
-      {label}
+      <span className="truncate">{label}</span>
     </Link>
   );
 }

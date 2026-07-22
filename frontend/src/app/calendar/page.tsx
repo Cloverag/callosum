@@ -6,7 +6,20 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { addDays, addMonths, dayKey, formatDayFull, formatMonthYear, weekDays } from "@/lib/calendar";
+import {
+  addDays,
+  addMonths,
+  dayKey,
+  formatDayFull,
+  formatMonthYear,
+  isSameDay,
+  isSameMonth,
+  isToday,
+  monthGrid,
+  startOfDay,
+  startOfWeek,
+  weekDays,
+} from "@/lib/calendar";
 import {
   meetingsApi,
   MEETING_STATUSES,
@@ -50,8 +63,10 @@ export default function CalendarPage() {
   const [selected, setSelected] = useState<Meeting | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Meeting | null>(null);
+  const [formDate, setFormDate] = useState<Date | null>(null);
   const [query, setQuery] = useState("");
   const [statuses, setStatuses] = useState<Set<MeetingStatus>>(new Set());
+  const [focusedDate, setFocusedDate] = useState<Date>(() => startOfDay(new Date()));
 
   const load = useCallback(() => {
     meetingsApi.list().then(setMeetings);
@@ -103,6 +118,42 @@ export default function CalendarPage() {
     return `${fmt(d[0])} – ${fmt(d[6])}`;
   }, [view, cursor]);
 
+  // Keyboard navigation. `active` is the day that carries roving focus — the
+  // focused day if it's on-screen, otherwise a sensible visible fallback so the
+  // grid always has exactly one tabbable cell.
+  const visibleDays = useMemo(
+    () => (view === "month" ? monthGrid(cursor) : view === "week" ? weekDays(cursor) : [startOfDay(cursor)]),
+    [view, cursor]
+  );
+
+  const active = useMemo(
+    () =>
+      visibleDays.find((d) => isSameDay(d, focusedDate)) ??
+      visibleDays.find((d) => isToday(d)) ??
+      visibleDays[0],
+    [visibleDays, focusedDate]
+  );
+
+  // Move focus to `d`, shifting the visible period when the day falls off-grid.
+  const goToDate = useCallback(
+    (d: Date) => {
+      const day = startOfDay(d);
+      setFocusedDate(day);
+      setCursor((c) => {
+        if (view === "month") return isSameMonth(day, c) ? c : day;
+        if (view === "week") return isSameDay(startOfWeek(day), startOfWeek(c)) ? c : day;
+        return day;
+      });
+    },
+    [view]
+  );
+
+  const newMeetingOn = useCallback((d: Date) => {
+    setEditing(null);
+    setFormDate(startOfDay(d));
+    setFormOpen(true);
+  }, []);
+
   return (
     <div className="p-6">
       <PageHeader
@@ -128,7 +179,7 @@ export default function CalendarPage() {
               ))}
             </div>
 
-            <Button variant="secondary" size="sm" onClick={() => setCursor(new Date())}>
+            <Button variant="secondary" size="sm" onClick={() => goToDate(new Date())}>
               Today
             </Button>
 
@@ -146,6 +197,7 @@ export default function CalendarPage() {
               size="sm"
               onClick={() => {
                 setEditing(null);
+                setFormDate(null);
                 setFormOpen(true);
               }}
             >
@@ -185,9 +237,29 @@ export default function CalendarPage() {
         )}
       </div>
 
-      {view === "month" && <MonthView cursor={cursor} byDay={byDay} onSelect={setSelected} />}
-      {view === "week" && <WeekView cursor={cursor} byDay={byDay} onSelect={setSelected} />}
-      {view === "day" && <DayView cursor={cursor} byDay={byDay} onSelect={setSelected} />}
+      {view === "month" && (
+        <MonthView
+          cursor={cursor}
+          byDay={byDay}
+          active={active}
+          onSelect={setSelected}
+          onNavigate={goToDate}
+          onActivate={newMeetingOn}
+        />
+      )}
+      {view === "week" && (
+        <WeekView
+          cursor={cursor}
+          byDay={byDay}
+          active={active}
+          onSelect={setSelected}
+          onNavigate={goToDate}
+          onActivate={newMeetingOn}
+        />
+      )}
+      {view === "day" && (
+        <DayView cursor={cursor} byDay={byDay} onSelect={setSelected} onNavigate={goToDate} />
+      )}
 
       <MeetingDetail
         meeting={selected}
@@ -198,7 +270,13 @@ export default function CalendarPage() {
           setFormOpen(true);
         }}
       />
-      <MeetingForm open={formOpen} editing={editing} onClose={() => setFormOpen(false)} onSaved={load} />
+      <MeetingForm
+        open={formOpen}
+        editing={editing}
+        defaultDate={formDate}
+        onClose={() => setFormOpen(false)}
+        onSaved={load}
+      />
     </div>
   );
 }

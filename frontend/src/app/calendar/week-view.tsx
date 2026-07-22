@@ -1,29 +1,41 @@
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { WEEKDAYS, weekDays, isToday, dayKey } from "@/lib/calendar";
+import { WEEKDAYS, weekDays, isToday, dayKey, formatDayFull } from "@/lib/calendar";
 import type { Meeting } from "@/lib/meetings";
 import { MeetingChip } from "./meeting-chip";
+import { useDayGridKeys } from "./use-day-keys";
 
 export function WeekView({
   cursor,
   byDay,
+  active,
   onSelect,
+  onNavigate,
+  onActivate,
 }: {
   cursor: Date;
   byDay: Map<string, Meeting[]>;
+  active: Date;
   onSelect: (m: Meeting) => void;
+  onNavigate: (next: Date) => void;
+  onActivate: (day: Date) => void;
 }) {
   const days = weekDays(cursor);
+  const { gridProps, cellProps } = useDayGridKeys({ active, columns: 7, onNavigate, onActivate });
 
   return (
     <Card className="mt-6 overflow-hidden">
-      <div className="grid grid-cols-7 divide-x divide-border">
+      <div className="grid grid-cols-7 divide-x divide-border" {...gridProps}>
         {days.map((day, i) => {
           const list = byDay.get(dayKey(day)) ?? [];
           const today = isToday(day);
 
           return (
-            <div key={dayKey(day)} className="min-h-[30rem]">
+            <div
+              key={dayKey(day)}
+              {...cellProps(day, list.length, formatDayFull(day))}
+              className="min-h-[30rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus"
+            >
               <div className="border-b border-border px-2 py-2 text-center">
                 <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                   {WEEKDAYS[i]}

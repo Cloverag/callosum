@@ -1,21 +1,42 @@
+import * as React from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { dayKey, formatDayFull, formatTime } from "@/lib/calendar";
+import { addDays, dayKey, formatDayFull, formatTime } from "@/lib/calendar";
 import { MEETING_STATUS_LABEL, MEETING_STATUS_TONE, type Meeting } from "@/lib/meetings";
 
 export function DayView({
   cursor,
   byDay,
   onSelect,
+  onNavigate,
 }: {
   cursor: Date;
   byDay: Map<string, Meeting[]>;
   onSelect: (m: Meeting) => void;
+  onNavigate: (next: Date) => void;
 }) {
   const list = byDay.get(dayKey(cursor)) ?? [];
 
+  function onKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    // Only when the day region itself is focused — not a meeting row inside it.
+    if (e.target !== e.currentTarget) return;
+    if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      onNavigate(addDays(cursor, -1));
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      onNavigate(addDays(cursor, 1));
+    }
+  }
+
   return (
-    <Card className="mt-6 overflow-hidden">
+    <Card
+      className="mt-6 overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus"
+      tabIndex={0}
+      role="group"
+      aria-label={`Meetings on ${formatDayFull(cursor)} — use left and right arrows to change day`}
+      onKeyDown={onKeyDown}
+    >
       {list.length === 0 ? (
         <div className="px-5 py-16 text-center">
           <p className="text-sm text-muted-foreground">No meetings on {formatDayFull(cursor)}.</p>

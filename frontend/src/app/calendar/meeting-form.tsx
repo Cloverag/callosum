@@ -30,11 +30,14 @@ const toTimeInput = (iso: string) => {
 export function MeetingForm({
   open,
   editing,
+  defaultDate,
   onClose,
   onSaved,
 }: {
   open: boolean;
   editing: Meeting | null;
+  /** Pre-fills the date field when creating (e.g. the day the user pressed Enter on). */
+  defaultDate?: Date | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -61,7 +64,7 @@ export function MeetingForm({
       setObjectives(editing.objectives ?? "");
     } else {
       setTitle("");
-      setDate(dayKey(new Date()));
+      setDate(dayKey(defaultDate ?? new Date()));
       setStart("09:00");
       setEnd("10:00");
       setLocation("");
@@ -69,7 +72,7 @@ export function MeetingForm({
       setSensitivity(2);
       setObjectives("");
     }
-  }, [open, editing]);
+  }, [open, editing, defaultDate]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
