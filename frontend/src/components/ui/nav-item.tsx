@@ -16,13 +16,19 @@ export function NavItem({ href, label, icon, active = false }: NavItemProps) {
       href={href}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "group flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors duration-150",
+        "group relative flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors duration-150",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-surface-elevated",
         active
-          ? "bg-accent-subtle font-medium text-foreground"
+          ? "bg-accent-subtle font-semibold text-foreground"
           : "text-muted-foreground hover:bg-surface-raised hover:text-foreground"
       )}
     >
+      {active && (
+        <span
+          className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-accent-emphasis"
+          aria-hidden
+        />
+      )}
       <span
         className={cn(
           "flex shrink-0 [&_svg]:size-4",

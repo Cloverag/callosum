@@ -1,7 +1,8 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarClock, MapPin, ShieldCheck, ArrowRight } from "lucide-react";
+import { CalendarClock, MapPin, ShieldCheck, ListChecks, ArrowRight } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,19 +19,36 @@ function relativeDay(start: Date): string {
   return `in ${Math.round(days / 7)} weeks`;
 }
 
+/** A compact scannable fact in the hero's quick-stat strip. */
+function Stat({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-surface-sunken px-3 py-2">
+      <div className="flex items-center gap-1.5 text-muted-foreground">
+        <span className="[&_svg]:size-3.5" aria-hidden>{icon}</span>
+        <span className="text-[10px] font-medium uppercase tracking-[0.08em]">{label}</span>
+      </div>
+      <div className="mt-1 truncate text-sm font-medium tabular-nums text-foreground">{value}</div>
+    </div>
+  );
+}
+
 export function MeetingHero({ meeting, loading }: { meeting: Meeting | null; loading: boolean }) {
   const router = useRouter();
 
   if (loading) {
     return (
-      <Card variant="elevated" className="min-h-[15rem] p-6">
+      <Card variant="elevated" className="min-h-[16rem] p-6">
         <div className="h-3 w-32 rounded bg-surface-raised" />
         <div className="mt-4 h-7 w-2/3 rounded bg-surface-raised" />
-        <div className="mt-4 h-4 w-1/2 rounded bg-surface-raised" />
-        <div className="mt-8 h-1.5 w-full rounded-full bg-surface-raised" />
+        <div className="mt-4 h-5 w-1/2 rounded bg-surface-raised" />
+        <div className="mt-5 grid grid-cols-3 gap-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="h-12 rounded-lg bg-surface-raised" />
+          ))}
+        </div>
         <div className="mt-6 flex gap-3">
-          <div className="h-9 w-32 rounded-md bg-surface-raised" />
-          <div className="h-9 w-32 rounded-md bg-surface-raised" />
+          <div className="h-10 w-32 rounded-md bg-surface-raised" />
+          <div className="h-10 w-32 rounded-md bg-surface-raised" />
         </div>
       </Card>
     );
@@ -38,7 +56,7 @@ export function MeetingHero({ meeting, loading }: { meeting: Meeting | null; loa
 
   if (!meeting) {
     return (
-      <Card variant="elevated" className="flex min-h-[15rem] flex-col items-center justify-center p-6 text-center">
+      <Card variant="elevated" className="flex min-h-[16rem] flex-col items-center justify-center p-6 text-center">
         <CalendarClock className="size-6 text-muted-foreground" aria-hidden />
         <h2 className="mt-3 text-sm font-medium text-foreground">No upcoming meetings</h2>
         <p className="mt-1 max-w-xs text-sm text-muted-foreground">
@@ -52,13 +70,12 @@ export function MeetingHero({ meeting, loading }: { meeting: Meeting | null; loa
   }
 
   const start = new Date(meeting.start);
-  const end = new Date(meeting.end);
   const total = meeting.agenda.length;
   const withOwner = meeting.agenda.filter((a) => a.presenter).length;
   const readyPct = total === 0 ? 0 : Math.round((withOwner / total) * 100);
 
   return (
-    <Card variant="elevated" className="flex min-h-[15rem] flex-col p-6">
+    <Card variant="elevated" className="flex min-h-[16rem] flex-col p-6">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-accent-emphasis">
@@ -69,47 +86,39 @@ export function MeetingHero({ meeting, loading }: { meeting: Meeting | null; loa
         <Badge tone={MEETING_STATUS_TONE[meeting.status]}>{MEETING_STATUS_LABEL[meeting.status]}</Badge>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-muted-foreground">
-        <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
-          <CalendarClock className="size-4 text-muted-foreground" aria-hidden />
-          {relativeDay(start)}
-        </span>
-        <span className="tabular-nums">
+      {/* Prominent when */}
+      <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="text-lg font-medium text-foreground">{relativeDay(start)}</span>
+        <span className="text-sm tabular-nums text-muted-foreground">
           {formatDayFull(start)} · {formatTime(meeting.start)} – {formatTime(meeting.end)}
-        </span>
-        {meeting.location && (
-          <span className="inline-flex items-center gap-1.5">
-            <MapPin className="size-4" aria-hidden />
-            {meeting.location}
-          </span>
-        )}
-        <span className="inline-flex items-center gap-1.5">
-          <ShieldCheck className="size-4" aria-hidden />
-          Clearance L{meeting.sensitivity}
         </span>
       </div>
 
-      {meeting.objectives && (
-        <p className="mt-3 line-clamp-2 text-sm text-muted-foreground">{meeting.objectives}</p>
-      )}
+      {/* Quick stats */}
+      <dl className="mt-4 grid grid-cols-3 gap-3">
+        <Stat icon={<ListChecks />} label="Agenda" value={total === 0 ? "—" : `${withOwner}/${total} owned`} />
+        <Stat icon={<ShieldCheck />} label="Clearance" value={`Level ${meeting.sensitivity}`} />
+        <Stat icon={<MapPin />} label="Location" value={meeting.location ?? "—"} />
+      </dl>
 
+      {/* Agenda readiness */}
       <div className="mt-auto pt-6">
         <div className="flex items-center justify-between text-xs">
           <span className="font-medium text-foreground">Agenda readiness</span>
           <span className="tabular-nums text-muted-foreground">
-            {total === 0 ? "No agenda yet" : `${withOwner} of ${total} items have an owner`}
+            {total === 0 ? "No agenda yet" : `${readyPct}% ready · ${withOwner} of ${total} items`}
           </span>
         </div>
         <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-surface-sunken">
           <div className="h-full rounded-full bg-accent-emphasis transition-[width] duration-500" style={{ width: `${readyPct}%` }} />
         </div>
 
-        <div className="mt-5 flex flex-wrap gap-3">
-          <Button size="sm" onClick={() => router.push("/calendar")}>
+        <div className="mt-5 flex flex-wrap items-center gap-3">
+          <Button size="md" className="px-6" onClick={() => router.push("/calendar")}>
             Open meeting
             <ArrowRight className="size-4" />
           </Button>
-          <Button variant="secondary" size="sm" onClick={() => router.push("/calendar")}>
+          <Button variant="ghost" size="md" onClick={() => router.push("/calendar")}>
             Prepare agenda
           </Button>
         </div>
