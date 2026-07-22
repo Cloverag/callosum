@@ -40,14 +40,14 @@ export function Dialog({ open, onClose, title, description, children, footer, cl
       onClick={onBackdropClick}
       aria-labelledby="dialog-title"
       className={cn(
-        "m-auto w-[calc(100%-2rem)] max-w-lg rounded-xl border border-border bg-surface-raised p-0 text-foreground shadow-2xl",
-        "backdrop:bg-black/50 backdrop:backdrop-blur-sm",
+        "surface-glass m-auto w-[calc(100%-2rem)] max-w-lg rounded-[20px] p-0 text-foreground",
+        "backdrop:bg-black/40 backdrop:backdrop-blur-sm",
         className
       )}
     >
-      <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
+      <div className="flex items-start justify-between gap-4 border-b border-border px-6 py-5">
         <div className="min-w-0">
-          <h2 id="dialog-title" className="text-lg font-medium tracking-tight text-foreground">
+          <h2 id="dialog-title" className="text-lg font-semibold tracking-tight text-foreground">
             {title}
           </h2>
           {description && <div className="mt-0.5 text-sm text-muted-foreground">{description}</div>}
@@ -56,14 +56,14 @@ export function Dialog({ open, onClose, title, description, children, footer, cl
           type="button"
           onClick={onClose}
           aria-label="Close"
-          className="-mr-1 flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-surface-elevated hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+          className="-mr-1 flex size-8 shrink-0 items-center justify-center rounded-[10px] text-muted-foreground transition-colors duration-150 hover:bg-surface-sunken hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
         >
           <X className="size-4" />
         </button>
       </div>
 
-      {children && <div className="px-5 py-4">{children}</div>}
-      {footer && <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-4">{footer}</div>}
+      {children && <div className="px-6 py-5">{children}</div>}
+      {footer && <div className="flex items-center justify-end gap-2 border-t border-border px-6 py-5">{footer}</div>}
     </dialog>
   );
 }
