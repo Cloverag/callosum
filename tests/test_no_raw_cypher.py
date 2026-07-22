@@ -68,7 +68,7 @@ def _session_sites() -> list[tuple[str, str, int]]:
     sites: list[tuple[str, str, int]] = []
     for path in sorted(SRC.glob("*.py")):
         finder = _SessionFinder(path.name)
-        finder.visit(ast.parse(path.read_text(), filename=str(path)))
+        finder.visit(ast.parse(path.read_text(encoding="utf-8"), filename=str(path)))
         sites.extend(finder.sites)
     return sites
 
