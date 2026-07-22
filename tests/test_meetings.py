@@ -171,3 +171,33 @@ def test_meetings_are_isolated_across_workspaces():
         assert [x.id for x in meetings.list_meetings(workspace_id=ws_a)] == [m.id]
     finally:
         _cleanup(ws_a, ws_b)
+
+
+def test_create_meeting_end_before_start_raises_error():
+    ws = _new_workspace()
+    try:
+        with pytest.raises(MeetingValidationError):
+            meetings.create_meeting("Invalid Window", workspace_id=ws, scheduled_start=_END, scheduled_end=_START)
+    finally:
+        _cleanup(ws)
+
+
+def test_update_meeting_end_before_start_raises_error():
+    ws = _new_workspace()
+    try:
+        m = meetings.create_meeting("Update Window Test", workspace_id=ws, scheduled_start=_START, scheduled_end=_END)
+        with pytest.raises(MeetingValidationError):
+            meetings.update_meeting(m.id, expected_version=1, workspace_id=ws, scheduled_end=_START - timedelta(hours=1))
+    finally:
+        _cleanup(ws)
+
+
+def test_update_scheduled_meeting_clearing_window_raises_error():
+    ws = _new_workspace()
+    try:
+        m = meetings.create_meeting("Scheduled Window Clear", workspace_id=ws, scheduled_start=_START, scheduled_end=_END)
+        m = meetings.transition_status(m.id, meetings.SCHEDULED, expected_version=1, workspace_id=ws)
+        with pytest.raises(MeetingValidationError):
+            meetings.update_meeting(m.id, expected_version=m.version, workspace_id=ws, scheduled_start=None)
+    finally:
+        _cleanup(ws)
