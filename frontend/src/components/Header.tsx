@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Bell, Search } from "lucide-react";
 import { ThemeToggle } from "./ThemeToggle";
+import { AskMeridian } from "./AskMeridian";
 import { Input } from "./ui/input";
 import { Badge } from "./ui/badge";
 
@@ -51,6 +52,7 @@ export default function Header() {
             {modKey} K
           </kbd>
         </div>
+        <AskMeridian />
         <ThemeToggle />
         <button
           type="button"

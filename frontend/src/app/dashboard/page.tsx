@@ -14,9 +14,11 @@ import {
 import { apiClient, type EntityConflict } from "@/lib/api";
 import { insightsApi, type DashboardInsights } from "@/lib/insights";
 import { startOfDay } from "@/lib/calendar";
+import { DailyBrief } from "./daily-brief";
 import { MeetingHero } from "./meeting-hero";
 import { NeedsYou, type ActionCounts } from "./needs-you";
 import { MemoryHealth } from "./memory-health";
+import { RecentDecisions } from "./recent-decisions";
 import { ApprovedFacts } from "./approved-facts";
 
 export default function DashboardPage() {
@@ -58,11 +60,15 @@ export default function DashboardPage() {
   }, [meetings]);
 
   return (
-    <div className="p-6">
+    <div className="p-8">
       <PageHeader title="Dashboard" description="What needs you now, and whether the memory can be trusted." icon={<LayoutDashboard />} />
 
+      <div className="mt-6">
+        <DailyBrief brief={insights?.dailyBrief ?? null} />
+      </div>
+
       {/* Band A — operational: what needs me now */}
-      <div className="mt-6 grid gap-6 lg:grid-cols-3">
+      <div className="mt-8 grid gap-8 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <MeetingHero meeting={nextMeeting} loading={meetings === null} />
         </div>
@@ -70,17 +76,18 @@ export default function DashboardPage() {
       </div>
 
       {/* Band B — system health: can I trust the memory? */}
-      <div className="mt-10">
+      <div className="mt-12">
         <h2 className="text-[10px] font-semibold uppercase tracking-[0.1em] text-subtle-foreground">Institutional memory</h2>
-        <div className="mt-3 grid gap-6 lg:grid-cols-3">
-          <div className="lg:col-span-2">
-            <MemoryHealth
-              memory={insights?.memory ?? null}
-              reviewVelocity={insights?.reviewVelocity ?? null}
-              statusSegments={statusSegments}
-            />
+        <div className="mt-4 space-y-8">
+          <MemoryHealth
+            memory={insights?.memory ?? null}
+            reviewVelocity={insights?.reviewVelocity ?? null}
+            statusSegments={statusSegments}
+          />
+          <div className="grid gap-8 lg:grid-cols-2">
+            <RecentDecisions decisions={insights?.decisions ?? null} />
+            <ApprovedFacts facts={insights?.approvedFacts ?? null} />
           </div>
-          <ApprovedFacts facts={insights?.approvedFacts ?? null} />
         </div>
       </div>
     </div>
