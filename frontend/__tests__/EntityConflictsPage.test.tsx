@@ -5,7 +5,7 @@ import { apiClient } from '../src/lib/api';
 // Mock the API client
 jest.mock('../src/lib/api', () => ({
   apiClient: {
-    getConflicts: jest.fn(),
+    getPendingConflicts: jest.fn(),
     approveConflict: jest.fn(),
     rejectConflict: jest.fn(),
   },
@@ -17,17 +17,17 @@ describe('EntityConflictsPage', () => {
   });
 
   it('renders loading state initially', () => {
-    (apiClient.getConflicts as jest.Mock).mockReturnValue(new Promise(() => {}));
+    (apiClient.getPendingConflicts as jest.Mock).mockReturnValue(new Promise(() => {}));
     render(<EntityConflictsPage />);
     expect(screen.getByText(/Initializing neural matrix.../i)).toBeInTheDocument();
   });
 
   it('renders empty state when no conflicts', async () => {
-    (apiClient.getConflicts as jest.Mock).mockResolvedValue([]);
+    (apiClient.getPendingConflicts as jest.Mock).mockResolvedValue([]);
     render(<EntityConflictsPage />);
     
     await waitFor(() => {
-      expect(screen.getByText(/Queue Empty/i)).toBeInTheDocument();
+      expect(screen.getByText(/System optimal/i)).toBeInTheDocument();
     });
   });
 
@@ -48,7 +48,7 @@ describe('EntityConflictsPage', () => {
       }
     ];
 
-    (apiClient.getConflicts as jest.Mock).mockResolvedValue(mockData);
+    (apiClient.getPendingConflicts as jest.Mock).mockResolvedValue(mockData);
     (apiClient.approveConflict as jest.Mock).mockResolvedValue({ id: "1", status: "approved" });
 
     render(<EntityConflictsPage />);

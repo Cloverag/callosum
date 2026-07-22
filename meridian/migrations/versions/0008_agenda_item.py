@@ -43,7 +43,7 @@ def upgrade() -> None:
             CONSTRAINT agenda_title_not_empty CHECK (length(trim(title)) > 0),
             CONSTRAINT agenda_position_positive CHECK (position > 0),
             CONSTRAINT agenda_duration_positive CHECK (duration_minutes IS NULL OR duration_minutes > 0),
-            CONSTRAINT agenda_unique_position UNIQUE (meeting_id, position) INITIALLY DEFERRED
+            CONSTRAINT agenda_unique_position UNIQUE (meeting_id, position) DEFERRABLE INITIALLY DEFERRED
         )
         """
     )
