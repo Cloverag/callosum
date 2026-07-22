@@ -36,6 +36,13 @@ reviews, and PR history); the judgement calls are yours to confirm or amend.
 - **Never modify frozen artifacts from an unrelated PR** — eval CSVs, gold sets, and baseline tags are
   off-limits to product/frontend work.
 - **Graphify at the tag, never mid-development** — already encoded in the release cadence (step 4).
+- **Pin graphify's extraction backend to Haiku, never Opus.** `graphify --backend claude-cli` shells out to
+  `claude -p` per file-chunk; unset, it defaults to **Opus**, which silently drains subscription credit — it
+  exhausted the balance mid-way through the p1.0.2 graph rebuild. Set `GRAPHIFY_CLAUDE_CLI_MODEL=haiku` for the
+  release graphify step; structured-JSON extraction does not need Opus. *Diagnostic note:* with
+  `--output-format json`, `claude -p` reports the real error on **stdout**, so graphify's `exited 1:` with an
+  empty stderr means "read stdout" — the actual cause (usually `usage limit reached`) is there. Promoted to the
+  cadence (step 4).
 - **One migration head** — Alembic linear history; re-parent external features rather than fork the chain.
 - **Freeze before refactor; merge foundation before features; one RFC at a time.** The recurring win
   this project came from asking *"what's the smallest change that increases confidence?"* rather than
