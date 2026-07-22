@@ -9,28 +9,20 @@ const nav = [
   { href: "/calendar", label: "Calendar", icon: <CalendarDays /> },
   { href: "/meetings", label: "Meetings", icon: <Users /> },
   { href: "/documents", label: "Documents", icon: <FileText /> },
-  { href: "/entity-conflicts", label: "Entity Conflicts", icon: <Layers /> },
+  { href: "/entity-conflicts", label: "Institutional Memory", icon: <Layers /> },
   { href: "/settings", label: "Settings", icon: <Settings /> },
 ];
 
-// A thin-stroke meridian glyph — a restrained brand mark, not a filled app-icon square.
+// A thin-stroke meridian glyph in a soft-blue tile — a restrained brand mark.
 function MeridianMark() {
   return (
-    <svg
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      className="shrink-0 text-accent-emphasis"
-      aria-hidden
-    >
-      <circle cx="12" cy="12" r="8.5" />
-      <ellipse cx="12" cy="12" rx="3.6" ry="8.5" />
-      <line x1="3.5" y1="12" x2="20.5" y2="12" />
-    </svg>
+    <span className="grid size-8 shrink-0 place-items-center rounded-[10px] bg-accent text-accent-foreground shadow-card">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden>
+        <circle cx="12" cy="12" r="8.5" />
+        <ellipse cx="12" cy="12" rx="3.6" ry="8.5" />
+        <line x1="3.5" y1="12" x2="20.5" y2="12" />
+      </svg>
+    </span>
   );
 }
 
@@ -38,37 +30,42 @@ export default function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="flex h-full w-64 flex-col border-r border-border bg-surface-elevated">
-      <div className="flex h-16 items-center gap-2 border-b border-border px-4">
+    <aside className="flex h-full w-[248px] shrink-0 flex-col border-r border-border bg-surface-elevated">
+      <div className="flex h-16 items-center gap-2.5 px-4">
         <MeridianMark />
-        <span className="text-sm font-semibold tracking-tight text-foreground">Meridian</span>
+        <span className="text-base font-semibold tracking-tight text-foreground">Meridian</span>
       </div>
 
-      <nav className="flex-1 space-y-0.5 overflow-y-auto px-2.5 py-3">
-        {nav.map((item) => (
-          <NavItem
-            key={item.href}
-            href={item.href}
-            label={item.label}
-            icon={item.icon}
-            active={pathname === item.href || pathname.startsWith(item.href + "/")}
-          />
-        ))}
+      <nav className="flex-1 overflow-y-auto px-3 pb-3">
+        <div className="px-2.5 pb-1.5 pt-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-subtle-foreground">
+          Workspace
+        </div>
+        <div className="space-y-0.5">
+          {nav.map((item) => (
+            <NavItem
+              key={item.href}
+              href={item.href}
+              label={item.label}
+              icon={item.icon}
+              active={pathname === item.href || pathname.startsWith(item.href + "/")}
+            />
+          ))}
+        </div>
       </nav>
 
-      <div className="border-t border-border p-2.5">
+      <div className="border-t border-border p-3">
         <button
           type="button"
-          className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors duration-150 hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-surface-elevated"
+          className="flex w-full items-center gap-2.5 rounded-[10px] px-2 py-1.5 text-left transition-colors duration-150 hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-surface-elevated"
         >
-          <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-surface-raised text-xs font-medium text-muted-foreground ring-1 ring-inset ring-border">
-            RM
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent-subtle text-xs font-semibold text-accent-emphasis ring-1 ring-inset ring-accent-border">
+            AC
           </span>
           <span className="flex min-w-0 flex-1 flex-col leading-tight">
-            <span className="truncate text-sm font-medium text-foreground">Raj Malhotra</span>
-            <span className="truncate text-xs text-muted-foreground">Board Member</span>
+            <span className="truncate text-sm font-medium text-foreground">Alex Chen</span>
+            <span className="truncate text-xs text-muted-foreground">Founder &amp; CEO</span>
           </span>
-          <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          <ChevronsUpDown className="size-4 shrink-0 text-subtle-foreground" aria-hidden />
         </button>
       </div>
     </aside>

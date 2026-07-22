@@ -2,8 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Bell, Search } from "lucide-react";
-import { ThemeToggle } from "./ThemeToggle";
-import { AskMeridian } from "./AskMeridian";
 import { Input } from "./ui/input";
 import { Badge } from "./ui/badge";
 
@@ -12,7 +10,7 @@ export default function Header() {
   const [modKey, setModKey] = useState("⌘");
 
   useEffect(() => {
-    // Show the platform-correct modifier (⌘ on macOS, Ctrl elsewhere — this repo runs on Linux).
+    // Show the platform-correct modifier (⌘ on macOS, Ctrl elsewhere).
     const isMac = /mac/i.test(navigator.platform) || /mac/i.test(navigator.userAgent);
     setModKey(isMac ? "⌘" : "Ctrl");
 
@@ -27,12 +25,12 @@ export default function Header() {
   }, []);
 
   return (
-    <header className="flex h-16 items-center justify-between gap-4 border-b border-border bg-surface-elevated px-6">
+    <header className="surface-glass-chrome flex h-16 shrink-0 items-center justify-between gap-4 border-b border-border px-6">
       <nav aria-label="Breadcrumb" className="flex items-center gap-2.5 text-sm">
         <span className="text-muted-foreground">Workspace</span>
-        <span className="text-subtle-foreground" aria-hidden>/</span>
+        <span className="text-border-strong" aria-hidden>/</span>
         <span className="font-medium text-foreground">Acme Corp</span>
-        <Badge tone="accent">Series B</Badge>
+        <Badge tone="neutral">Series B</Badge>
       </nav>
 
       <div className="flex items-center gap-2">
@@ -41,26 +39,24 @@ export default function Header() {
             ref={searchRef}
             icon={<Search />}
             type="search"
-            placeholder="Search workspace…"
-            aria-label="Search workspace"
+            placeholder="Search Meridian…"
+            aria-label="Search Meridian"
             className="w-72 pr-16"
           />
           <kbd
             aria-hidden
-            className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded border border-border bg-surface-raised px-1.5 py-0.5 font-sans text-[10px] font-medium tabular-nums text-muted-foreground"
+            className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded-md border border-border bg-surface-sunken px-1.5 py-0.5 font-sans text-[10px] font-medium tabular-nums text-muted-foreground"
           >
             {modKey} K
           </kbd>
         </div>
-        <AskMeridian />
-        <ThemeToggle />
         <button
           type="button"
           aria-label="Notifications"
-          className="relative flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-surface-raised hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-surface-elevated"
+          className="relative flex size-9 items-center justify-center rounded-[10px] text-muted-foreground transition-colors duration-150 hover:bg-surface-sunken hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-surface-elevated"
         >
           <Bell className="size-5" />
-          <span className="absolute right-2 top-2 size-2 rounded-full bg-accent" aria-hidden />
+          <span className="absolute right-2 top-2 size-2 rounded-full bg-accent ring-2 ring-surface-elevated" aria-hidden />
         </button>
       </div>
     </header>
