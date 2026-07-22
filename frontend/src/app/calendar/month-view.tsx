@@ -1,19 +1,27 @@
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { WEEKDAYS, monthGrid, isSameMonth, isToday, dayKey } from "@/lib/calendar";
+import { WEEKDAYS, monthGrid, isSameMonth, isToday, dayKey, formatDayFull } from "@/lib/calendar";
 import type { Meeting } from "@/lib/meetings";
 import { MeetingChip } from "./meeting-chip";
+import { useDayGridKeys } from "./use-day-keys";
 
 export function MonthView({
   cursor,
   byDay,
+  active,
   onSelect,
+  onNavigate,
+  onActivate,
 }: {
   cursor: Date;
   byDay: Map<string, Meeting[]>;
+  active: Date;
   onSelect: (m: Meeting) => void;
+  onNavigate: (next: Date) => void;
+  onActivate: (day: Date) => void;
 }) {
   const days = monthGrid(cursor);
+  const { gridProps, cellProps } = useDayGridKeys({ active, columns: 7, onNavigate, onActivate });
 
   return (
     <Card className="mt-6 overflow-hidden">
@@ -28,7 +36,7 @@ export function MonthView({
         ))}
       </div>
 
-      <div className="grid grid-cols-7">
+      <div className="grid grid-cols-7" {...gridProps}>
         {days.map((day, i) => {
           const list = byDay.get(dayKey(day)) ?? [];
           const inMonth = isSameMonth(day, cursor);
@@ -38,7 +46,13 @@ export function MonthView({
           return (
             <div
               key={dayKey(day)}
-              className={cn("min-h-28 border-b border-border p-1.5", !lastCol && "border-r", !inMonth && "bg-surface")}
+              {...cellProps(day, list.length, formatDayFull(day))}
+              className={cn(
+                "min-h-28 border-b border-border p-1.5",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus",
+                !lastCol && "border-r",
+                !inMonth && "bg-surface"
+              )}
             >
               <div className="flex justify-end">
                 <span
