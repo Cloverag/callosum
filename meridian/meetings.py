@@ -128,6 +128,9 @@ def create_meeting(
     """Create a meeting in `draft` status (version 1)."""
     if not title or not title.strip():
         raise MeetingValidationError("title must not be empty")
+    if scheduled_start is not None and scheduled_end is not None:
+        if scheduled_end <= scheduled_start:
+            raise MeetingValidationError("scheduled_end must be after scheduled_start")
     with store.pg(workspace_id) as conn:
         row = conn.execute(
             """
@@ -205,11 +208,32 @@ def update_meeting(
     if not sets:
         raise MeetingValidationError("no fields to update")
 
-    sets.append("version = version + 1")
-    sets.append("updated_at = now()")
-    params.extend([uuid.UUID(str(meeting_id)), expected_version])
+    meeting_uuid = uuid.UUID(str(meeting_id))
 
     with store.pg(workspace_id) as conn:
+        current = conn.execute(
+            "SELECT status, scheduled_start, scheduled_end FROM meeting WHERE id = %s AND version = %s",
+            (meeting_uuid, expected_version),
+        ).fetchone()
+        if current is None:
+            _raise_stale_or_missing(conn, meeting_id)
+
+        new_start = scheduled_start if scheduled_start is not _UNSET else current["scheduled_start"]
+        new_end = scheduled_end if scheduled_end is not _UNSET else current["scheduled_end"]
+
+        if new_start is not None and new_end is not None and new_end <= new_start:
+            raise MeetingValidationError("scheduled_end must be after scheduled_start")
+
+        if current["status"] in {SCHEDULED, IN_PROGRESS, COMPLETED}:
+            if new_start is None or new_end is None:
+                raise MeetingValidationError(
+                    f"cannot clear scheduled_start or scheduled_end for meeting in status {current['status']!r}"
+                )
+
+        sets.append("version = version + 1")
+        sets.append("updated_at = now()")
+        params.extend([meeting_uuid, expected_version])
+
         row = conn.execute(
             f"UPDATE meeting SET {', '.join(sets)} WHERE id = %s AND version = %s RETURNING *",
             params,
