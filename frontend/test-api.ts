@@ -4,8 +4,8 @@ async function runTests() {
   console.log("Starting API client tests...\n");
   
   // Test 1: Get pending conflicts
-  console.log("Test 1: getConflicts");
-  let pending = await apiClient.getConflicts();
+  console.log("Test 1: getPendingConflicts");
+  let pending = await apiClient.getPendingConflicts();
   console.assert(pending.length === 2, "Expected 2 pending conflicts initially");
   console.assert(pending[0].id === "3f1c019d-a442-491b-90f7-5264b387cf3e", "Expected correct ID for first conflict");
   console.log("Passed\n");
@@ -17,7 +17,7 @@ async function runTests() {
   console.assert(approveRes.status === 'approved', "Expected status to be approved");
   
   // Verify it's no longer pending
-  pending = await apiClient.getConflicts();
+  pending = await apiClient.getPendingConflicts();
   console.assert(pending.length === 1, "Expected 1 pending conflict after approval");
   console.log("Passed\n");
 
@@ -28,7 +28,7 @@ async function runTests() {
   console.assert(rejectRes.status === 'rejected', "Expected status to be rejected");
 
   // Verify it's no longer pending
-  pending = await apiClient.getConflicts();
+  pending = await apiClient.getPendingConflicts();
   console.assert(pending.length === 0, "Expected 0 pending conflicts after rejection");
   console.log("Passed\n");
 

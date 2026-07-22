@@ -26,7 +26,7 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <div className="flex h-screen w-full">
+          <div className="flex h-full">
             <Sidebar />
             <div className="flex flex-1 flex-col overflow-hidden">
               <Header />
