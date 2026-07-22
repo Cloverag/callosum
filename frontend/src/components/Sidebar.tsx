@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, CalendarDays, Users, FileText, Layers, Settings, ChevronsUpDown } from "lucide-react";
+import { LayoutDashboard, CalendarDays, Users, FileText, Network, Settings, ChevronsUpDown } from "lucide-react";
 import { NavItem } from "./ui/nav-item";
 
 const nav = [
@@ -9,18 +9,20 @@ const nav = [
   { href: "/calendar", label: "Calendar", icon: <CalendarDays /> },
   { href: "/meetings", label: "Meetings", icon: <Users /> },
   { href: "/documents", label: "Documents", icon: <FileText /> },
-  { href: "/entity-conflicts", label: "Institutional Memory", icon: <Layers /> },
+  { href: "/entity-conflicts", label: "Institutional Memory", icon: <Network /> },
   { href: "/settings", label: "Settings", icon: <Settings /> },
 ];
 
-// A thin-stroke meridian glyph in a soft-blue tile — a restrained brand mark.
+// The Meridian mark: a wireframe globe with a highlighted meridian — the line of
+// reference the product is named for. Thin stroke on a solid blue tile.
 function MeridianMark() {
   return (
     <span className="grid size-8 shrink-0 place-items-center rounded-[10px] bg-accent text-accent-foreground shadow-card">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
         <circle cx="12" cy="12" r="8.5" />
-        <ellipse cx="12" cy="12" rx="3.6" ry="8.5" />
-        <line x1="3.5" y1="12" x2="20.5" y2="12" />
+        <path d="M12 3.5c-3.2 2.4-3.2 14.6 0 17" opacity="0.6" />
+        <path d="M12 3.5c3.2 2.4 3.2 14.6 0 17" />
+        <line x1="3.6" y1="12" x2="20.4" y2="12" opacity="0.6" />
       </svg>
     </span>
   );
