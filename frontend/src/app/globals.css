@@ -1,20 +1,29 @@
 @import "tailwindcss";
 
 /* ============================================================================
-   Meridian Board OS — semantic token layer
-   The single source of truth for color, elevation, and motion.
-   Components consume ONLY these semantic tokens — never raw hex, never a
-   palette step (no `violet-500`, no `zinc-800`). See DESIGN.md.
-   All text/surface pairings below are verified to WCAG 2.2 AA (>=4.5:1 body).
-   Palette: violet accent on zinc neutrals.
+   Meridian Board OS — semantic token layer (v2: blue-on-neutral, light-only)
+   The single source of truth for color, radius, elevation, and motion.
+   Components consume ONLY these semantic tokens — never a raw hex, never a
+   palette step (no `blue-600`, no `slate-100`).
+
+   Color doctrine (see DESIGN.md):
+     · 95% neutral UI, 5% semantic color. Color communicates meaning.
+     · Blue #2563EB  → ACTION only  (buttons, active nav, links, focus, selected)
+     · Green #16A34A → success / verified / approved / healthy
+     · Amber #F59E0B → attention / pending / draft / awaiting
+     · Red #EF4444   → critical / overdue / failed / quarantined / destructive
+     · Violet #6D28D9 → Institutional Memory ONLY (graph, provenance, memory viz)
+   Every text/surface pairing below is verified to WCAG 2.2 AA (>=4.5:1 body).
    ========================================================================== */
 
 @theme {
-  /* Brand / interactive ---------------------------------------------------- */
-  --color-accent: var(--accent);                     /* solid fill: primary buttons, selected */
-  --color-accent-foreground: var(--accent-foreground);/* label on an accent fill */
-  --color-accent-emphasis: var(--accent-emphasis);   /* accent AS text/icon on a surface (AA) */
-  --color-accent-subtle: var(--accent-subtle);       /* faint accent wash (backgrounds) */
+  /* Action / interactive (blue) ------------------------------------------- */
+  --color-accent: var(--accent);                       /* solid fill: primary buttons, selected */
+  --color-accent-foreground: var(--accent-foreground); /* label on an accent fill */
+  --color-accent-hover: var(--accent-hover);           /* hovered fill */
+  --color-accent-emphasis: var(--accent-emphasis);     /* accent AS text/icon on a surface (AA) */
+  --color-accent-subtle: var(--accent-subtle);         /* soft-blue wash: active nav, selected row */
+  --color-accent-border: var(--accent-border);         /* soft-blue hairline */
 
   /* Status ----------------------------------------------------------------- */
   --color-success: var(--success);
@@ -37,10 +46,17 @@
   --color-info-emphasis: var(--info-emphasis);
   --color-info-subtle: var(--info-subtle);
 
+  /* Institutional Memory identity (violet) — memory surfaces ONLY ---------- */
+  --color-memory: var(--memory);
+  --color-memory-foreground: var(--memory-foreground);
+  --color-memory-emphasis: var(--memory-emphasis);
+  --color-memory-soft: var(--memory-soft);
+  --color-memory-subtle: var(--memory-subtle);
+
   /* Text ------------------------------------------------------------------- */
-  --color-foreground: var(--foreground);             /* "Text" — primary */
-  --color-muted-foreground: var(--muted-foreground); /* "Text-muted" — secondary (AA) */
-  --color-subtle-foreground: var(--subtle-foreground);/* decorative / large text only */
+  --color-foreground: var(--foreground);              /* primary text / headings */
+  --color-muted-foreground: var(--muted-foreground);  /* secondary text (AA on all surfaces) */
+  --color-subtle-foreground: var(--subtle-foreground);/* large / decorative text only */
 
   /* Structure -------------------------------------------------------------- */
   --color-border: var(--border);
@@ -48,87 +64,75 @@
   --color-focus: var(--focus);
 
   /* Surfaces (tonal-first elevation) --------------------------------------- */
-  --color-surface: var(--surface);                   /* page base */
-  --color-surface-elevated: var(--surface-elevated); /* panels, toolbars, sidebar */
-  --color-surface-raised: var(--surface-raised);     /* cards, dialogs, popovers */
-  --color-surface-sunken: var(--surface-sunken);     /* inset wells, quote blocks */
-  --color-surface-glass: var(--surface-glass);       /* blurred shell / overlay only */
+  --color-surface: var(--surface);                    /* page base */
+  --color-surface-elevated: var(--surface-elevated);  /* sidebar, header, AI rail, panels */
+  --color-surface-raised: var(--surface-raised);      /* cards, dialogs, popovers */
+  --color-surface-alt: var(--surface-alt);            /* secondary / nested panel */
+  --color-surface-sunken: var(--surface-sunken);      /* inset wells, quote blocks */
+  --color-surface-glass: var(--surface-glass);        /* blurred overlay only */
+
+  /* Radius (brief: cards 16, controls 12, modals 20, pills full) ----------- */
+  --radius-control: 12px;
+  --radius-card: 16px;
+  --radius-modal: 20px;
+
+  /* Elevation — three levels; cards are sheets on a desk, not floating glass.
+     L1 default card · L2 important card (hero / AI panel) · L3 floating (blur). */
+  --shadow-card: 0 1px 2px 0 rgba(15, 23, 42, 0.05);
+  --shadow-raised: 0 1px 2px 0 rgba(15, 23, 42, 0.05), 0 6px 16px -6px rgba(15, 23, 42, 0.12), 0 12px 32px -12px rgba(15, 23, 42, 0.10);
+  --shadow-overlay: 0 16px 48px -12px rgba(15, 23, 42, 0.24), 0 4px 12px -4px rgba(15, 23, 42, 0.12);
+
+  /* Motion — L1 hover / L2 state (see DESIGN.md motion hierarchy) ---------- */
+  --ease-out-quart: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-hover: 120ms;
+  --duration-state: 200ms;
 }
 
 @layer base {
-  /* Light theme (default) — cool zinc, never paper -------------------------- */
   :root {
-    --accent: #7c3aed;                 /* violet-600 — white label passes AA */
+    /* Action (blue) ------------------------------------------------------- */
+    --accent: #2563eb;                 /* blue-600 — white label passes AA */
     --accent-foreground: #ffffff;
-    --accent-emphasis: #7c3aed;        /* on light surfaces ~4.6:1 */
-    --accent-subtle: rgba(124, 58, 237, 0.10);
+    --accent-hover: #1d4ed8;           /* blue-700 */
+    --accent-emphasis: #1d4ed8;        /* AS text/icon on white or soft-blue — AA (>=5:1) */
+    --accent-subtle: #eff6ff;          /* blue-50 — active nav / selected wash */
+    --accent-border: #bfdbfe;          /* blue-200 hairline */
 
-    --success: #15803d;                --success-foreground: #ffffff;
-    --success-emphasis: #166534;       --success-subtle: rgba(21, 128, 61, 0.12);
-    --warning: #d97706;                --warning-foreground: #1c1917; /* dark label on amber */
-    --warning-emphasis: #92400e;       --warning-subtle: rgba(217, 119, 6, 0.14);
-    --danger: #dc2626;                 --danger-foreground: #ffffff;
-    --danger-emphasis: #b91c1c;        --danger-subtle: rgba(220, 38, 38, 0.10);
+    /* Status -------------------------------------------------------------- */
+    --success: #16a34a;                --success-foreground: #ffffff;
+    --success-emphasis: #15803d;       --success-subtle: rgba(22, 163, 74, 0.10);
+    --warning: #f59e0b;                --warning-foreground: #78350f; /* dark label on amber */
+    --warning-emphasis: #b45309;       --warning-subtle: rgba(245, 158, 11, 0.14);
+    --danger: #ef4444;                 --danger-foreground: #ffffff;
+    --danger-emphasis: #dc2626;        --danger-subtle: rgba(239, 68, 68, 0.10);
     --info: #2563eb;                   --info-foreground: #ffffff;
-    --info-emphasis: #1d4ed8;          --info-subtle: rgba(37, 99, 235, 0.10);
+    --info-emphasis: #1d4ed8;          --info-subtle: #eff6ff;
 
-    --foreground: #18181b;             /* zinc-900 */
-    --muted-foreground: #52525b;       /* zinc-600 — passes AA on all surfaces */
-    --subtle-foreground: #71717a;      /* zinc-500 — large/decorative only */
+    /* Institutional Memory (violet) — memory viz only --------------------- */
+    --memory: #6d28d9;                 --memory-foreground: #ffffff;
+    --memory-emphasis: #6d28d9;        /* violet-700 on white ~6.6:1 — AA */
+    --memory-soft: #8b5cf6;            /* violet-500 — large / secondary graph only */
+    --memory-subtle: rgba(109, 40, 217, 0.10);
 
-    --border: rgba(24, 24, 27, 0.12);
-    --border-strong: rgba(24, 24, 27, 0.22);
-    --focus: #7c3aed;
+    /* Text ---------------------------------------------------------------- */
+    --foreground: #111827;             /* gray-900 */
+    --muted-foreground: #475569;       /* slate-600 — AA on every surface */
+    --subtle-foreground: #64748b;      /* slate-500 — large / decorative only */
 
-    --surface: #e4e4e7;                /* zinc-200 base */
-    --surface-elevated: #f4f4f5;       /* zinc-100 panels */
+    /* Structure ----------------------------------------------------------- */
+    --border: #e5e7eb;                 /* gray-200 hairline */
+    --border-strong: #cbd5e1;          /* slate-300 */
+    --focus: #2563eb;
+
+    /* Surfaces ------------------------------------------------------------ */
+    --surface: #f7f8fa;                /* page base */
+    --surface-elevated: #ffffff;       /* sidebar, header, AI rail, panels */
     --surface-raised: #ffffff;         /* cards */
-    --surface-sunken: #d4d4d8;         /* zinc-300 wells */
-    --surface-glass: rgba(250, 250, 250, 0.72);
-    --surface-glass-border: rgba(24, 24, 27, 0.10);
-    --surface-glass-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-    --surface-glass-highlight: rgba(255, 255, 255, 0.9);
+    --surface-alt: #f8fafc;            /* secondary / nested panel */
+    --surface-sunken: #f1f5f9;         /* slate-100 — inset wells, quote blocks */
+    --surface-glass: rgba(255, 255, 255, 0.80);
+    --surface-glass-border: rgba(15, 23, 42, 0.08);
   }
-
-  /* Dark theme — deep near-black situation room ----------------------------- */
-  .dark {
-    --accent: #7c3aed;                 --accent-foreground: #ffffff;
-    --accent-emphasis: #a78bfa;        /* violet-400 — AA as text on dark */
-    --accent-subtle: rgba(167, 139, 250, 0.14);
-
-    --success: #15803d;                --success-foreground: #ffffff;
-    --success-emphasis: #4ade80;       --success-subtle: rgba(74, 222, 128, 0.14);
-    --warning: #d97706;                --warning-foreground: #1c1917;
-    --warning-emphasis: #fbbf24;       --warning-subtle: rgba(251, 191, 36, 0.14);
-    --danger: #dc2626;                 --danger-foreground: #ffffff;
-    --danger-emphasis: #f87171;        --danger-subtle: rgba(248, 113, 113, 0.14);
-    --info: #2563eb;                   --info-foreground: #ffffff;
-    --info-emphasis: #60a5fa;          --info-subtle: rgba(96, 165, 250, 0.14);
-
-    --foreground: #fafafa;             /* zinc-50 */
-    --muted-foreground: #a1a1aa;       /* zinc-400 — passes AA on dark surfaces */
-    --subtle-foreground: #71717a;      /* zinc-500 — large/decorative only */
-
-    --border: rgba(255, 255, 255, 0.12);
-    --border-strong: rgba(255, 255, 255, 0.22);
-    --focus: #a78bfa;
-
-    --surface: #09090b;                /* zinc-950 base */
-    --surface-elevated: #18181b;       /* zinc-900 panels */
-    --surface-raised: #27272a;         /* zinc-800 cards */
-    --surface-sunken: #050506;         /* wells */
-    --surface-glass: rgba(24, 24, 27, 0.72);
-    --surface-glass-border: rgba(255, 255, 255, 0.14);
-    --surface-glass-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-    --surface-glass-highlight: rgba(255, 255, 255, 0.08);
-  }
-}
-
-/* Motion tokens — see DESIGN.md "Motion hierarchy" (L0-L3) -------------------- */
-@theme {
-  --ease-out-quart: cubic-bezier(0.16, 1, 0.3, 1);
-  --duration-hover: 120ms;   /* L1: hover / press feedback (100-150ms) */
-  --duration-state: 200ms;   /* L2: page & state transitions (180-250ms) */
 }
 
 @layer base {
@@ -138,23 +142,38 @@
     min-height: 100vh;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    transition: background-color var(--duration-state) ease, color var(--duration-state) ease;
+  }
+
+  /* One consistent focus treatment across the app: a 2px blue ring, never
+     color-only (see PRODUCT.md accessibility floor). */
+  ::selection {
+    background-color: var(--accent-subtle);
+    color: var(--accent-emphasis);
   }
 }
 
 @layer utilities {
-  /* Glass is ONE surface variant, reserved for the app shell and overlays.
-     Never a default content-card treatment (DESIGN.md: Glass-Is-Structural). */
+  /* Level 3 — floating UI only (dialogs, popovers, command palette): a blurred
+     translucent panel that lifts clearly off the page. Never a dashboard card
+     (those stay solid white for readability). See DESIGN.md — Elevation. */
   .surface-glass {
     background: var(--surface-glass);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px) saturate(1.4);
+    -webkit-backdrop-filter: blur(20px) saturate(1.4);
     border: 1px solid var(--surface-glass-border);
-    box-shadow: var(--surface-glass-shadow), inset 0 1px 0 0 var(--surface-glass-highlight);
+    box-shadow: var(--shadow-overlay);
+  }
+
+  /* Chrome translucency — header and the AI rail: same glass tint, gentler blur,
+     no floating shadow (they are anchored chrome, not floating overlays). */
+  .surface-glass-chrome {
+    background: var(--surface-glass);
+    backdrop-filter: blur(16px) saturate(1.4);
+    -webkit-backdrop-filter: blur(16px) saturate(1.4);
   }
 }
 
-/* Reduced motion: strip all non-essential motion (DESIGN.md motion L: reduced) */
+/* Reduced motion: strip all non-essential motion (DESIGN.md motion: reduced) */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

@@ -1,36 +1,51 @@
 ---
 name: Meridian Board OS
-description: Calm, provenance-first institutional-memory interface for startup boards — dual-theme zinc surface, one violet accent, restrained glass.
+description: Calm, provenance-first board operating system — neutral light surface, one blue action color, violet reserved for institutional memory.
 colors:
-  accent: "#7c3aed"
+  accent: "#2563eb"
   accent-foreground: "#ffffff"
-  accent-emphasis: "#a78bfa"
-  success: "#15803d"
-  warning: "#d97706"
-  danger: "#dc2626"
+  accent-hover: "#1d4ed8"
+  accent-emphasis: "#1d4ed8"
+  accent-subtle: "#eff6ff"
+  accent-border: "#bfdbfe"
+  success: "#16a34a"
+  success-emphasis: "#15803d"
+  warning: "#f59e0b"
+  warning-emphasis: "#b45309"
+  danger: "#ef4444"
+  danger-emphasis: "#dc2626"
   info: "#2563eb"
-  foreground: "#fafafa"
-  muted-foreground: "#a1a1aa"
-  subtle-foreground: "#71717a"
-  border: "#ffffff1f"
-  border-strong: "#ffffff38"
-  focus: "#a78bfa"
-  surface: "#09090b"
-  surface-elevated: "#18181b"
-  surface-raised: "#27272a"
-  surface-sunken: "#050506"
-  surface-glass: "#18181bb8"
+  memory: "#6d28d9"
+  memory-emphasis: "#6d28d9"
+  memory-soft: "#8b5cf6"
+  foreground: "#111827"
+  muted-foreground: "#475569"
+  subtle-foreground: "#64748b"
+  border: "#e5e7eb"
+  border-strong: "#cbd5e1"
+  focus: "#2563eb"
+  surface: "#f7f8fa"
+  surface-elevated: "#ffffff"
+  surface-raised: "#ffffff"
+  surface-alt: "#f8fafc"
+  surface-sunken: "#f1f5f9"
 typography:
-  headline:
+  display:
     fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif"
     fontSize: "1.875rem"
-    fontWeight: 300
+    fontWeight: 700
     lineHeight: 1.15
     letterSpacing: "-0.02em"
   title:
     fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif"
-    fontSize: "1.25rem"
-    fontWeight: 500
+    fontSize: "1.375rem"
+    fontWeight: 600
+    lineHeight: 1.25
+    letterSpacing: "-0.01em"
+  section:
+    fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "1.125rem"
+    fontWeight: 600
     lineHeight: 1.3
     letterSpacing: "-0.01em"
   body:
@@ -39,23 +54,35 @@ typography:
     fontWeight: 400
     lineHeight: 1.6
     letterSpacing: "normal"
-  caption:
+  metadata:
     fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif"
-    fontSize: "0.75rem"
-    fontWeight: 400
+    fontSize: "0.8125rem"
+    fontWeight: 500
     lineHeight: 1.4
     letterSpacing: "normal"
   label:
     fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "0.75rem"
+    fontWeight: 600
+    lineHeight: 1.3
+    letterSpacing: "normal"
+  caption:
+    fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "0.6875rem"
+    fontWeight: 500
+    lineHeight: 1.35
+    letterSpacing: "normal"
+  micro:
+    fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif"
     fontSize: "0.625rem"
     fontWeight: 600
     lineHeight: 1.2
-    letterSpacing: "0.1em"
+    letterSpacing: "0.08em"
 rounded:
-  sm: "4px"
-  md: "8px"
-  lg: "12px"
-  xl: "16px"
+  sm: "6px"
+  control: "12px"
+  card: "16px"
+  modal: "20px"
   full: "9999px"
 spacing:
   xs: "8px"
@@ -68,37 +95,37 @@ components:
   button-primary:
     backgroundColor: "{colors.accent}"
     textColor: "{colors.accent-foreground}"
-    rounded: "{rounded.md}"
-    padding: "10px 24px"
+    rounded: "{rounded.control}"
+    padding: "10px 20px"
     typography: "{typography.body}"
-  button-ghost:
-    backgroundColor: "{colors.surface-elevated}"
-    textColor: "{colors.muted-foreground}"
-    rounded: "{rounded.md}"
-    padding: "10px 24px"
-    typography: "{typography.body}"
-  input-search:
+  button-secondary:
     backgroundColor: "{colors.surface-raised}"
     textColor: "{colors.foreground}"
-    rounded: "{rounded.full}"
-    padding: "6px 16px 6px 36px"
+    rounded: "{rounded.control}"
+    padding: "10px 20px"
+    typography: "{typography.body}"
+  input:
+    backgroundColor: "{colors.surface-raised}"
+    textColor: "{colors.foreground}"
+    rounded: "{rounded.control}"
+    padding: "0 14px"
     typography: "{typography.body}"
   badge:
-    backgroundColor: "{colors.surface-raised}"
-    textColor: "{colors.foreground}"
-    rounded: "{rounded.sm}"
-    padding: "4px 12px"
-    typography: "{typography.label}"
+    backgroundColor: "{colors.surface-sunken}"
+    textColor: "{colors.muted-foreground}"
+    rounded: "{rounded.full}"
+    padding: "2px 10px"
+    typography: "{typography.caption}"
   card:
     backgroundColor: "{colors.surface-raised}"
     textColor: "{colors.foreground}"
-    rounded: "{rounded.xl}"
-    padding: "24px"
+    rounded: "{rounded.card}"
+    padding: "20px"
   nav-item:
-    backgroundColor: "{colors.surface-elevated}"
-    textColor: "{colors.muted-foreground}"
-    rounded: "{rounded.md}"
-    padding: "10px 12px"
+    backgroundColor: "{colors.accent-subtle}"
+    textColor: "{colors.accent-emphasis}"
+    rounded: "10px"
+    padding: "8px 10px"
     typography: "{typography.body}"
 ---
 
@@ -106,136 +133,118 @@ components:
 
 ## 1. Overview
 
-**Creative North Star: "The Quiet Situation Room"**
+**Creative North Star: "The Calm Desk."**
 
-Meridian is where a founder walks in the hour before a board meeting and instantly trusts what they see. The interface is a calm, low-light situation room: a deep slate surface, one disciplined blue accent, and hairline structure that lets dense governance information — decisions, evidence, provenance, access — sit legibly side by side without shouting. It is dual-theme (a deep near-black dark mode and a cool slate-grey light mode) because these users work in every ambient condition, from a dim boardroom to a bright home office. The system's job is to disappear into the task and make the *record* the hero.
+Meridian is the software a founder, chief of staff, or director opens the hour before a board meeting and instantly trusts. The interface is a calm, well-lit desk: a soft neutral page, white cards that sit like physical sheets, hairline structure, and exactly one trustworthy blue that appears only where it means *do this*. Dense governance information — decisions, evidence, provenance, readiness, access — sits legibly side by side without shouting. The system's job is to disappear into the task and make the *record* the hero.
 
-This system evolves an earlier, more cinematic treatment (heavy glass, accent glow, sci-fi voice) toward earned executive confidence. Glass and depth remain in the vocabulary but as **restraint, not spectacle**: a panel separates a toolbar from content, it does not perform. The palette explicitly rejects the things this product is not — the dated weight of enterprise board portals (Diligent, Boardvantage), the gradient hero-metric tiles and identical card grids of generic SaaS dashboards, crypto/fintech neon, and decoration-over-density productivity apps with oversized cards, oversized icons, and wasteful whitespace. Trust here is legibility under scrutiny, not atmosphere.
+This is a **light-mode-first** product (a single, deliberately tuned light palette). The palette explicitly rejects what this product is not: the dated weight of enterprise board portals (Diligent, Boardvantage), the gradient hero-metric tiles and identical card grids of generic SaaS dashboards, crypto/fintech neon, and decoration-over-density productivity apps with oversized cards and wasted whitespace. Trust here is legibility under scrutiny, not atmosphere.
 
-**Key Characteristics:**
-- Dual-theme slate system: deep near-black dark, cool slate-grey light — both first-class.
-- Exactly one accent (a single blue), reserved for state, selection, and provenance — never decoration.
-- Hairline dividers and restrained glass carry structure; density beats whitespace.
-- Inter throughout, light-weight headings against small tracked labels for hierarchy without noise.
-- WCAG 2.2 AA is a hard floor — every text/surface pairing must pass 4.5:1.
+**Key characteristics**
+- **95% neutral, 5% semantic color.** Every color carries one meaning; color is never decoration.
+- **One action color — blue `#2563EB`** — for primary buttons, active navigation, links, focus rings, selected states, and calendar events. Nothing else is blue.
+- **Violet `#6D28D9` is the Institutional-Memory identity**, reserved exclusively for memory surfaces (graph health, provenance, memory metrics, trend charts). Never a button, never navigation.
+- **White cards on a soft neutral page**, separated by 1px hairlines and a very subtle shadow — sheets on a desk, not floating glass.
+- **Inter throughout**, hierarchy from weight and size, not font contrast.
+- **WCAG 2.2 AA is a hard floor** — every text/surface pairing passes 4.5:1 (large text 3:1).
 
-**Density doctrine.** Meridian is dense but calm — never "minimal." Optimize for seeing more meaningful information without overwhelming the user; reduce decorative elements before reducing content. Whitespace and ornament yield to legible, tight information; decoration is the first thing cut, content the last.
+**Density doctrine.** Meridian is dense but calm — never "minimal." Optimize for seeing more meaningful information without overwhelming the operator; reduce decorative elements before reducing content.
 
-**Motion hierarchy.** Motion is tiered and must not creep into every interaction:
-- **L0 — None:** static content, tables at rest, anything being scanned.
-- **L1 — Hover / press (100–150ms):** state feedback on interactive elements (`--duration-hover`).
-- **L2 — Page & state transitions (180–250ms):** route changes, dialog/popover open-close, list reflow (`--duration-state` + `--ease-out-quart`).
-- **L3 — Hero moments:** landing and empty states only — never inside a working surface.
-- **Reduced motion:** all non-essential motion removed; transitions collapse to instant/crossfade (enforced globally in `globals.css`).
+**Motion hierarchy** (see `globals.css` tokens `--duration-hover` 120ms, `--duration-state` 200ms):
+- **L0 — None:** static content being scanned.
+- **L1 — Hover / press (120ms):** state feedback on interactive elements.
+- **L2 — State transitions (200ms):** dialog/popover open-close, list reflow, progress fills.
+- **Reduced motion:** all non-essential motion collapses to instant/crossfade (enforced globally).
 
 ## 2. Colors
 
-A restrained dual-theme slate palette expressed as **semantic tokens, not palette steps**: components reference roles (`accent`, `surface-raised`, `muted-foreground`), never a raw hex or a `blue-500`. Near-neutral surfaces are layered by lightness, one blue accent carries interaction, and four status hues cover system state. Every pairing below is verified to WCAG 2.2 AA. The dark theme is canonical (the situation room); the light value follows in each entry.
+A restrained light palette expressed as **semantic tokens, not palette steps** — components reference roles (`accent`, `surface-raised`, `muted-foreground`, `memory-emphasis`), never a raw hex or a `blue-600`. Every pairing below is verified to WCAG 2.2 AA.
 
-### Primary
-- **Accent — Signal Blue** (fill `#2563eb`; on-accent label `#ffffff`; as-text `accent-emphasis` dark `#60a5fa` / light `#2563eb`; wash `accent-subtle`): The one interactive color. `accent` fills the primary button and the current selection; `accent-emphasis` writes focus, active nav, and state/provenance indicators. Two sub-roles because a single blue cannot be both an AA-safe button fill *and* AA-safe small text on a near-black surface — `accent` fills, `accent-emphasis` writes. Never decoration.
+### Action — Blue (`#2563EB`)
+The one interactive color. `accent` fills the primary button and selected state; `accent-hover` (`#1D4ED8`) is the hovered fill; `accent-emphasis` (`#1D4ED8`) writes accent-as-text and icons (AA on white and on the soft-blue wash); `accent-subtle` (`#EFF6FF`) is the active-nav / selected-row wash; `accent-border` (`#BFDBFE`) its hairline. **Used only for action** — buttons, active navigation, links, focus rings, selected tabs, checkboxes, calendar events. Never for success/warning, never decoration.
 
 ### Status
-- **Success** (`#15803d`, emphasis dark `#4ade80`), **Warning** (`#d97706` with a dark label, emphasis dark `#fbbf24`), **Danger** (`#dc2626`, emphasis dark `#f87171`), **Info** (`#2563eb`, emphasis dark `#60a5fa`): Each ships a solid (badges/fills), a `-foreground` (label on the solid), an `-emphasis` (AA text/icon on a surface), and a `-subtle` (wash). For meeting status, review outcomes, and system feedback — state, never decoration.
+Each ships a solid (fills/dots), a `-foreground` (label on the solid), an `-emphasis` (AA text/icon on a surface), and a `-subtle` (wash).
+- **Success — Green `#16A34A`** (emphasis `#15803D`): verified, completed, approved, healthy.
+- **Warning — Amber `#F59E0B`** (foreground `#78350F` on the amber fill; emphasis `#B45309`): pending review, draft, awaiting approval.
+- **Danger — Red `#EF4444`** (emphasis `#DC2626`): errors, overdue, failed, quarantined, destructive actions.
+- **Info** maps to the action blue — informational status shares the one blue.
+
+### Institutional Memory — Violet (`#6D28D9`)
+The product's identity color, **reserved for institutional-memory surfaces only**: graph health, the verified-share gauge, provenance, memory metrics, and memory trend charts. `memory-emphasis` (`#6D28D9`, ~6.6:1 on white) writes text/icons and draws the gauge/sparkline; `memory-soft` (`#8B5CF6`) is for large/secondary graph elements; `memory-subtle` a faint wash. **Never a button, never navigation** — that is what makes it read as *memory* and gives Meridian a unique identity.
 
 ### Neutral
-Tonal elevation, base upward: **Surface** (base; dark `#020617` / light `#e2e8f0`), **Surface-elevated** (panels, toolbars, sidebar; dark `#0f172a` / light `#f1f5f9`), **Surface-raised** (cards, dialogs, popovers; dark `#1e293b` / light `#ffffff`), **Surface-sunken** (inset wells, quote blocks; dark `#010409` / light `#cbd5e1`), and **Surface-glass** (blurred shell/overlay only; dark `rgba(15,23,42,0.72)` / light `rgba(248,250,252,0.72)`).
-- **Text** / `foreground` (dark `#f8fafc` / light `#0f172a`): Primary text and headings.
-- **Text-muted** / `muted-foreground` (dark `#94a3b8` / light `#475569`): Secondary text, labels, timestamps. Light is slate-600, AA-verified on every surface (the earlier slate-500 failed and was corrected).
-- **Subtle** / `subtle-foreground` (`#64748b`): Large or decorative text only — never body.
-- **Border** (dark `rgba(255,255,255,0.12)` / light `rgba(15,23,42,0.12)`), plus **Border-strong** for emphasis: Hairline separators. Never a heavy or colored stripe.
-- **Focus** (dark `#60a5fa` / light `#2563eb`): The focus-ring color; ≥3:1 against its surface.
+Tonal elevation, base upward: **Surface** (page base `#F7F8FA`), **Surface-elevated** (sidebar, header, AI rail, panels — `#FFFFFF`), **Surface-raised** (cards, dialogs, popovers — `#FFFFFF`), **Surface-alt** (secondary/nested panel `#F8FAFC`), **Surface-sunken** (inset wells, quote blocks, input fill — `#F1F5F9`).
+- **Text / `foreground`** `#111827`: primary text and headings.
+- **Text-muted / `muted-foreground`** `#475569` (slate-600): secondary text, labels, timestamps. AA on every surface.
+- **Subtle / `subtle-foreground`** `#64748b` (slate-500): large or decorative text only — never body.
+- **Border** `#E5E7EB`, **Border-strong** `#CBD5E1`: hairline separators. Never a heavy or colored stripe.
+- **Focus** `#2563EB`: the focus-ring color; a 2px ring, ≥3:1 against its surface.
 
-### Named Rules
-**The Semantic-Only Rule.** Components consume semantic tokens exclusively. A raw hex, a `blue-500`, or a `slate-800` inside a component is a bug — it breaks theming and AA at once.
-
-**The One Signal Rule.** The accent family appears on ≤10% of any screen — primary action, selection, focus, and state/provenance. A blue used to "brighten up" a panel is a bug.
-
-**The Slate-Not-Paper Rule.** Light mode is cool slate (`#e2e8f0`), never warm paper/cream. The calm comes from neutral slate, not tint.
+### Named rules
+- **The Semantic-Only Rule.** Components consume semantic tokens exclusively. A raw hex, a `blue-600`, or a `slate-100` inside a component is a bug — it breaks theming and AA at once.
+- **The One-Action Rule.** Blue means *action*. It appears on primary action, active nav, links, focus, selection — and nowhere else. Blue to "brighten up" a panel is a bug.
+- **The Memory-Only Violet Rule.** Violet appears only on institutional-memory surfaces. Violet anywhere else — a button, a nav item, a generic accent — is a bug.
+- **The Neutral-Page Rule.** Page base is neutral `#F7F8FA` and cards are white; separation comes from hairlines and a subtle shadow, never a tint.
 
 ## 3. Typography
 
-**Body & Display Font:** Inter (with `ui-sans-serif, system-ui, sans-serif` fallback)
+**Font:** Inter (`ui-sans-serif, system-ui, sans-serif` fallback). One family, tuned across weight and size — no display/body pairing.
 
-**Character:** One family, tuned across weights. Light-weight (300) headings give calm authority; the workhorse body sits at 400; small labels go semibold with wide tracking. No display face, no pairing — a product UI earns hierarchy through weight and size, not font contrast.
+### Ramp (fixed rem scale, not fluid)
+- **Display** (700, 1.875rem / 30px, tracking -0.02em): page titles ("Dashboard") — the largest type on any working surface.
+- **Title** (600, 1.375rem / 22px): object names, hero meeting title, panel titles.
+- **Section** (600, 1.125rem / 18px): card/section headings.
+- **Body** (400, 0.875rem / 14px, line-height 1.6): the default — descriptions, quotes, table cells. Prose capped 65–75ch.
+- **Metadata** (500, 0.8125rem / 13px): dense secondary data — shortcut chips, list values, meeting meta.
+- **Label** (600, 0.75rem / 12px): control labels, badges, counts.
+- **Caption** (500, 0.6875rem / 11px): the smallest metadata tier — timestamps, source captions, rail status. The density tier.
+- **Micro** (600, 0.625rem / 10px, tracking 0.08em, uppercase): section eyebrows and provenance micro-labels only.
 
-### Hierarchy
-- **Headline** (300, 1.875rem / `text-3xl`, line-height ~1.15, tracking -0.02em): Page/section titles ("Entity Conflicts"). The signature light-weight heading.
-- **Title** (500, 1.25rem / `text-xl`, line-height ~1.3): Object names, panel titles, entity names in review cards.
-- **Body** (400, 0.875rem / `text-sm`, line-height 1.6): The default. Descriptions, quotes, table cells. Prose capped at 65–75ch; dense data may run wider.
-- **Caption** (400, 0.75rem / `text-xs`): Dense metadata — meeting times, day numbers, counts, secondary text in tight UI (calendar cells, small buttons). The density tier.
-- **Label** (600, 0.625rem / `text-[10px]`, tracking 0.1em, uppercase): Metadata eyebrows — "SIMILARITY", "SOURCE CONTEXT", status chips. Deliberately tiny and tracked.
-
-### Named Rules
-**The Fixed-Scale Rule.** Type is a fixed rem scale, never fluid `clamp()`. Users view at consistent DPI inside an app shell; a heading that shrinks in a sidebar is a regression, not responsiveness.
-
-**The Quiet-Label Rule.** Uppercase tracked labels are for true metadata only (status, provenance, similarity). They are never section eyebrows above every block — that is SaaS grammar this system rejects.
+### Named rules
+- **The Fixed-Scale Rule.** Type is a fixed rem scale, never fluid `clamp()`. A heading that shrinks in a sidebar is a regression.
+- **The Quiet-Label Rule.** Uppercase tracked micro-labels are for true metadata and one section eyebrow — never stacked above every block.
 
 ## 4. Elevation
 
-A hybrid system that is **flat by default and layered by role**. Depth comes primarily from tonal layering — base → panel → card surfaces stepped by lightness — not from heavy drop shadows. Shadows are soft and ambient, used to lift chrome (sidebar, header) and interactive surfaces off the page, never to make every card float. The restrained glass treatment (a blurred translucent panel with a hairline border and a 1px inner highlight) is reserved for the app shell and true overlays.
+**Flat by default, layered by role.** Depth is tonal first (neutral page → white card), shadow second, and shadows are *very* subtle. Reduce flatness with **spacing and elevation, not more color**. Three deliberate levels:
 
-### Shadow Vocabulary
-- **Panel shadow** (light `0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03)`; dark `0 10px 30px rgba(0,0,0,0.5)`): The glass-panel elevation for sidebar, header, and card shells, paired with an `inset 0 1px 0` highlight.
-- **Accent glow** (`0 0 20px` of accent-glow): A focused halo used *sparingly* around a single active/critical affordance. Not a default card treatment.
+- **Level 1 — Normal cards** (`shadow-card`, white + 1px hairline + tiny shadow): the default. Board Readiness, Needs You, Recent Decisions, Approved Facts, Graph Health.
+- **Level 2 — Important cards** (`shadow-raised` + a `border-strong` hairline): the Meeting Hero and the AI panel — the surfaces the eye should land on first. Slightly stronger elevation, never a color change.
+- **Level 3 — Floating UI only** (`.surface-glass` = blur + translucency + `shadow-overlay`): dialogs, popovers, dropdowns, command palette. The only surfaces that leave the page plane.
 
-### Named Rules
-**The Tonal-First Rule.** Depth is layered lightness first (base/panel/card), shadow second. If a surface reads as elevated without a shadow, it needs no shadow.
-
-**The Glass-Is-Structural Rule.** Backdrop-blur glass is reserved for the app shell (sidebar, header) and overlays. Glass on every content card is prohibited — it is the cinematic reflex this system is retiring.
+**The Blur-Is-Chrome-or-Floating Rule.** Backdrop-blur / translucency appears in exactly three places: the **header**, the **AI rail** (both use `.surface-glass-chrome` — the glass tint with a gentler blur and no floating shadow, because they are anchored chrome), and **Level 3 floating UI**. **Dashboard content cards stay solid white** for readability — glass on a content card is a bug. The left navigation sidebar is solid, not glass.
 
 ## 5. Components
 
-The vocabulary is refined and restrained: hairline borders, `md`–`xl` radii, quiet defaults that respond crisply to state. Every interactive component ships all of default, hover, focus-visible, active, disabled, and (where it loads) loading.
+Hairline borders, `control` (12px) / `card` (16px) radii, pill badges, quiet defaults that respond crisply to state. Every interactive component ships default, hover, focus-visible, active, disabled, and (where it loads) loading.
 
-### Buttons
-- **Shape:** Gently rounded (`8px` / `rounded-lg`).
-- **Primary:** Accent fill (`accent`) with the on-accent label (`accent-foreground`); padding `10px 24px`; body-size medium weight. The single most important action per surface. (This replaces the earlier contrast-ink primary — the accent is now the one interactive fill, keeping the system to a single signal color.)
-- **Ghost / Secondary:** Transparent on panel, muted-ink label, hairline border; hover raises to a faint `5%` ink wash and full-ink label.
-- **Hover / Focus:** 150–250ms color/opacity transition. Focus-visible shows a 2px accent ring at ≥3:1 — never color-only. The legacy `.cinematic-button` shimmer sweep is deprecated (see Don'ts).
+- **Buttons** — 12px radius. **Primary:** solid blue fill (`accent`), white label, `accent-hover` on hover — the one dominant action per surface. **Secondary:** white with a gray border. **Ghost:** transparent, muted label, sunken wash on hover. Focus-visible shows a 2px blue ring at ≥3:1.
+- **Badges** — full-radius pills; card/status wash + emphasis label. Neutral by default; a colored tone only for real status.
+- **Cards** — 16px radius, white surface, 1px hairline, `shadow-card`. 20–24px padding on primary cards; tighter on dense rows. Never a colored side-stripe. **Nested cards are prohibited.**
+- **Inputs** — 12px radius, white fill, hairline border; focus shifts the border to blue plus a soft blue ring.
+- **Sidebar** — 248px, white surface. Nav items are body-size, muted at rest; **active shows a soft-blue wash (`accent-subtle`) with blue label and icon** — no side-stripe.
+- **AI rail** — persistent 368px right column (collapsible to a 56px strip via ⌘/Ctrl+J), white surface. Proactive greeting, quick shortcuts, recent decisions, supporting documents, and evidence-cited answers. Every answer shows a source quote and a Verified marker; withheld sources appear as a count only.
 
-### Chips / Badges
-- **Style:** Card-surface fill, hairline border, tiny uppercase tracked label; used for entity type, status, and clearance.
-- **State:** Neutral by default; the accent tint appears only on an active/selected or attention state (e.g. "pending review"), never on inert metadata.
-
-### Cards / Containers
-- **Corner Style:** `16px` (`rounded-2xl`) for primary review cards; `12px` for nested blocks.
-- **Background:** Panel surface for the shell, card surface for raised/nested content.
-- **Shadow Strategy:** Tonal-first (see Elevation); soft panel shadow only on the outer shell.
-- **Border:** Always a hairline divider; never a colored side-stripe.
-- **Internal Padding:** `24px`–`32px` on primary cards; tighten for dense list rows.
-
-### Inputs / Fields
-- **Style:** Card-surface fill, hairline border, `full`-radius for search, `md` for form fields; leading icon in muted ink.
-- **Focus:** Border shifts to a brighter hairline plus a 1px accent ring — a border shift, not a glow bloom.
-- **Error / Disabled:** Error uses a dedicated red token (to be added — the system currently has no semantic error/warning/success colors); disabled drops to `50%` and removes pointer affordance.
-
-### Navigation (Sidebar)
-- **Style:** Panel-surface glass rail, `256px` wide. Nav items are body-size, muted-ink at rest.
-- **States:** Hover raises label to full ink on a faint ink wash; **active** shows a `10%` primary wash, an accent icon, and an inset top highlight. Active state must be derived from the current route, not hardcoded (see Don'ts).
-
-### Signature Component — Provenance Card
-The entity-conflict / evidence review card is the system's signature surface: paired source contexts, a similarity chip, exact source quotes in bordered quote blocks, and a first-class Approve / Reject action row. It embodies the product's "provenance is visible, human holds the pen" principles — every fact shows its source and every consequential action is an explicit, unmistakable button.
+### Signature surfaces
+- **Institutional Memory (violet zone).** The graph-health gauge and review-throughput sparkline render in `memory-emphasis` violet — the only place violet appears. Quality rows keep status dots (green/amber/red).
+- **Approved-facts card.** Each fact shows its plain statement, the verbatim source quote in a sunken well, a **blue source link**, and a **green Verified** marker — evidence, not summaries.
 
 ## 6. Do's and Don'ts
 
-### Do:
-- **Do** keep Signal Blue (`#3b82f6`) to ≤10% of any screen — state, selection, focus, and provenance only.
-- **Do** darken light-mode Muted Ink from `#64748b` to at least `#475569` (slate-600) so secondary text clears 4.5:1 on light base and card surfaces. Verify every text/surface pair against AA; a surface that can't pass contrast is redesigned, not shipped.
-- **Do** convey depth by tonal layering (base → panel → card) first, shadow second.
-- **Do** derive nav/tab active state from the current route (`usePathname`), so every page highlights correctly.
+### Do
+- **Do** keep blue to *action only* (≤5–10% of any screen) and violet to *memory only*.
+- **Do** convey depth by tonal layering (neutral page → white card) first, subtle shadow second.
+- **Do** derive nav/tab active state from the current route (`usePathname`).
 - **Do** give every interactive element a visible, non-color-only focus ring and a full keyboard path; make citation/source interactions keyboard-operable.
-- **Do** provide a `prefers-reduced-motion` alternative (crossfade or instant) for every transition, and keep state transitions in the 150–250ms range.
-- **Do** add semantic state tokens (error / warning / success / info) before building forms and status surfaces — they are currently missing.
+- **Do** provide a `prefers-reduced-motion` alternative for every transition; keep state transitions 150–250ms.
+- **Do** signal status with a shape/label/icon in addition to color.
 - **Do** keep information density high: tight, legible rows and short paths to common actions.
 
-### Don't:
-- **Don't** style like an enterprise board portal (Diligent, Boardvantage) — heavy chrome, dated compliance-software weight.
-- **Don't** style like a generic SaaS dashboard — no gradient hero-metric tiles, no identical icon-heading-text card grids, no template admin theming.
-- **Don't** use crypto/fintech neon — no dark-mode neon, saturated purple-to-blue gradients, or trading-terminal flash.
-- **Don't** prioritize decoration over density — no oversized cards, oversized icons, excessive whitespace, or layouts that force scrolling for common tasks.
-- **Don't** use glass (backdrop-blur) on content cards or glow as a default — glass is structural (shell/overlays only); the accent glow is a rare, single-affordance halo.
-- **Don't** ship sci-fi copy — no "Initializing neural matrix…", "System optimal", or "neural" theatrics. Write plainly: "Loading…", "No conflicts pending review."
-- **Don't** hardcode off-token hex colors in components (e.g. `text-[#d4e4fa]`, `text-[#8691a7]`); use the semantic tokens so both themes and AA hold.
-- **Don't** use a `border-left`/`border-right` greater than 1px as a colored accent stripe on cards, list items, or callouts; use full hairline borders or background tints.
-- **Don't** signal state with color alone; pair it with an icon, label, or shape.
+### Don't
+- **Don't** style like an enterprise board portal (Diligent, Boardvantage) or a generic SaaS dashboard (gradient hero-metric tiles, identical icon-heading-text card grids).
+- **Don't** use violet for buttons or navigation, or blue for success/warning — each color has one meaning.
+- **Don't** use gradients, neon, glow-as-default, or glass on content cards.
+- **Don't** ship sci-fi copy — write plainly: "Loading…", "No conflicts pending review."
+- **Don't** hardcode off-token hex or palette-step colors in components.
+- **Don't** use a `border-left`/`border-right` >1px as a colored accent stripe; use full hairlines or background tints.
+- **Don't** nest cards.
