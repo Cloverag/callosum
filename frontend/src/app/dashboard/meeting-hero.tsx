@@ -37,18 +37,18 @@ export function MeetingHero({ meeting, loading }: { meeting: Meeting | null; loa
 
   if (loading) {
     return (
-      <Card variant="elevated" className="min-h-[16rem] p-6">
-        <div className="h-3 w-32 rounded bg-surface-raised" />
-        <div className="mt-4 h-7 w-2/3 rounded bg-surface-raised" />
-        <div className="mt-4 h-5 w-1/2 rounded bg-surface-raised" />
+      <Card variant="elevated" className="min-h-[16rem] border-border-strong p-7">
+        <div className="h-3 w-32 rounded bg-surface-sunken" />
+        <div className="mt-4 h-7 w-2/3 rounded bg-surface-sunken" />
+        <div className="mt-4 h-5 w-1/2 rounded bg-surface-sunken" />
         <div className="mt-5 grid grid-cols-3 gap-3">
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="h-12 rounded-lg bg-surface-raised" />
+            <div key={i} className="h-12 rounded-lg bg-surface-sunken" />
           ))}
         </div>
         <div className="mt-6 flex gap-3">
-          <div className="h-10 w-32 rounded-md bg-surface-raised" />
-          <div className="h-10 w-32 rounded-md bg-surface-raised" />
+          <div className="h-10 w-32 rounded-md bg-surface-sunken" />
+          <div className="h-10 w-32 rounded-md bg-surface-sunken" />
         </div>
       </Card>
     );
@@ -56,7 +56,7 @@ export function MeetingHero({ meeting, loading }: { meeting: Meeting | null; loa
 
   if (!meeting) {
     return (
-      <Card variant="elevated" className="flex min-h-[16rem] flex-col items-center justify-center p-6 text-center">
+      <Card variant="elevated" className="flex min-h-[16rem] flex-col items-center justify-center border-border-strong p-7 text-center">
         <CalendarClock className="size-6 text-muted-foreground" aria-hidden />
         <h2 className="mt-3 text-sm font-medium text-foreground">No upcoming meetings</h2>
         <p className="mt-1 max-w-xs text-sm text-muted-foreground">
@@ -72,14 +72,13 @@ export function MeetingHero({ meeting, loading }: { meeting: Meeting | null; loa
   const start = new Date(meeting.start);
   const total = meeting.agenda.length;
   const withOwner = meeting.agenda.filter((a) => a.presenter).length;
-  const readyPct = total === 0 ? 0 : Math.round((withOwner / total) * 100);
 
   return (
-    <Card variant="elevated" className="flex min-h-[16rem] flex-col p-6">
+    <Card variant="elevated" className="flex min-h-[16rem] flex-col border-border-strong p-7">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-accent-emphasis">
-            Next board meeting
+          <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-subtle-foreground">
+            Upcoming board meeting
           </span>
           <h2 className="mt-1.5 truncate text-xl font-medium tracking-tight text-foreground">{meeting.title}</h2>
         </div>
@@ -101,27 +100,14 @@ export function MeetingHero({ meeting, loading }: { meeting: Meeting | null; loa
         <Stat icon={<MapPin />} label="Location" value={meeting.location ?? "—"} />
       </dl>
 
-      {/* Agenda readiness */}
-      <div className="mt-auto pt-6">
-        <div className="flex items-center justify-between text-xs">
-          <span className="font-medium text-foreground">Agenda readiness</span>
-          <span className="tabular-nums text-muted-foreground">
-            {total === 0 ? "No agenda yet" : `${readyPct}% ready · ${withOwner} of ${total} items`}
-          </span>
-        </div>
-        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-surface-sunken">
-          <div className="h-full rounded-full bg-accent-emphasis transition-[width] duration-500" style={{ width: `${readyPct}%` }} />
-        </div>
-
-        <div className="mt-5 flex flex-wrap items-center gap-3">
-          <Button size="md" className="px-6" onClick={() => router.push("/calendar")}>
-            Open meeting
-            <ArrowRight className="size-4" />
-          </Button>
-          <Button variant="ghost" size="md" onClick={() => router.push("/calendar")}>
-            Prepare agenda
-          </Button>
-        </div>
+      <div className="mt-auto flex flex-wrap items-center gap-3 pt-6">
+        <Button size="md" className="px-6" onClick={() => router.push("/calendar")}>
+          Prepare meeting
+          <ArrowRight className="size-4" />
+        </Button>
+        <Button variant="secondary" size="md" onClick={() => router.push("/calendar")}>
+          View agenda
+        </Button>
       </div>
     </Card>
   );

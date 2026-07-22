@@ -16,6 +16,7 @@ import { insightsApi, type DashboardInsights } from "@/lib/insights";
 import { startOfDay } from "@/lib/calendar";
 import { DailyBrief } from "./daily-brief";
 import { MeetingHero } from "./meeting-hero";
+import { BoardReadiness } from "./board-readiness";
 import { NeedsYou, type ActionCounts } from "./needs-you";
 import { MemoryHealth } from "./memory-health";
 import { RecentDecisions } from "./recent-decisions";
@@ -68,9 +69,10 @@ export default function DashboardPage() {
       </div>
 
       {/* Band A — operational: what needs me now */}
-      <div className="mt-8 grid gap-8 lg:grid-cols-3">
-        <div className="lg:col-span-2">
+      <div className="mt-8 grid gap-6 lg:grid-cols-3">
+        <div className="flex flex-col gap-6 lg:col-span-2">
           <MeetingHero meeting={nextMeeting} loading={meetings === null} />
+          <BoardReadiness readiness={insights?.readiness ?? null} />
         </div>
         <NeedsYou counts={counts} />
       </div>
