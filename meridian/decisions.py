@@ -190,6 +190,17 @@ def create_decision(
     with store.pg(workspace_id) as conn:
         _assert_meeting_active(conn, meeting_uuid)
 
+        if agenda_uuid:
+            ag_row = conn.execute(
+                "SELECT meeting_id FROM agenda_item WHERE id = %s", (agenda_uuid,)
+            ).fetchone()
+            if ag_row is None:
+                raise DecisionValidationError(f"agenda_item {agenda_item_id} not found")
+            if ag_row["meeting_id"] != meeting_uuid:
+                raise DecisionValidationError(
+                    f"agenda_item {agenda_item_id} does not belong to meeting {meeting_id}"
+                )
+
         row = conn.execute(
             """
             INSERT INTO decision
@@ -201,7 +212,7 @@ def create_decision(
                 meeting_uuid,
                 agenda_uuid,
                 title.strip(),
-                rationale.strip() if rationale else None,
+                rationale.strip() if rationale and rationale.strip() else None,
                 workspace_id,
             ),
         ).fetchone()
@@ -462,6 +473,17 @@ def supersede_decision(
             )
 
         _assert_meeting_active(conn, old_row["meeting_id"])
+
+        if agenda_uuid:
+            ag_row = conn.execute(
+                "SELECT meeting_id FROM agenda_item WHERE id = %s", (agenda_uuid,)
+            ).fetchone()
+            if ag_row is None:
+                raise DecisionValidationError(f"agenda_item {agenda_item_id} not found")
+            if ag_row["meeting_id"] != old_row["meeting_id"]:
+                raise DecisionValidationError(
+                    f"agenda_item {agenda_item_id} does not belong to meeting {old_row['meeting_id']}"
+                )
 
         # 1. Create the new decision first to get its UUID
         new_row = conn.execute(
