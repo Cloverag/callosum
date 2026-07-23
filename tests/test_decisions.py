@@ -275,3 +275,33 @@ def test_cascade_delete_on_meeting_deletion():
             decisions.get_decision(dec.id, workspace_id=ws)
     finally:
         _cleanup(ws)
+
+
+def test_decision_validation_errors():
+    ws = _new_workspace()
+    try:
+        m = meetings.create_meeting("Validation Meeting", workspace_id=ws)
+
+        # Empty title
+        with pytest.raises(DecisionValidationError):
+            decisions.create_decision(m.id, "   ", workspace_id=ws)
+
+        dec = decisions.create_decision(m.id, "Valid Title", workspace_id=ws)
+
+        # Empty person name in stance
+        with pytest.raises(DecisionValidationError):
+            decisions.record_stance(dec.id, "  ", STANCE_SUPPORTED, workspace_id=ws)
+
+        # Invalid stance string
+        with pytest.raises(DecisionValidationError):
+            decisions.record_stance(dec.id, "Raj", "INVALID_STANCE", workspace_id=ws)
+
+        # Invalid status filter
+        with pytest.raises(DecisionValidationError):
+            decisions.list_decisions(m.id, workspace_id=ws, status="INVALID_STATUS")
+
+        # No fields to update
+        with pytest.raises(DecisionValidationError):
+            decisions.update_decision(dec.id, expected_version=1, workspace_id=ws)
+    finally:
+        _cleanup(ws)

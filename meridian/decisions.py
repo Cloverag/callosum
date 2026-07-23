@@ -493,7 +493,7 @@ def supersede_decision(
         ).fetchone()
 
         if updated_old is None:
-            raise StaleAgendaItemError("concurrent modification during supersession")
+            raise StaleDecisionError("concurrent modification during supersession")
 
         old_stances = _fetch_stances_for_decisions(conn, [old_uuid]).get(str(old_uuid), [])
 
