@@ -305,3 +305,17 @@ def test_decision_validation_errors():
             decisions.update_decision(dec.id, expected_version=1, workspace_id=ws)
     finally:
         _cleanup(ws)
+
+
+def test_mismatched_agenda_item_meeting_raises_validation_error():
+    ws = _new_workspace()
+    try:
+        m1 = meetings.create_meeting("Meeting 1", workspace_id=ws)
+        m2 = meetings.create_meeting("Meeting 2", workspace_id=ws)
+        ag2 = agenda.create_agenda_item(m2.id, "Meeting 2 Agenda Item", workspace_id=ws)
+
+        # Attaching m2's agenda item to a decision under m1 raises DecisionValidationError
+        with pytest.raises(DecisionValidationError):
+            decisions.create_decision(m1.id, "Mismatched Decision", workspace_id=ws, agenda_item_id=ag2.id)
+    finally:
+        _cleanup(ws)
