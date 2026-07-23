@@ -319,3 +319,144 @@ def test_mismatched_agenda_item_meeting_raises_validation_error():
             decisions.create_decision(m1.id, "Mismatched Decision", workspace_id=ws, agenda_item_id=ag2.id)
     finally:
         _cleanup(ws)
+
+
+def test_list_decisions_status_filtering():
+    ws = _new_workspace()
+    try:
+        m = meetings.create_meeting("Filter Meeting", workspace_id=ws)
+        d1 = decisions.create_decision(m.id, "Decision 1", workspace_id=ws)
+        d2 = decisions.create_decision(m.id, "Decision 2", workspace_id=ws)
+        d3 = decisions.create_decision(m.id, "Decision 3", workspace_id=ws)
+
+        d2 = decisions.transition_decision_status(d2.id, APPROVED, expected_version=1, workspace_id=ws)
+        d3 = decisions.transition_decision_status(d3.id, REJECTED, expected_version=1, workspace_id=ws)
+
+        proposed_list = decisions.list_decisions(m.id, workspace_id=ws, status=PROPOSED)
+        assert [x.id for x in proposed_list] == [d1.id]
+
+        approved_list = decisions.list_decisions(m.id, workspace_id=ws, status=APPROVED)
+        assert [x.id for x in approved_list] == [d2.id]
+
+        rejected_list = decisions.list_decisions(m.id, workspace_id=ws, status=REJECTED)
+        assert [x.id for x in rejected_list] == [d3.id]
+
+        all_list = decisions.list_decisions(m.id, workspace_id=ws)
+        assert len(all_list) == 3
+    finally:
+        _cleanup(ws)
+
+
+def test_transition_to_deferred_and_terminal_guard():
+    ws = _new_workspace()
+    try:
+        m = meetings.create_meeting("Deferred Meeting", workspace_id=ws)
+        dec = decisions.create_decision(m.id, "Table Motion", workspace_id=ws)
+
+        deferred_dec = decisions.transition_decision_status(
+            dec.id, DEFERRED, expected_version=1, workspace_id=ws
+        )
+        assert deferred_dec.status == DEFERRED
+
+        # Cannot directly transition out of DEFERRED
+        with pytest.raises(DecisionValidationError):
+            decisions.transition_decision_status(
+                dec.id, APPROVED, expected_version=2, workspace_id=ws
+            )
+    finally:
+        _cleanup(ws)
+
+
+def test_update_rationale_clearing_and_modification():
+    ws = _new_workspace()
+    try:
+        m = meetings.create_meeting("Rationale Meeting", workspace_id=ws)
+        dec = decisions.create_decision(
+            m.id, "Rationale Test", rationale="Initial Rationale", workspace_id=ws
+        )
+        assert dec.rationale == "Initial Rationale"
+
+        # Update rationale
+        updated = decisions.update_decision(
+            dec.id, expected_version=1, workspace_id=ws, rationale="New Rationale"
+        )
+        assert updated.rationale == "New Rationale"
+
+        # Clear rationale (setting to None)
+        cleared = decisions.update_decision(
+            dec.id, expected_version=2, workspace_id=ws, rationale=None
+        )
+        assert cleared.rationale is None
+    finally:
+        _cleanup(ws)
+
+
+def test_multi_director_stance_aggregation():
+    ws = _new_workspace()
+    try:
+        m = meetings.create_meeting("Multi Stance Meeting", workspace_id=ws)
+        d1 = decisions.create_decision(m.id, "Dec 1", workspace_id=ws)
+        d2 = decisions.create_decision(m.id, "Dec 2", workspace_id=ws)
+
+        directors = [
+            ("Alice", STANCE_SUPPORTED),
+            ("Bob", STANCE_OPPOSED),
+            ("Charlie", STANCE_APPROVED),
+            ("Diana", STANCE_REQUESTED),
+            ("Eve", STANCE_SUPPORTED),
+        ]
+        for name, st in directors:
+            decisions.record_stance(d1.id, name, st, workspace_id=ws)
+
+        decisions.record_stance(d2.id, "Frank", STANCE_SUPPORTED, workspace_id=ws)
+
+        fetched_d1 = decisions.get_decision(d1.id, workspace_id=ws)
+        assert len(fetched_d1.stances) == 5
+        assert [x.person_name for x in fetched_d1.stances] == ["Alice", "Bob", "Charlie", "Diana", "Eve"]
+
+        all_decs = decisions.list_decisions(m.id, workspace_id=ws)
+        assert len(all_decs[0].stances) == 5
+        assert len(all_decs[1].stances) == 1
+    finally:
+        _cleanup(ws)
+
+
+def test_chained_supersession_history():
+    ws = _new_workspace()
+    try:
+        m = meetings.create_meeting("Chained Supersession Meeting", workspace_id=ws)
+
+        # 1. Decision v1 (Flat Rate) -> Approved
+        v1 = decisions.create_decision(m.id, "Pricing v1 (Flat Rate)", workspace_id=ws)
+        v1 = decisions.transition_decision_status(v1.id, APPROVED, expected_version=1, workspace_id=ws)
+
+        # 2. Decision v2 (Tiered Rate) supersedes v1 -> Approved
+        v2, v1_updated = decisions.supersede_decision(
+            v1.id, "Pricing v2 (Tiered Rate)", expected_version=2, workspace_id=ws
+        )
+        v2 = decisions.transition_decision_status(v2.id, APPROVED, expected_version=1, workspace_id=ws)
+
+        # 3. Decision v3 (Usage Based) supersedes v2 -> Proposed
+        v3, v2_updated = decisions.supersede_decision(
+            v2.id, "Pricing v3 (Usage Based)", expected_version=2, workspace_id=ws
+        )
+
+        assert v1_updated.status == SUPERSEDED
+        assert v1_updated.superseded_by_id == v2.id
+
+        assert v2_updated.status == SUPERSEDED
+        assert v2_updated.superseded_by_id == v3.id
+
+        assert v3.status == PROPOSED
+        assert v3.superseded_by_id is None
+
+        # Verify full chain in database
+        f1 = decisions.get_decision(v1.id, workspace_id=ws)
+        f2 = decisions.get_decision(v2.id, workspace_id=ws)
+        f3 = decisions.get_decision(v3.id, workspace_id=ws)
+
+        assert f1.superseded_by_id == f2.id
+        assert f2.superseded_by_id == f3.id
+        assert f3.superseded_by_id is None
+    finally:
+        _cleanup(ws)
