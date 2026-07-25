@@ -3,13 +3,13 @@ import { Inter } from 'next/font/google';
 import './globals.css';
 import Sidebar from '@/components/Sidebar';
 import Header from '@/components/Header';
-import { ThemeProvider } from '@/components/ThemeProvider';
+import { AssistantRail } from '@/components/AssistantRail';
 
-const inter = Inter({ subsets: ['latin'] });
+const inter = Inter({ subsets: ['latin'], display: 'swap' });
 
 export const metadata: Metadata = {
   title: 'Meridian Board OS',
-  description: 'Executive-level governance and institutional memory',
+  description: 'The governed institutional-memory layer for startup boards.',
 };
 
 export default function RootLayout({
@@ -19,23 +19,15 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.className} h-full antialiased`}>
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
-        >
-          <div className="flex h-full">
-            <Sidebar />
-            <div className="flex flex-1 flex-col overflow-hidden">
-              <Header />
-              <main className="flex-1 overflow-y-auto">
-                {children}
-              </main>
-            </div>
+      <body className={`${inter.className} h-full antialiased`} suppressHydrationWarning>
+        <div className="flex h-screen overflow-hidden bg-surface text-foreground">
+          <Sidebar />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <Header />
+            <main className="flex-1 overflow-y-auto">{children}</main>
           </div>
-        </ThemeProvider>
+          <AssistantRail />
+        </div>
       </body>
     </html>
   );

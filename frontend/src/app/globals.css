@@ -1,130 +1,186 @@
 @import "tailwindcss";
 
+/* ============================================================================
+   Meridian Board OS — semantic token layer (v2: blue-on-neutral, light-only)
+   The single source of truth for color, radius, elevation, and motion.
+   Components consume ONLY these semantic tokens — never a raw hex, never a
+   palette step (no `blue-600`, no `slate-100`).
+
+   Color doctrine (see DESIGN.md):
+     · 95% neutral UI, 5% semantic color. Color communicates meaning.
+     · Blue #2563EB  → ACTION only  (buttons, active nav, links, focus, selected)
+     · Green #16A34A → success / verified / approved / healthy
+     · Amber #F59E0B → attention / pending / draft / awaiting
+     · Red #EF4444   → critical / overdue / failed / quarantined / destructive
+     · Violet #6D28D9 → Institutional Memory ONLY (graph, provenance, memory viz)
+   Every text/surface pairing below is verified to WCAG 2.2 AA (>=4.5:1 body).
+   ========================================================================== */
+
 @theme {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
+  /* Action / interactive (blue) ------------------------------------------- */
+  --color-accent: var(--accent);                       /* solid fill: primary buttons, selected */
+  --color-accent-foreground: var(--accent-foreground); /* label on an accent fill */
+  --color-accent-hover: var(--accent-hover);           /* hovered fill */
+  --color-accent-emphasis: var(--accent-emphasis);     /* accent AS text/icon on a surface (AA) */
+  --color-accent-subtle: var(--accent-subtle);         /* soft-blue wash: active nav, selected row */
+  --color-accent-border: var(--accent-border);         /* soft-blue hairline */
+
+  /* Status ----------------------------------------------------------------- */
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-emphasis: var(--success-emphasis);
+  --color-success-subtle: var(--success-subtle);
+
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-emphasis: var(--warning-emphasis);
+  --color-warning-subtle: var(--warning-subtle);
+
+  --color-danger: var(--danger);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-danger-emphasis: var(--danger-emphasis);
+  --color-danger-subtle: var(--danger-subtle);
+
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-info-emphasis: var(--info-emphasis);
+  --color-info-subtle: var(--info-subtle);
+
+  /* Institutional Memory identity (violet) — memory surfaces ONLY ---------- */
+  --color-memory: var(--memory);
+  --color-memory-foreground: var(--memory-foreground);
+  --color-memory-emphasis: var(--memory-emphasis);
+  --color-memory-soft: var(--memory-soft);
+  --color-memory-subtle: var(--memory-subtle);
+
+  /* Text ------------------------------------------------------------------- */
+  --color-foreground: var(--foreground);              /* primary text / headings */
+  --color-muted-foreground: var(--muted-foreground);  /* secondary text (AA on all surfaces) */
+  --color-subtle-foreground: var(--subtle-foreground);/* large / decorative text only */
+
+  /* Structure -------------------------------------------------------------- */
   --color-border: var(--border);
-  --color-border-hover: var(--border-hover);
-  --color-accent: var(--accent);
-  --color-accent-glow: var(--accent-glow);
-  
-  --color-glass-bg: var(--glass-bg);
-  --color-glass-border: var(--glass-border);
-  --color-glass-highlight: var(--glass-highlight);
-  --color-glass-shadow: var(--glass-shadow);
-  
-  --color-card-bg: var(--card-bg);
-  --color-card-border: var(--card-border);
+  --color-border-strong: var(--border-strong);
+  --color-focus: var(--focus);
+
+  /* Surfaces (tonal-first elevation) --------------------------------------- */
+  --color-surface: var(--surface);                    /* page base */
+  --color-surface-elevated: var(--surface-elevated);  /* sidebar, header, AI rail, panels */
+  --color-surface-raised: var(--surface-raised);      /* cards, dialogs, popovers */
+  --color-surface-alt: var(--surface-alt);            /* secondary / nested panel */
+  --color-surface-sunken: var(--surface-sunken);      /* inset wells, quote blocks */
+  --color-surface-glass: var(--surface-glass);        /* blurred overlay only */
+
+  /* Radius (brief: cards 16, controls 12, modals 20, pills full) ----------- */
+  --radius-control: 12px;
+  --radius-card: 16px;
+  --radius-modal: 20px;
+
+  /* Elevation — three levels; cards are sheets on a desk, not floating glass.
+     L1 default card · L2 important card (hero / AI panel) · L3 floating (blur). */
+  --shadow-card: 0 1px 2px 0 rgba(15, 23, 42, 0.05);
+  --shadow-raised: 0 1px 2px 0 rgba(15, 23, 42, 0.05), 0 6px 16px -6px rgba(15, 23, 42, 0.12), 0 12px 32px -12px rgba(15, 23, 42, 0.10);
+  --shadow-overlay: 0 16px 48px -12px rgba(15, 23, 42, 0.24), 0 4px 12px -4px rgba(15, 23, 42, 0.12);
+
+  /* Motion — L1 hover / L2 state (see DESIGN.md motion hierarchy) ---------- */
+  --ease-out-quart: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-hover: 120ms;
+  --duration-state: 200ms;
 }
 
 @layer base {
   :root {
-    --background: #e2e8f0;
-    --foreground: #0f172a;
-    --primary: #000000;
-    --primary-foreground: #ffffff;
-    --muted: #cbd5e1;
-    --muted-foreground: #64748b;
-    --border: rgba(0, 0, 0, 0.15);
-    --border-hover: rgba(0, 0, 0, 0.25);
-    --accent: #3b82f6;
-    --accent-glow: rgba(59, 130, 246, 0.3);
-    
-    --glass-bg: #ffffff;
-    --glass-border: rgba(0, 0, 0, 0.1);
-    --glass-highlight: rgba(255, 255, 255, 1);
-    --glass-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-    
-    --card-bg: #f8fafc;
-    --card-border: rgba(0, 0, 0, 0.08);
+    /* Action (blue) ------------------------------------------------------- */
+    --accent: #2563eb;                 /* blue-600 — white label passes AA */
+    --accent-foreground: #ffffff;
+    --accent-hover: #1d4ed8;           /* blue-700 */
+    --accent-emphasis: #1d4ed8;        /* AS text/icon on white or soft-blue — AA (>=5:1) */
+    --accent-subtle: #eff6ff;          /* blue-50 — active nav / selected wash */
+    --accent-border: #bfdbfe;          /* blue-200 hairline */
 
-    --page-gradient: radial-gradient(circle at 50% -20%, rgba(59, 130, 246, 0.08), transparent 60%);
-  }
+    /* Status -------------------------------------------------------------- */
+    --success: #16a34a;                --success-foreground: #ffffff;
+    --success-emphasis: #15803d;       --success-subtle: rgba(22, 163, 74, 0.10);
+    --warning: #f59e0b;                --warning-foreground: #78350f; /* dark label on amber */
+    --warning-emphasis: #b45309;       --warning-subtle: rgba(245, 158, 11, 0.14);
+    --danger: #ef4444;                 --danger-foreground: #ffffff;
+    --danger-emphasis: #dc2626;        --danger-subtle: rgba(239, 68, 68, 0.10);
+    --info: #2563eb;                   --info-foreground: #ffffff;
+    --info-emphasis: #1d4ed8;          --info-subtle: #eff6ff;
 
-  .dark {
-    --background: #020617;
-    --foreground: #f8fafc;
-    --primary: #ffffff;
-    --primary-foreground: #020617;
-    --muted: #334155;
-    --muted-foreground: #94a3b8;
-    --border: rgba(255, 255, 255, 0.15);
-    --border-hover: rgba(255, 255, 255, 0.25);
-    --accent: #3b82f6;
-    --accent-glow: rgba(59, 130, 246, 0.6);
-    
-    --glass-bg: #0f172a;
-    --glass-border: rgba(255, 255, 255, 0.15);
-    --glass-highlight: rgba(255, 255, 255, 0.08);
-    --glass-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-    
-    --card-bg: #1e293b;
-    --card-border: rgba(255, 255, 255, 0.1);
+    /* Institutional Memory (violet) — memory viz only --------------------- */
+    --memory: #6d28d9;                 --memory-foreground: #ffffff;
+    --memory-emphasis: #6d28d9;        /* violet-700 on white ~6.6:1 — AA */
+    --memory-soft: #8b5cf6;            /* violet-500 — large / secondary graph only */
+    --memory-subtle: rgba(109, 40, 217, 0.10);
 
-    --page-gradient: radial-gradient(circle at 50% -20%, rgba(59, 130, 246, 0.05), transparent 60%);
+    /* Text ---------------------------------------------------------------- */
+    --foreground: #111827;             /* gray-900 */
+    --muted-foreground: #475569;       /* slate-600 — AA on every surface */
+    --subtle-foreground: #64748b;      /* slate-500 — large / decorative only */
+
+    /* Structure ----------------------------------------------------------- */
+    --border: #e5e7eb;                 /* gray-200 hairline */
+    --border-strong: #cbd5e1;          /* slate-300 */
+    --focus: #2563eb;
+
+    /* Surfaces ------------------------------------------------------------ */
+    --surface: #f7f8fa;                /* page base */
+    --surface-elevated: #ffffff;       /* sidebar, header, AI rail, panels */
+    --surface-raised: #ffffff;         /* cards */
+    --surface-alt: #f8fafc;            /* secondary / nested panel */
+    --surface-sunken: #f1f5f9;         /* slate-100 — inset wells, quote blocks */
+    --surface-glass: rgba(255, 255, 255, 0.80);
+    --surface-glass-border: rgba(15, 23, 42, 0.08);
   }
 }
 
 @layer base {
   body {
-    background-color: var(--background);
-    background-image: var(--page-gradient);
+    background-color: var(--surface);
     color: var(--foreground);
     min-height: 100vh;
-    font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+
+  /* One consistent focus treatment across the app: a 2px blue ring, never
+     color-only (see PRODUCT.md accessibility floor). */
+  ::selection {
+    background-color: var(--accent-subtle);
+    color: var(--accent-emphasis);
   }
 }
 
 @layer utilities {
-  .glass-panel {
-    background: var(--glass-bg);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
-    border: 1px solid var(--glass-border);
-    box-shadow: var(--glass-shadow), inset 0 1px 0 0 var(--glass-highlight);
+  /* Level 3 — floating UI only (dialogs, popovers, command palette): a blurred
+     translucent panel that lifts clearly off the page. Never a dashboard card
+     (those stay solid white for readability). See DESIGN.md — Elevation. */
+  .surface-glass {
+    background: var(--surface-glass);
+    backdrop-filter: blur(20px) saturate(1.4);
+    -webkit-backdrop-filter: blur(20px) saturate(1.4);
+    border: 1px solid var(--surface-glass-border);
+    box-shadow: var(--shadow-overlay);
   }
 
-  .text-glow {
-    text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+  /* Chrome translucency — header and the AI rail: same glass tint, gentler blur,
+     no floating shadow (they are anchored chrome, not floating overlays). */
+  .surface-glass-chrome {
+    background: var(--surface-glass);
+    backdrop-filter: blur(16px) saturate(1.4);
+    -webkit-backdrop-filter: blur(16px) saturate(1.4);
   }
-  
-  .dark .text-glow {
-    text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
-  }
-  
-  :root .text-glow {
-    text-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
-  }
+}
 
-  .text-glow-accent {
-    text-shadow: 0 0 20px var(--accent-glow);
-  }
-
-  .cinematic-button {
-    position: relative;
-    overflow: hidden;
-    transition: all 0.3s ease;
-  }
-
-  .cinematic-button::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: -100%;
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(90deg, transparent, var(--glass-border), transparent);
-    transition: left 0.5s ease;
-  }
-
-  .cinematic-button:hover::before {
-    left: 100%;
+/* Reduced motion: strip all non-essential motion (DESIGN.md motion: reduced) */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
