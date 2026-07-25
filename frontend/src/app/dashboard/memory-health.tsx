@@ -129,9 +129,14 @@ export function MemoryHealth({
             </div>
             <div className="mt-4 text-[10px] font-semibold uppercase tracking-[0.08em] text-subtle-foreground">Coverage</div>
             <div className="mt-1">
+              <Row label="Documents" value={String(memory.documents)} />
               <Row label="Entities" value={memory.entities.toLocaleString()} />
               <Row label="Edges" value={memory.edges.toLocaleString()} />
-              <Row label="Communities" value={String(memory.communities)} />
+              <Row
+                label="Relation types"
+                value={String(memory.relationTypes)}
+                hint="Distinct ontology relations actually present in the graph — APPROVED, OPPOSED, SUPERSEDES, ALIAS_OF and the rest."
+              />
             </div>
           </div>
 

@@ -12,7 +12,43 @@ export type MemoryHealth = {
   quarantined: number;
   entities: number;
   edges: number;
-  communities: number;
+  /** Distinct ontology relation types actually present in the graph. */
+  relationTypes: number;
+  /** Source documents ingested into the corpus. */
+  documents: number;
+};
+
+/**
+ * One measured evaluation metric. `value / total` is the raw count so the card can
+ * show the fraction as well as the ratio — "17 / 21" is a more honest research
+ * claim than "81%" alone, because it exposes how small the denominator is.
+ */
+export type QualityMetric = {
+  id: string;
+  label: string;
+  value: number;
+  total: number;
+  /** What the number means, in board English. */
+  hint: string;
+};
+
+/**
+ * Graph quality, split by the SAME three-tier structure the eval harness uses
+ * (see `docs/releases/meridian-p1.0.3.md`). The distinction is the point:
+ * `verified` is deterministic and gated — it reruns identically with no cloud
+ * LLM in the loop — while `observed` depends on a non-deterministic model and
+ * is reported, never gated. Collapsing the two into one "health %" is precisely
+ * the thing this panel exists to stop.
+ */
+export type GraphQuality = {
+  /** Required tier — the p1.0.3 mechanism gate. Deterministic, no LLM. */
+  verified: QualityMetric[];
+  /** Observed tier — planner behaviour, LLM-dependent. */
+  observed: QualityMetric[];
+  /** Measured contribution of the grounding stage: same engine, grounding off vs on. */
+  ablation: { off: number; on: number };
+  /** Provenance so a reader can reproduce every number above. */
+  source: { run: string; files: string[] };
 };
 
 /** A graph fact that cleared verification + human approval — shown with its evidence. */
@@ -58,6 +94,7 @@ export type DashboardInsights = {
   /** How ready the next board pack is, by track. */
   readiness: BoardReadiness;
   memory: MemoryHealth;
+  quality: GraphQuality;
   approvedFacts: ApprovedFact[];
   decisions: Decision[];
   /** Weekly review throughput, oldest → newest. Feeds the sparkline. */
@@ -87,13 +124,68 @@ const insights: DashboardInsights = {
     documents: 70,
     approvals: 40,
   },
+  // CORRECTED 2026-07-26. These previously read 731 entities / 1277 edges / 53
+  // communities, which were the *graphify snapshot of this repository's source
+  // code* at tag p1.0.2 — not institutional memory at all. Presenting repo
+  // metadata as board memory is a correctness problem, not a cosmetic one.
+  // The figures below are the real seeded gold graph from `data/demo/`
+  // (counted from the GOLD_* tables in `src/callosum/evaluate.py`).
   memory: {
-    verifiedPct: 100,
-    pendingReview: 5,
-    quarantined: 4,
-    entities: 731,
-    edges: 1277,
-    communities: 53,
+    verifiedPct: 100, // true by construction: verify() refuses an edge with no located quote
+    pendingReview: 5, // demo value — no approval queue is wired to the frontend yet
+    quarantined: 4, // demo value — see docs/findings.md for real quarantine counts
+    entities: 38,
+    edges: 40,
+    relationTypes: 14,
+    documents: 16,
+  },
+  // Every number here is measured, reproducible, and traceable to a file in the
+  // repo. Nothing in this block is invented — that is the whole point of it.
+  quality: {
+    verified: [
+      {
+        id: "candidate",
+        label: "Candidate recall",
+        value: 22,
+        total: 22,
+        hint: "Questions whose gold entity appeared in the retrieved candidate set. A hard ceiling on everything downstream — the planner may only ground to names this stage surfaced.",
+      },
+      {
+        id: "traversal",
+        label: "Traversal",
+        value: 21,
+        total: 21,
+        hint: "Given a correct starting entity, the graph returned every required edge. Measured on gold seeds, so it isolates the engine from the linking stage above it.",
+      },
+      {
+        id: "rbac",
+        label: "RBAC fail-closed",
+        value: 1,
+        total: 1,
+        hint: "A caller below the required clearance was refused the restricted content, in SQL and in Cypher, before it ever reached the model.",
+      },
+    ],
+    observed: [
+      {
+        id: "grounding",
+        label: "Entity grounding",
+        value: 17,
+        total: 21,
+        hint: "The planner mapped the question's wording to the right node — e.g. \"metered billing\" to \"Pricing Model B\". The Grounding Error Rate (19%) is simply the inverse of this number, not a separate measurement.",
+      },
+      {
+        id: "precision",
+        label: "Grounding precision",
+        value: 1,
+        total: 2,
+        hint: "Questions with no referent in the graph at all, where the correct behaviour is to abstain. The known open weakness: the linker does not always refuse.",
+      },
+    ],
+    ablation: { off: 38, on: 100 },
+    source: {
+      run: "2026-07-20",
+      files: ["eval/mechanism.csv", "eval/results.md"],
+    },
   },
   approvedFacts: [
     {
