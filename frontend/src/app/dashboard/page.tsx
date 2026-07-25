@@ -19,6 +19,7 @@ import { MeetingHero } from "./meeting-hero";
 import { BoardReadiness } from "./board-readiness";
 import { NeedsYou, type ActionCounts } from "./needs-you";
 import { MemoryHealth } from "./memory-health";
+import { MemoryGrowth } from "./memory-growth";
 import { RecentDecisions } from "./recent-decisions";
 import { ApprovedFacts } from "./approved-facts";
 
@@ -86,6 +87,7 @@ export default function DashboardPage() {
             reviewVelocity={insights?.reviewVelocity ?? null}
             statusSegments={statusSegments}
           />
+          <MemoryGrowth growth={insights?.memoryGrowth ?? null} />
           <div className="grid gap-8 lg:grid-cols-2">
             <RecentDecisions decisions={insights?.decisions ?? null} />
             <ApprovedFacts facts={insights?.approvedFacts ?? null} />
