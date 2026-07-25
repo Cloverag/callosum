@@ -229,6 +229,25 @@ Hairline borders, `control` (12px) / `card` (16px) radii, pill badges, quiet def
 - **Institutional Memory (violet zone).** The graph-health gauge and review-throughput sparkline render in `memory-emphasis` violet — the only place violet appears. Quality rows keep status dots (green/amber/red).
 - **Approved-facts card.** Each fact shows its plain statement, the verbatim source quote in a sunken well, a **blue source link**, and a **green Verified** marker — evidence, not summaries.
 
+### Registry components
+
+Third-party shadcn registries are available — **KokonutUI** (`@kokonutui`), **Animate UI** (`@animate-ui`), and **Bklit UI** (`@bklit`) for charts. They are configured in `components.json` and install into `src/components/vendor/`, never into `ui/`: `ui/` is the design system and the CLI must not be able to overwrite it.
+
+Registry source is written in shadcn's token vocabulary, not ours. `src/app/shadcn-compat.css` maps that vocabulary onto our semantic tokens (`background`→`surface`, `card`→`surface-raised`, `primary`→`accent`, `muted`→`surface-sunken`, `ring`→`focus`, …), so a vendored component inherits Meridian colour without edits. This does not weaken the Semantic-Only rule — the bridge contains no hex and no palette steps, only aliases to tokens `globals.css` already owns.
+
+**One token cannot be bridged: `accent`.** shadcn means a subtle hover surface; we mean ACTION blue, and shipped components depend on our meaning. `npm run retoken` rewrites the shadcn sense (`bg-accent`→`bg-surface-sunken`, `text-accent-foreground`→`text-foreground`) plus the radius utilities (`rounded-lg`→12px, `rounded-xl`→16px) in vendored files only. **Run it after every `shadcn add`** — skipping it renders vendored hover states as solid blue bars.
+
+**Charts.** `chart-1…5` is a *sequential violet ramp* scoped to memory surfaces, because violet is reserved for Institutional Memory and blue for action — a generic categorical rainbow is not available to us. For non-memory charts (e.g. meeting mix by status) use the status tokens directly; they already carry the right meaning. A categorical palette for genuinely unordered non-memory series is an **open decision**, not something to improvise per chart.
+
+**Multi-series memory charts use emphasis, never two steps of one violet.** One series carries `memory` violet as the emphasised mark; the rest recede to `subtle-foreground` grey. This is measured, not preferred: violet-700 against violet-500 scores **ΔE 11.7** for normal vision — below the 15 floor, i.e. hard to tell apart *even with full colour vision* — while violet against slate-500 scores **21.9**. Pair it with a mark-shape difference too (filled area for the emphasised series, bare line for context) so identity never rests on hue alone.
+
+Rules that follow from that, and apply to every chart here:
+- **Never a dual axis.** Two measures at different scales become two charts or one indexed to a common base.
+- **A legend is always present at two or more series**, and carries each series' current value so it doubles as the direct label. Never a number on every data point.
+- **Text wears ink tokens, never the series colour** — only the swatch is coloured.
+- **A grey series below 3:1 contrast obliges a non-visual route to the numbers.** The hover tooltip is not enough on its own; ship the table view alongside it.
+- Gridlines and axes are solid hairlines one step off the surface — never dashed.
+
 ## 6. Do's and Don'ts
 
 ### Do
@@ -243,7 +262,8 @@ Hairline borders, `control` (12px) / `card` (16px) radii, pill badges, quiet def
 ### Don't
 - **Don't** style like an enterprise board portal (Diligent, Boardvantage) or a generic SaaS dashboard (gradient hero-metric tiles, identical icon-heading-text card grids).
 - **Don't** use violet for buttons or navigation, or blue for success/warning — each color has one meaning.
-- **Don't** use gradients, neon, glow-as-default, or glass on content cards.
+- **Don't** use neon, glow-as-default, or glass on content cards.
+- **Don't** use gradients — with one **named exception**: the ambient ground wash on `body::before` (two ≤5%-alpha radials, fixed to the viewport). It exists so translucent chrome has something behind it to blur; without it the glass surfaces read as flat white. It never appears on a card, a button, a metric tile, or text. *(Amended 2026-07-26 at the owner's request for "a little glass look" — a gradient anywhere else is still a defect.)*
 - **Don't** ship sci-fi copy — write plainly: "Loading…", "No conflicts pending review."
 - **Don't** hardcode off-token hex or palette-step colors in components.
 - **Don't** use a `border-left`/`border-right` >1px as a colored accent stripe; use full hairlines or background tints.

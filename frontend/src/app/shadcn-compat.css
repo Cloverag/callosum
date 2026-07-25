@@ -1,0 +1,129 @@
+/* ============================================================================
+   shadcn registry compatibility layer
+   ----------------------------------------------------------------------------
+   KokonutUI, Animate UI, and Bklit UI are shadcn *registries*: the CLI copies
+   their source into this repo, and that source is written against shadcn's
+   token vocabulary (`bg-background`, `text-muted-foreground`, `bg-primary`, …).
+
+   Meridian does not use that vocabulary. Its single source of truth is the
+   semantic token layer in `globals.css` (`surface`, `surface-raised`, `accent`,
+   `danger`, `memory`, …). Rather than rewrite every vendored component by hand,
+   this file maps shadcn's names ONTO Meridian's tokens. A registry component
+   then renders in the Meridian design language with no edits.
+
+   This does not weaken the Semantic-Only rule from DESIGN.md — nothing here is
+   a raw hex or a palette step. Every value below is an alias to a token that
+   `globals.css` already owns. Change a colour there and vendored components
+   follow automatically.
+
+   ⚠ ONE TOKEN CANNOT BE BRIDGED — see the `accent` note at the bottom.
+   ========================================================================== */
+
+@theme {
+  /* Page + text ------------------------------------------------------------
+     shadcn's `background` is the page base; Meridian calls that `surface`.
+     `foreground` / `muted-foreground` already exist with the same meaning. */
+  --color-background: var(--surface);
+
+  /* Containers -------------------------------------------------------------
+     shadcn draws cards and popovers on the same raised white sheet Meridian
+     uses for `surface-raised`. */
+  --color-card: var(--surface-raised);
+  --color-card-foreground: var(--foreground);
+  --color-popover: var(--surface-raised);
+  --color-popover-foreground: var(--foreground);
+
+  /* Actions ----------------------------------------------------------------
+     shadcn's `primary` is the one dominant action colour. In Meridian that is
+     ACTION blue — the same token `Button variant="primary"` consumes. */
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--accent-foreground);
+
+  /* shadcn's `secondary` is a quiet filled surface, not a second brand colour.
+     Meridian's nested-panel tone is the honest match. */
+  --color-secondary: var(--surface-alt);
+  --color-secondary-foreground: var(--foreground);
+
+  /* `muted` in shadcn is a SURFACE (muted-foreground is the text). Meridian's
+     inset well tone carries the same weight. */
+  --color-muted: var(--surface-sunken);
+
+  /* Destructive ------------------------------------------------------------ */
+  --color-destructive: var(--danger);
+  --color-destructive-foreground: var(--danger-foreground);
+
+  /* Structure --------------------------------------------------------------
+     `border` already matches. shadcn's `input` is the control hairline and its
+     `ring` is the focus colour — Meridian names that `focus`, and DESIGN.md
+     requires one consistent 2px blue ring app-wide. */
+  --color-input: var(--border);
+  --color-ring: var(--focus);
+
+  /* Sidebar block ----------------------------------------------------------
+     Animate UI's Radix sidebar and several KokonutUI shells read these. The
+     Meridian shell is a white panel on a neutral page. */
+  --color-sidebar: var(--surface-elevated);
+  --color-sidebar-foreground: var(--foreground);
+  --color-sidebar-primary: var(--accent);
+  --color-sidebar-primary-foreground: var(--accent-foreground);
+  --color-sidebar-accent: var(--accent-subtle);
+  --color-sidebar-accent-foreground: var(--accent-emphasis);
+  --color-sidebar-border: var(--border);
+  --color-sidebar-ring: var(--focus);
+
+  /* Chart series (Bklit UI) ------------------------------------------------
+     DESIGN.md reserves violet for Institutional Memory and blue for ACTION, so
+     a generic rainbow categorical palette is not available to us. This is a
+     SEQUENTIAL violet ramp, scoped to memory surfaces (graph health, verified-%
+     trend, provenance) where charts actually live today, with a neutral tail
+     for an "other" bucket.
+
+     OPEN DECISION: a categorical palette for NON-memory charts (e.g. meeting
+     mix by status) is not settled. Use the status tokens directly for those —
+     they already carry the right meaning — and do not reach for chart-N. */
+  --color-chart-1: var(--memory);        /* violet-700 */
+  --color-chart-2: var(--memory-soft);   /* violet-500 */
+  --color-chart-3: #a78bfa;              /* violet-400 */
+  --color-chart-4: #c4b5fd;              /* violet-300 */
+  --color-chart-5: var(--subtle-foreground); /* neutral "other" */
+}
+
+@layer base {
+  :root {
+    /* NOTE — Bklit's chart variables were removed with the library (2026-07-26).
+       Its charts are a time-series renderer, and the real data is ten ordinal
+       points (documents ingested), so the dashboard chart is hand-rolled SVG on
+       the core tokens instead. If a Bklit chart is ever re-added, it needs the
+       ~24 `--chart-*` custom properties back — see the git history of this file
+       and `src/components/vendor/README.md`. */
+
+    /* Raw `--radius` for the handful of registry components that read
+       `var(--radius)` directly instead of a `rounded-*` utility. Meridian's
+       control radius is 12px (DESIGN.md — Radius). NOTE: the Tailwind radius
+       SCALE (`rounded-sm|md|lg|xl`) is deliberately NOT overridden here —
+       Meridian components already use `rounded-md` / `rounded-lg` at their
+       stock values, and redefining them would silently restyle shipped UI.
+       Vendored components get the Meridian radius via `scripts/retoken.mjs`. */
+    --radius: 12px;
+  }
+}
+
+/* ----------------------------------------------------------------------------
+   ⚠ THE ONE COLLISION: `accent`
+
+   shadcn  → `accent` is a SUBTLE HOVER SURFACE (menu item hover, `focus:bg-accent`).
+   Meridian → `accent` is ACTION BLUE (solid button fill, active nav, links).
+
+   Both meanings compete for `--color-accent`, and Meridian's wins because 18
+   call sites in `src/components/` already depend on it. Aliasing it here would
+   turn every shipped primary button into a hover wash — or every vendored menu
+   hover into a solid blue bar.
+
+   So it is NOT bridged. Instead `scripts/retoken.mjs` rewrites the shadcn sense
+   out of vendored files after install:
+
+       bg-accent            → bg-surface-sunken
+       text-accent-foreground → text-foreground
+
+   Run it after every `shadcn add`. See DESIGN.md — "Registry components".
+   -------------------------------------------------------------------------- */
