@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "jest",
+    "test:watch": "jest --watch",
     "retoken": "node scripts/retoken.mjs",
     "retoken:check": "node scripts/retoken.mjs --check"
   },
