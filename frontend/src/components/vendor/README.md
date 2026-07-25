@@ -12,11 +12,33 @@ hand-authored Meridian primitives (Button, Card, Badge, Dialog, Gauge, …), and
 ## Adding a component
 
 ```bash
-npx shadcn@latest add @animate-ui/tooltip     # animated Radix primitives
+npx shadcn@latest add @animate-ui/components-radix-tooltip
 npx shadcn@latest add @kokonutui/particle-button
-npx shadcn@latest add @bklit/area-chart       # charts
+npx shadcn@latest add @bklit/area-chart
 npm run retoken                               # ← always, see below
 ```
+
+**Never run `npx shadcn init`.** It rewrites `src/app/globals.css` with shadcn's
+default token block, which would clobber the semantic layer. `components.json`
+is hand-written for exactly this reason — `add` works without `init`.
+
+### Registry gotchas, learned the hard way
+
+- **Animate UI names are hyphenated, not slashed.** It is
+  `components-radix-tooltip`, not `radix/tooltip` — and each component exists in
+  `animate` / `base` / `radix` / `headless` flavours, plus a `primitives-*`
+  (unstyled) variant. 580 items; fetch `https://animate-ui.com/r/registry.json`
+  to search them.
+- **Bklit redirects.** `ui.bklit.com/r/*` 301s to `bklit.com/r/*`;
+  `components.json` pins the final URL so the CLI never has to follow it.
+- **Bklit charts are `registry:component`, not `registry:ui`,** so they land in
+  `src/components/charts/` rather than here. `retoken` scans both.
+- **Don't install `@kokonutui/utils`.** It is `registry:lib` targeting
+  `/lib/utils.ts` and would overwrite our `cn` — which is already the same
+  clsx + tailwind-merge helper it ships.
+- **Bklit pulls `@visx/*` at `4.0.1-alpha.0`** (not Recharts) plus `motion`.
+  We ship `framer-motion@12`; `motion` is the same library renamed, so this adds
+  a second copy until we migrate the imports.
 
 ## Why `retoken` is not optional
 
