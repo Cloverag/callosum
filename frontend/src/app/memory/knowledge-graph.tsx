@@ -89,23 +89,48 @@ function MemoryNode({ data }: NodeProps<Node<NodePayload>>) {
 
 const nodeTypes = { memory: MemoryNode };
 
+/**
+ * One filter at a time, by construction.
+ *
+ * There are now three ways to narrow the picture — by source document, by entity
+ * type, by relation type — and they are mutually exclusive. Modelling them as a
+ * discriminated union rather than three nullable props means contradictory
+ * states cannot be represented, so no precedence rules are needed between them.
+ * A node selection is separate and always wins: clicking a node is the most
+ * specific gesture on the page.
+ */
+export type GraphFocus =
+  | { kind: "document"; value: string }
+  | { kind: "entityType"; value: string }
+  | { kind: "relation"; value: string };
+
 export function KnowledgeGraph({
   view,
   onSelect,
   selected,
-  focusDocument = null,
+  focus = null,
 }: {
   view: GraphView;
   onSelect: (id: string | null) => void;
   selected: string | null;
-  /** When set, everything this document did not contribute recedes. */
-  focusDocument?: string | null;
+  focus?: GraphFocus | null;
 }) {
-  /**
-   * Two ways to narrow the picture, and a node selection always wins — it is the
-   * more specific gesture, so clicking a node while a document filter is active
-   * answers the question the click asked rather than the filter's.
-   */
+  /** Which edges the active filter is about — drives both lighting and labels. */
+  const focusEdges = useMemo(() => {
+    if (!focus) return null;
+    const set = new Set<string>();
+    for (const e of view.edges) {
+      const hit =
+        focus.kind === "document"
+          ? e.document === focus.value
+          : focus.kind === "relation"
+            ? e.relation === focus.value
+            : false;
+      if (hit) set.add(e.id);
+    }
+    return set;
+  }, [focus, view.edges]);
+
   const neighbours = useMemo(() => {
     if (selected) {
       const set = new Set<string>([selected]);
@@ -115,22 +140,27 @@ export function KnowledgeGraph({
       }
       return set;
     }
-    if (focusDocument) {
-      const set = new Set<string>();
-      for (const n of view.nodes) if (n.document === focusDocument) set.add(n.id);
-      // An edge extracted from this document also lights the entities it joins,
-      // even when those entities were first introduced elsewhere — otherwise a
-      // relationship would appear to connect nothing.
-      for (const e of view.edges) {
-        if (e.document === focusDocument) {
-          set.add(e.source);
-          set.add(e.target);
-        }
-      }
+    if (!focus) return null;
+
+    const set = new Set<string>();
+    if (focus.kind === "entityType") {
+      for (const n of view.nodes) if (n.type === focus.value) set.add(n.id);
       return set;
     }
-    return null;
-  }, [selected, focusDocument, view.edges, view.nodes]);
+    if (focus.kind === "document") {
+      for (const n of view.nodes) if (n.document === focus.value) set.add(n.id);
+    }
+    // An edge matched by the filter also lights the entities it joins, even when
+    // those were introduced elsewhere — otherwise a relationship would appear to
+    // connect nothing.
+    for (const e of view.edges) {
+      if (focusEdges?.has(e.id)) {
+        set.add(e.source);
+        set.add(e.target);
+      }
+    }
+    return set;
+  }, [selected, focus, focusEdges, view.edges, view.nodes]);
 
   const nodes: Node<NodePayload>[] = useMemo(
     () =>
@@ -149,12 +179,15 @@ export function KnowledgeGraph({
   const edges: Edge[] = useMemo(
     () =>
       view.edges.map((e) => {
-        const fromDoc = focusDocument !== null && e.document === focusDocument;
-        const lit = focusDocument !== null && !selected
-          ? fromDoc
-          : !neighbours || (neighbours.has(e.source) && neighbours.has(e.target));
+        const matched = focusEdges?.has(e.id) ?? false;
+        const lit =
+          selected !== null || !focus
+            ? !neighbours || (neighbours.has(e.source) && neighbours.has(e.target))
+            : focus.kind === "entityType"
+              ? neighbours!.has(e.source) && neighbours!.has(e.target)
+              : matched;
         const onPath =
-          selected !== null ? e.source === selected || e.target === selected : fromDoc;
+          selected !== null ? e.source === selected || e.target === selected : matched;
         return {
           id: e.id,
           source: e.source,
@@ -176,7 +209,7 @@ export function KnowledgeGraph({
           },
         };
       }),
-    [view.edges, neighbours, selected, focusDocument]
+    [view.edges, neighbours, selected, focus, focusEdges]
   );
 
   const handleNodeClick = useCallback(

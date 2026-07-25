@@ -6,8 +6,10 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { graphApi, NODE_TYPE_LABEL, type GraphView } from "@/lib/graph";
-import { KnowledgeGraph, EvidencePanel } from "./knowledge-graph";
+import { entityTypeDistribution, relationTypeDistribution } from "@/lib/graph-stats";
+import { KnowledgeGraph, EvidencePanel, type GraphFocus } from "./knowledge-graph";
 import { ProvenanceTimeline } from "./provenance-timeline";
+import { OntologyBars } from "./ontology-bars";
 
 /**
  * Institutional Memory — the verified knowledge graph itself.
@@ -24,7 +26,7 @@ import { ProvenanceTimeline } from "./provenance-timeline";
 export default function MemoryPage() {
   const [view, setView] = useState<GraphView | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
-  const [activeDocument, setActiveDocument] = useState<string | null>(null);
+  const [focus, setFocus] = useState<GraphFocus | null>(null);
   const [asFounder, setAsFounder] = useState(true);
 
   useEffect(() => {
@@ -34,23 +36,41 @@ export default function MemoryPage() {
       setView(v);
       // Drop a selection that this clearance can no longer see.
       setSelected((s) => (s && v.nodes.some((n) => n.id === s) ? s : null));
-      setActiveDocument((d) =>
-        d && (v.nodes.some((n) => n.document === d) || v.edges.some((e) => e.document === d))
-          ? d
-          : null
-      );
+      // A filter whose subject this clearance can no longer see is dropped, so
+      // the page never shows an active filter matching nothing.
+      setFocus((f) => {
+        if (!f) return null;
+        const stillThere =
+          f.kind === "document"
+            ? v.nodes.some((n) => n.document === f.value) ||
+              v.edges.some((e) => e.document === f.value)
+            : f.kind === "entityType"
+              ? v.nodes.some((n) => n.type === f.value)
+              : v.edges.some((e) => e.relation === f.value);
+        return stillThere ? f : null;
+      });
     });
     return () => {
       live = false;
     };
   }, [asFounder]);
 
-  /** Selecting a node answers a more specific question than a document filter,
-   *  so it clears the filter rather than compounding with it. */
+  /** Selecting a node answers a more specific question than any filter, so it
+   *  clears the filter rather than compounding with it. */
   const selectNode = (id: string | null) => {
     setSelected(id);
-    if (id) setActiveDocument(null);
+    if (id) setFocus(null);
   };
+
+  /** Applying a filter is a different question from the open node, so it drops
+   *  the selection. Only one thing narrows the canvas at a time. */
+  const applyFocus = (next: GraphFocus | null) => {
+    setFocus(next);
+    setSelected(null);
+  };
+
+  const entityTypes = view ? entityTypeDistribution(view) : [];
+  const relationTypes = view ? relationTypeDistribution(view) : [];
 
   const withheld = (view?.withheldNodes ?? 0) + (view?.withheldEdges ?? 0);
 
@@ -133,7 +153,7 @@ export default function MemoryPage() {
               view={view}
               selected={selected}
               onSelect={selectNode}
-              focusDocument={activeDocument}
+              focus={focus}
             />
           ) : (
             <div className="h-full w-full animate-pulse bg-surface-sunken" />
@@ -149,16 +169,40 @@ export default function MemoryPage() {
             {view && (
               <ProvenanceTimeline
                 view={view}
-                activeDocument={activeDocument}
-                onSelectDocument={(d) => {
-                  setActiveDocument(d);
-                  setSelected(null);
-                }}
+                activeDocument={focus?.kind === "document" ? focus.value : null}
+                onSelectDocument={(d) =>
+                  applyFocus(d ? { kind: "document", value: d } : null)
+                }
                 onSelectNode={selectNode}
               />
             )}
           </div>
         </div>
+
+        {/* What the graph is made of. Two distributions, one component — the
+            same comparison in both cases, so the same form. */}
+        {view && (
+          <div className="grid gap-5 xl:grid-cols-2">
+            <div className="rounded-[16px] border border-border bg-surface-raised px-4 py-4 shadow-card">
+              <OntologyBars
+                title="Entity types"
+                caption="What the ontology allows to exist, and how much of each the corpus actually produced."
+                items={entityTypes}
+                activeKey={focus?.kind === "entityType" ? focus.value : null}
+                onSelect={(k) => applyFocus(k ? { kind: "entityType", value: k } : null)}
+              />
+            </div>
+            <div className="rounded-[16px] border border-border bg-surface-raised px-4 py-4 shadow-card">
+              <OntologyBars
+                title="Relationship types"
+                caption="How entities connect. ALIAS_OF is identity resolution; SUPERSEDES is a decision reversing an earlier one."
+                items={relationTypes}
+                activeKey={focus?.kind === "relation" ? focus.value : null}
+                onSelect={(k) => applyFocus(k ? { kind: "relation", value: k } : null)}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* A canvas is not reachable without a pointer and sight. The same graph,
