@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { Gauge } from "@/components/ui/gauge";
@@ -74,8 +75,15 @@ export function MemoryHealth({
 }) {
   return (
     <Card className="overflow-hidden">
-      <div className="border-b border-border px-6 py-4">
+      <div className="flex items-baseline justify-between gap-4 border-b border-border px-6 py-4">
         <h3 className="text-sm font-semibold text-foreground">Graph health</h3>
+        {/* The band reports on the graph; until now there was no way to reach it. */}
+        <Link
+          href="/memory"
+          className="rounded-[6px] text-xs text-accent-emphasis hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised"
+        >
+          View the graph →
+        </Link>
       </div>
 
       {memory === null ? (
