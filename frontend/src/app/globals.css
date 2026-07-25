@@ -1,4 +1,8 @@
 @import "tailwindcss";
+/* Maps shadcn's token vocabulary onto the semantic layer below, so components
+   copied in from the KokonutUI / Animate UI / Bklit registries render in the
+   Meridian design language unedited. Read that file before adding a registry. */
+@import "./shadcn-compat.css";
 
 /* ============================================================================
    Meridian Board OS — semantic token layer (v2: blue-on-neutral, light-only)

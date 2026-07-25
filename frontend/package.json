@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "retoken": "node scripts/retoken.mjs",
+    "retoken:check": "node scripts/retoken.mjs --check"
   },
   "dependencies": {
     "clsx": "^2.1.1",
