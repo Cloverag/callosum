@@ -1,0 +1,163 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-22T22:30:00Z",
+  "title": "Design System: Meridian Board OS",
+  "extensions": {
+    "colorMeta": {
+      "accent": {
+        "role": "primary",
+        "displayName": "Action Blue",
+        "canonical": "#2563eb",
+        "tonalRamp": ["#172554", "#1e3a8a", "#1e40af", "#1d4ed8", "#2563eb", "#3b82f6", "#93c5fd", "#eff6ff"]
+      },
+      "memory": {
+        "role": "identity",
+        "displayName": "Institutional Memory Violet",
+        "canonical": "#6d28d9",
+        "tonalRamp": ["#2e1065", "#4c1d95", "#5b21b6", "#6d28d9", "#7c3aed", "#8b5cf6", "#c4b5fd", "#f5f3ff"]
+      },
+      "success": {
+        "role": "status",
+        "displayName": "Success Green",
+        "canonical": "#16a34a",
+        "tonalRamp": ["#052e16", "#14532d", "#15803d", "#16a34a", "#22c55e", "#4ade80", "#86efac", "#dcfce7"]
+      },
+      "warning": {
+        "role": "status",
+        "displayName": "Attention Amber",
+        "canonical": "#f59e0b",
+        "tonalRamp": ["#451a03", "#78350f", "#92400e", "#b45309", "#d97706", "#f59e0b", "#fcd34d", "#fef3c7"]
+      },
+      "danger": {
+        "role": "status",
+        "displayName": "Critical Red",
+        "canonical": "#ef4444",
+        "tonalRamp": ["#450a0a", "#7f1d1d", "#991b1b", "#b91c1c", "#dc2626", "#ef4444", "#fca5a5", "#fee2e2"]
+      },
+      "surface-base": {
+        "role": "neutral",
+        "displayName": "Neutral Surface (Light)",
+        "canonical": "#f7f8fa",
+        "tonalRamp": ["#0f172a", "#334155", "#475569", "#64748b", "#94a3b8", "#cbd5e1", "#f1f5f9", "#ffffff"]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#111827",
+        "tonalRamp": ["#111827", "#334155", "#475569", "#64748b", "#94a3b8", "#cbd5e1", "#e5e7eb", "#f8fafc"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Page titles ('Dashboard') — the largest type on any working surface. 30px/700." },
+      "title": { "displayName": "Title", "purpose": "Object names, meeting-hero title, panel titles. 22px/600." },
+      "section": { "displayName": "Section", "purpose": "Card / section headings. 18px/600." },
+      "body": { "displayName": "Body", "purpose": "Default text: descriptions, quotes, table cells. Prose capped 65-75ch. 14px/400." },
+      "metadata": { "displayName": "Metadata", "purpose": "Dense secondary data: shortcut chips, list values, meeting meta. 13px/500." },
+      "label": { "displayName": "Label", "purpose": "Control labels, badges, counts. 12px/600." },
+      "caption": { "displayName": "Caption", "purpose": "The smallest metadata tier: timestamps, source captions, rail status. 11px/500." },
+      "micro": { "displayName": "Micro", "purpose": "Section eyebrows and provenance micro-labels only. 10px/600 uppercase tracked." }
+    },
+    "shadows": [
+      { "name": "card", "value": "0 1px 2px 0 rgba(15,23,42,0.05)", "purpose": "Level 1 — normal white cards and controls: a very subtle lift." },
+      { "name": "raised", "value": "0 1px 2px 0 rgba(15,23,42,0.05), 0 6px 16px -6px rgba(15,23,42,0.12), 0 12px 32px -12px rgba(15,23,42,0.10)", "purpose": "Level 2 — important cards (Meeting Hero); stronger elevation, no color change." },
+      { "name": "overlay", "value": "0 16px 48px -12px rgba(15,23,42,0.24), 0 4px 12px -4px rgba(15,23,42,0.12)", "purpose": "Level 3 — floating UI (dialogs, popovers, command palette), paired with blur." }
+    ],
+    "motion": [
+      { "name": "ease-out-quart", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Primary easing for reveals and state transitions." },
+      { "name": "duration-hover", "value": "120ms", "purpose": "L1 hover / press feedback (100-150ms)." },
+      { "name": "duration-state", "value": "200ms", "purpose": "L2 state transitions: dialog/popover open-close, list reflow (180-250ms)." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "xl", "value": "1280px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single most important action per surface. Solid blue fill, white label, 12px radius.",
+      "html": "<button class=\"ds-btn-primary\">Prepare meeting</button>",
+      "css": ".ds-btn-primary { display:inline-flex; align-items:center; gap:8px; background:var(--accent); color:var(--accent-foreground); border:none; border-radius:12px; padding:10px 20px; font-size:0.875rem; font-weight:500; line-height:1; cursor:pointer; box-shadow:var(--shadow-card); transition:background 0.15s cubic-bezier(0.16,1,0.3,1), transform 0.15s; } .ds-btn-primary:hover { background:var(--accent-hover); } .ds-btn-primary:active { transform:translateY(1px); } .ds-btn-primary:focus-visible { outline:2px solid var(--focus); outline-offset:2px; } .ds-btn-primary:disabled { opacity:0.5; cursor:not-allowed; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Supporting action. White with a gray border, 12px radius.",
+      "html": "<button class=\"ds-btn-secondary\">View agenda</button>",
+      "css": ".ds-btn-secondary { display:inline-flex; align-items:center; gap:8px; background:var(--surface-raised); color:var(--foreground); border:1px solid var(--border); border-radius:12px; padding:10px 20px; font-size:0.875rem; font-weight:500; line-height:1; cursor:pointer; box-shadow:var(--shadow-card); transition:border-color 0.15s, background 0.15s; } .ds-btn-secondary:hover { border-color:var(--border-strong); background:var(--surface-alt); } .ds-btn-secondary:focus-visible { outline:2px solid var(--focus); outline-offset:2px; }"
+    },
+    {
+      "name": "Search Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Workspace search. White fill, 12px radius, leading icon, blue border-shift + soft ring on focus.",
+      "html": "<div class=\"ds-field\"><svg class=\"ds-field-icon\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"11\" cy=\"11\" r=\"8\"></circle><path d=\"m21 21-4.3-4.3\"></path></svg><input class=\"ds-input\" type=\"text\" placeholder=\"Search Meridian…\" /></div>",
+      "css": ".ds-field { position:relative; display:inline-flex; align-items:center; } .ds-field-icon { position:absolute; left:12px; color:var(--muted-foreground); pointer-events:none; } .ds-input { background:var(--surface-raised); color:var(--foreground); border:1px solid var(--border); border-radius:12px; padding:0 14px 0 36px; height:40px; font-size:0.875rem; width:288px; } .ds-input::placeholder { color:var(--muted-foreground); } .ds-input:focus-visible { outline:none; border-color:var(--accent); box-shadow:0 0 0 2px color-mix(in srgb, var(--focus) 40%, transparent); }"
+    },
+    {
+      "name": "Status Badge",
+      "kind": "chip",
+      "refersTo": "badge",
+      "description": "Meeting status / review outcome. Full-radius pill, neutral by default; a colored tone only for real status.",
+      "html": "<span class=\"ds-badge\">Scheduled</span>",
+      "css": ".ds-badge { display:inline-flex; align-items:center; gap:4px; background:var(--surface-sunken); color:var(--muted-foreground); border:1px solid var(--border); border-radius:9999px; padding:2px 10px; font-size:0.6875rem; font-weight:600; }"
+    },
+    {
+      "name": "Nav Item",
+      "kind": "nav",
+      "refersTo": "nav-item",
+      "description": "Sidebar navigation row. Muted at rest; active = soft-blue wash with blue label and icon (no side-stripe). Route-derived.",
+      "html": "<a class=\"ds-nav-item ds-nav-item--active\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"3\" width=\"7\" height=\"7\"></rect><rect x=\"14\" y=\"3\" width=\"7\" height=\"7\"></rect><rect x=\"14\" y=\"14\" width=\"7\" height=\"7\"></rect><rect x=\"3\" y=\"14\" width=\"7\" height=\"7\"></rect></svg><span>Dashboard</span></a>",
+      "css": ".ds-nav-item { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:10px; color:var(--muted-foreground); font-size:0.875rem; text-decoration:none; transition:color 0.15s, background 0.15s; } .ds-nav-item:hover { color:var(--foreground); background:var(--surface-sunken); } .ds-nav-item--active { color:var(--accent-emphasis); background:var(--accent-subtle); font-weight:500; } .ds-nav-item--active svg { color:var(--accent-emphasis); }"
+    },
+    {
+      "name": "Card",
+      "kind": "container",
+      "refersTo": "card",
+      "description": "Level 1 content card: solid white, 1px hairline, 16px radius, 24px padding, a tiny shadow. Never glass, never nested.",
+      "html": "<div class=\"ds-card\">…</div>",
+      "css": ".ds-card { background:var(--surface-raised); border:1px solid var(--border); border-radius:16px; padding:24px; box-shadow:var(--shadow-card); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Calm Desk",
+    "overview": "Meridian is the software a founder, chief of staff, or director opens the hour before a board meeting and instantly trusts. The interface is a calm, well-lit desk: a soft neutral page, white cards that sit like physical sheets, hairline structure, and exactly one trustworthy blue that appears only where it means 'do this'. It is light-mode-first with 95% neutral surfaces and 5% semantic color; violet is reserved as the Institutional-Memory identity. Trust here is legibility under scrutiny, not atmosphere — reduce flatness with spacing and elevation, not more color.",
+    "keyCharacteristics": [
+      "Light-mode only, 95% neutral / 5% semantic: color communicates meaning, never decoration.",
+      "Blue #2563EB is the one action color (buttons, active nav, links, focus, selection, calendar events).",
+      "Violet #6D28D9 is reserved for Institutional Memory surfaces only — never a button or nav.",
+      "White cards on a soft neutral page, separated by hairlines and a very subtle shadow; three elevation levels.",
+      "Inter throughout; hierarchy from weight and size, not font contrast. WCAG 2.2 AA is a hard floor."
+    ],
+    "rules": [
+      { "name": "The One-Action Rule", "body": "Blue means action. It appears on the primary action, active nav, links, focus, and selection — and nowhere else. Blue to 'brighten up' a panel is a bug.", "section": "colors" },
+      { "name": "The Memory-Only Violet Rule", "body": "Violet appears only on institutional-memory surfaces (graph health, provenance, memory metrics/trend charts). Violet on a button, nav, or generic accent is a bug.", "section": "colors" },
+      { "name": "The Neutral-Page Rule", "body": "Page base is neutral #F7F8FA and cards are white; separation comes from hairlines and a subtle shadow, never a tint.", "section": "colors" },
+      { "name": "The Fixed-Scale Rule", "body": "Type is a fixed rem scale, never fluid clamp(). A heading that shrinks in a sidebar is a regression.", "section": "typography" },
+      { "name": "The Blur-Is-Chrome-or-Floating Rule", "body": "Backdrop-blur / translucency appears only on the header, the AI rail (anchored chrome), and Level-3 floating UI. Dashboard content cards stay solid white; the left nav is solid.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep blue to action only (<=5-10% of any screen) and violet to memory only.",
+      "Do convey depth by tonal layering (neutral page -> white card) first, subtle shadow second; use three levels.",
+      "Do derive nav/tab active state from the current route (usePathname).",
+      "Do give every interactive element a visible, non-color-only focus ring and a full keyboard path.",
+      "Do provide a prefers-reduced-motion alternative for every transition; keep state transitions 150-250ms.",
+      "Do signal status with a shape/label/icon in addition to color.",
+      "Do keep information density high: tight legible rows and short paths to common actions."
+    ],
+    "donts": [
+      "Don't style like an enterprise board portal (Diligent, Boardvantage) or a generic SaaS dashboard (gradient hero-metric tiles, identical icon-heading-text card grids).",
+      "Don't use violet for buttons or navigation, or blue for success/warning — each color has one meaning.",
+      "Don't use gradients, neon, glow-as-default, or glass on content cards.",
+      "Don't ship sci-fi copy — write plainly ('Loading…', 'No conflicts pending review').",
+      "Don't hardcode off-token hex or palette-step colors in components.",
+      "Don't use a border-left/border-right greater than 1px as a colored accent stripe.",
+      "Don't nest cards."
+    ]
+  }
+}

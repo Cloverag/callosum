@@ -1,191 +1,198 @@
 "use client";
 
-import { useEffect, useState } from 'react';
-import { apiClient, EntityConflict } from '@/lib/api';
-import { ShieldAlert, Check, X, User } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useEffect, useState } from "react";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
+import { ShieldAlert, Check, X, User } from "lucide-react";
+import { PageHeader } from "@/components/ui/page-header";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { apiClient, type EntityConflict } from "@/lib/api";
+
+const EASE = [0.16, 1, 0.3, 1] as const;
+
+function EntityBlock({ name, quote }: { name: string; quote: string }) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-surface-elevated text-muted-foreground">
+          <User className="size-4" />
+        </span>
+        <h3 className="truncate text-lg font-light tracking-tight text-foreground">{name}</h3>
+      </div>
+      <div className="rounded-lg border border-border bg-surface-sunken px-4 py-3">
+        <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+          Source context
+        </div>
+        <p className="text-sm leading-relaxed text-foreground/90">&ldquo;{quote}&rdquo;</p>
+      </div>
+    </div>
+  );
+}
+
+function ConflictCard({
+  conflict,
+  processing,
+  disabled,
+  reduce,
+  onResolve,
+}: {
+  conflict: EntityConflict;
+  processing: boolean;
+  disabled: boolean;
+  reduce: boolean;
+  onResolve: (id: string, action: "approve" | "reject") => void;
+}) {
+  const pct = Math.round(conflict.similarity * 100);
+
+  return (
+    <motion.div
+      layout
+      initial={reduce ? { opacity: 0 } : { opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.97, filter: "blur(6px)" }}
+      transition={{ duration: 0.35, ease: EASE }}
+    >
+      <Card className={cn("group relative overflow-hidden", processing && "pointer-events-none opacity-60")}>
+        {/* subtle accent sheen on hover — decorative, token-based */}
+        <div
+          className="pointer-events-none absolute inset-0 bg-gradient-to-br from-accent-subtle to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+          aria-hidden
+        />
+
+        <div className="relative flex items-center justify-between gap-3 border-b border-border px-5 py-3">
+          <div className="flex items-center gap-2">
+            <Badge>{conflict.type_a}</Badge>
+            <span className="text-xs text-muted-foreground">
+              Detected {new Date(conflict.created_at).toLocaleDateString()}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 rounded-full border border-border bg-surface-elevated px-3 py-1">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Similarity</span>
+            <span className="text-sm font-medium tabular-nums text-accent-emphasis">{pct}%</span>
+          </div>
+        </div>
+
+        <div className="relative grid gap-6 px-5 py-5 md:grid-cols-2">
+          <EntityBlock name={conflict.name_a} quote={conflict.quote_a} />
+          <EntityBlock name={conflict.name_b} quote={conflict.quote_b} />
+        </div>
+
+        <div className="relative flex justify-end gap-2 border-t border-border px-5 py-3">
+          <Button variant="ghost" disabled={disabled} onClick={() => onResolve(conflict.id, "reject")}>
+            <X className="size-4" />
+            Reject
+          </Button>
+          <Button loading={processing} disabled={disabled} onClick={() => onResolve(conflict.id, "approve")}>
+            <Check className="size-4" />
+            Approve merge
+          </Button>
+        </div>
+      </Card>
+    </motion.div>
+  );
+}
+
+function ConflictSkeletons() {
+  return (
+    <div className="space-y-4">
+      {[0, 1].map((i) => (
+        <Card key={i} className="overflow-hidden">
+          <div className="border-b border-border px-5 py-3">
+            <div className="h-4 w-40 animate-pulse rounded bg-surface-sunken" />
+          </div>
+          <div className="grid gap-6 px-5 py-5 md:grid-cols-2">
+            {[0, 1].map((j) => (
+              <div key={j} className="space-y-2">
+                <div className="h-6 w-32 animate-pulse rounded bg-surface-sunken" />
+                <div className="h-16 w-full animate-pulse rounded bg-surface-sunken" />
+              </div>
+            ))}
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function EmptyState() {
+  return (
+    <Card>
+      <div className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
+        <span className="flex size-12 items-center justify-center rounded-full border border-border bg-surface-elevated text-success-emphasis">
+          <Check className="size-6" />
+        </span>
+        <div>
+          <h3 className="text-sm font-medium text-foreground">No conflicts pending review</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            New potential duplicate entities appear here as documents are ingested.
+          </p>
+        </div>
+      </div>
+    </Card>
+  );
+}
 
 export default function EntityConflictsPage() {
-  const [conflicts, setConflicts] = useState<EntityConflict[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [conflicts, setConflicts] = useState<EntityConflict[] | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const reduce = useReducedMotion() ?? false;
 
   useEffect(() => {
-    async function loadConflicts() {
-      try {
-        const data = await apiClient.getPendingConflicts();
-        setConflicts(data);
-      } catch (e) {
-        console.error("Failed to load conflicts", e);
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadConflicts();
+    apiClient
+      .getPendingConflicts()
+      .then(setConflicts)
+      .catch(() => setConflicts([]));
   }, []);
 
-  const handleApprove = async (id: string) => {
+  async function resolve(id: string, action: "approve" | "reject") {
     setProcessingId(id);
     try {
-      await apiClient.approveConflict(id);
-      setConflicts((prev) => prev.filter((c) => c.id !== id));
-    } catch (e) {
-      console.error(e);
+      if (action === "approve") await apiClient.approveConflict(id);
+      else await apiClient.rejectConflict(id);
+      setConflicts((prev) => (prev ?? []).filter((c) => c.id !== id));
     } finally {
       setProcessingId(null);
     }
-  };
-
-  const handleReject = async (id: string) => {
-    setProcessingId(id);
-    try {
-      await apiClient.rejectConflict(id);
-      setConflicts((prev) => prev.filter((c) => c.id !== id));
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setProcessingId(null);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="p-8 flex items-center justify-center h-full">
-        <motion.div 
-          initial={{ opacity: 0 }} 
-          animate={{ opacity: 1 }} 
-          className="text-muted-foreground text-sm tracking-widest uppercase font-medium"
-        >
-          Initializing neural matrix...
-        </motion.div>
-      </div>
-    );
   }
 
   return (
-    <div className="p-10 max-w-6xl mx-auto">
-      <motion.div 
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="mb-10 flex items-center gap-4 border-b border-glass-border pb-6"
-      >
-        <div className="bg-card-bg p-2.5 rounded-xl border border-glass-border shadow-[0_0_20px_var(--color-accent-glow)] relative group">
-          <div className="absolute inset-0 bg-accent/20 blur-xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
-          <ShieldAlert className="w-6 h-6 text-accent relative z-10" />
-        </div>
-        <div>
-          <h1 className="text-3xl font-light text-foreground tracking-tight">Entity Conflicts</h1>
-          <p className="text-sm text-muted-foreground mt-1 font-light">
-            Review and resolve potential duplicate entities detected across the workspace memory graph.
-          </p>
-        </div>
-      </motion.div>
+    <div className="relative p-6">
+      {/* soft violet wash at the top — the requested gradient, kept subtle */}
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-48 bg-gradient-to-b from-accent-subtle to-transparent"
+        aria-hidden
+      />
 
-      {conflicts.length === 0 ? (
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="glass-panel rounded-2xl p-16 text-center relative overflow-hidden"
-        >
-          <div className="absolute inset-0 bg-gradient-to-b from-accent/5 to-transparent" />
-          <Check className="w-12 h-12 text-accent/50 mx-auto mb-6 drop-shadow-[0_0_15px_var(--color-accent-glow)]" />
-          <h3 className="text-xl font-medium text-foreground tracking-wide">System optimal</h3>
-          <p className="text-muted-foreground mt-2 font-light">No pending entity conflicts require review.</p>
-        </motion.div>
-      ) : (
-        <div className="space-y-8">
-          <AnimatePresence>
-            {conflicts.map((conflict) => (
-              <motion.div
-                key={conflict.id}
-                layout
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, filter: "blur(10px)" }}
-                transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-                className={`glass-panel rounded-2xl overflow-hidden relative group ${
-                  processingId === conflict.id ? 'opacity-50 pointer-events-none' : ''
-                }`}
-              >
-                {/* Subtle gradient hover effect */}
-                <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                
-                {/* Header */}
-                <div className="flex items-center justify-between p-6 border-b border-glass-border bg-card-bg">
-                  <div className="flex items-center gap-3">
-                    <span className="px-3 py-1 text-[10px] font-bold tracking-widest rounded bg-primary/5 text-foreground border border-glass-border">
-                      {conflict.type_a}
-                    </span>
-                    <span className="text-xs text-muted-foreground uppercase tracking-wider">Detected {new Date(conflict.created_at).toLocaleDateString()}</span>
-                  </div>
-                  <div className="flex items-center gap-3 bg-background/50 px-4 py-1.5 rounded-full border border-glass-border shadow-[inset_0_1px_0_0_var(--color-glass-highlight)]">
-                    <span className="text-[10px] text-muted-foreground uppercase tracking-widest">Similarity</span>
-                    <span className="text-sm font-medium text-accent text-glow-accent">
-                      {Math.round(conflict.similarity * 100)}%
-                    </span>
-                  </div>
-                </div>
+      <PageHeader
+        icon={<ShieldAlert />}
+        title="Entity Conflicts"
+        description="Review potential duplicate entities detected across the workspace memory graph."
+      />
 
-                {/* Body */}
-                <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-12 relative bg-card-bg/50">
-                  {/* Visual Separator for Desktop */}
-                  <div className="hidden md:block absolute left-1/2 top-8 bottom-8 w-px bg-gradient-to-b from-transparent via-glass-border to-transparent -translate-x-1/2" />
-                  
-                  {/* Entity A */}
-                  <div className="space-y-6 relative z-10">
-                    <div className="flex items-center gap-4">
-                      <div className="bg-primary/5 p-2.5 rounded-lg border border-glass-border">
-                        <User className="w-5 h-5 text-muted-foreground" />
-                      </div>
-                      <h3 className="text-2xl font-light text-foreground tracking-tight">{conflict.name_a}</h3>
-                    </div>
-                    <div className="bg-background/40 p-5 rounded-xl border border-glass-border relative overflow-hidden group/quote hover:border-border-hover transition-colors">
-                      <div className="absolute top-0 left-0 w-1 h-full bg-accent/20 group-hover/quote:bg-accent transition-colors" />
-                      <div className="absolute -top-3 left-4 bg-background px-2 text-[9px] uppercase tracking-widest text-muted-foreground border border-glass-border rounded-full">Source context</div>
-                      <p className="text-sm text-foreground/80 leading-relaxed font-light mt-2">&quot;{conflict.quote_a}&quot;</p>
-                    </div>
-                  </div>
-
-                  {/* Entity B */}
-                  <div className="space-y-6 relative z-10">
-                    <div className="flex items-center gap-4">
-                      <div className="bg-primary/5 p-2.5 rounded-lg border border-glass-border">
-                        <User className="w-5 h-5 text-muted-foreground" />
-                      </div>
-                      <h3 className="text-2xl font-light text-foreground tracking-tight">{conflict.name_b}</h3>
-                    </div>
-                    <div className="bg-background/40 p-5 rounded-xl border border-glass-border relative overflow-hidden group/quote hover:border-border-hover transition-colors">
-                      <div className="absolute top-0 left-0 w-1 h-full bg-purple-500/20 group-hover/quote:bg-purple-500 transition-colors" />
-                      <div className="absolute -top-3 left-4 bg-background px-2 text-[9px] uppercase tracking-widest text-muted-foreground border border-glass-border rounded-full">Source context</div>
-                      <p className="text-sm text-foreground/80 leading-relaxed font-light mt-2">&quot;{conflict.quote_b}&quot;</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Footer / Actions */}
-                <div className="p-6 border-t border-glass-border bg-card-bg flex justify-end gap-4 relative z-10">
-                  <button
-                    onClick={() => handleReject(conflict.id)}
-                    disabled={!!processingId}
-                    className="cinematic-button px-6 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground bg-transparent hover:bg-black/5 dark:hover:bg-white/5 border border-glass-border rounded-lg transition-colors flex items-center gap-2"
-                  >
-                    <X className="w-4 h-4" />
-                    Reject
-                  </button>
-                  <button
-                    onClick={() => handleApprove(conflict.id)}
-                    disabled={!!processingId}
-                    className="cinematic-button px-6 py-2.5 text-sm font-medium text-primary-foreground bg-primary hover:opacity-90 shadow-[0_0_20px_var(--color-glass-highlight)] rounded-lg transition-all flex items-center gap-2"
-                  >
-                    <Check className="w-4 h-4" />
-                    Approve (Merge)
-                  </button>
-                </div>
-              </motion.div>
-            ))}
-          </AnimatePresence>
-        </div>
-      )}
+      <div className="mt-6">
+        {conflicts === null ? (
+          <ConflictSkeletons />
+        ) : conflicts.length === 0 ? (
+          <EmptyState />
+        ) : (
+          <motion.div layout className="space-y-4">
+            <AnimatePresence mode="popLayout">
+              {conflicts.map((c) => (
+                <ConflictCard
+                  key={c.id}
+                  conflict={c}
+                  processing={processingId === c.id}
+                  disabled={!!processingId}
+                  reduce={reduce}
+                  onResolve={resolve}
+                />
+              ))}
+            </AnimatePresence>
+          </motion.div>
+        )}
+      </div>
     </div>
   );
 }
