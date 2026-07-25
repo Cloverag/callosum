@@ -5,16 +5,59 @@ import { Card } from "@/components/ui/card";
 import { Gauge } from "@/components/ui/gauge";
 import { Sparkline } from "@/components/ui/sparkline";
 import { StatBar, type StatSegment } from "@/components/ui/stat-bar";
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/animate-ui/components/radix/tooltip";
 import type { MemoryHealth as MemoryHealthData } from "@/lib/insights";
 
-/** A compact label/value row. `dot` marks quality categories; `tone` tints the label. */
-function Row({ label, value, dot, tone }: { label: string; value: string; dot?: string; tone?: string }) {
+/**
+ * A compact label/value row. `dot` marks quality categories; `tone` tints the label.
+ * When `hint` is given the label becomes a tooltip trigger — these are Callosum
+ * terms of art ("quarantined" is not standard board vocabulary), and the whole
+ * point of the card is that a non-technical director can trust what it says.
+ */
+function Row({
+  label,
+  value,
+  dot,
+  tone,
+  hint,
+}: {
+  label: string;
+  value: string;
+  dot?: string;
+  tone?: string;
+  hint?: string;
+}) {
+  const labelEl = (
+    <span className={cn("inline-flex items-center gap-2", tone ?? "text-muted-foreground")}>
+      {dot && <span className={cn("size-1.5 rounded-full", dot)} aria-hidden />}
+      {label}
+    </span>
+  );
+
   return (
     <div className="flex items-center justify-between py-1.5 text-sm">
-      <span className={cn("inline-flex items-center gap-2", tone ?? "text-muted-foreground")}>
-        {dot && <span className={cn("size-1.5 rounded-full", dot)} aria-hidden />}
-        {label}
-      </span>
+      {hint ? (
+        <Tooltip>
+          {/* Dotted underline so the affordance is visible without hovering, and
+              a button so it is keyboard-reachable — hover alone would hide this
+              from anyone not using a mouse. */}
+          <TooltipTrigger
+            className="cursor-help rounded-[4px] underline decoration-dotted decoration-border-strong underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised"
+            aria-label={`${label}: ${hint}`}
+          >
+            {labelEl}
+          </TooltipTrigger>
+          <TooltipContent side="right" className="max-w-[15rem]">
+            {hint}
+          </TooltipContent>
+        </Tooltip>
+      ) : (
+        labelEl
+      )}
       <span className="tabular-nums text-foreground">{value}</span>
     </div>
   );
@@ -62,9 +105,27 @@ export function MemoryHealth({
           <div>
             <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-subtle-foreground">Quality</div>
             <div className="mt-1">
-              <Row label="Verified" value={`${memory.verifiedPct}%`} dot="bg-success" tone="text-success-emphasis" />
-              <Row label="Pending review" value={String(memory.pendingReview)} dot="bg-warning" tone="text-warning-emphasis" />
-              <Row label="Quarantined" value={String(memory.quarantined)} dot="bg-danger" tone="text-danger-emphasis" />
+              <Row
+                label="Verified"
+                value={`${memory.verifiedPct}%`}
+                dot="bg-success"
+                tone="text-success-emphasis"
+                hint="Share of graph edges whose evidence quote was located verbatim in the source document. An edge cannot exist without one."
+              />
+              <Row
+                label="Pending review"
+                value={String(memory.pendingReview)}
+                dot="bg-warning"
+                tone="text-warning-emphasis"
+                hint="Facts that passed verification and are waiting for a human to approve them. Nothing enters memory unapproved."
+              />
+              <Row
+                label="Quarantined"
+                value={String(memory.quarantined)}
+                dot="bg-danger"
+                tone="text-danger-emphasis"
+                hint="Extractions the verifier rejected — kept, not deleted, so the failures stay auditable."
+              />
             </div>
             <div className="mt-4 text-[10px] font-semibold uppercase tracking-[0.08em] text-subtle-foreground">Coverage</div>
             <div className="mt-1">

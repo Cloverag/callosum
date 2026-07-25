@@ -62,7 +62,20 @@ export type DashboardInsights = {
   decisions: Decision[];
   /** Weekly review throughput, oldest → newest. Feeds the sparkline. */
   reviewVelocity: number[];
+  /** Institutional memory accumulating, week by week. Feeds the growth chart. */
+  memoryGrowth: MemoryGrowthPoint[];
   pending: PendingActions;
+};
+
+/**
+ * One weekly snapshot of the graph. Only APPROVED, evidence-backed records are
+ * counted — quarantined extractions never appear here, so the curve is the
+ * memory the board can actually rely on, not everything the extractor proposed.
+ */
+export type MemoryGrowthPoint = {
+  date: string; // ISO
+  edges: number;
+  entities: number;
 };
 
 const insights: DashboardInsights = {
@@ -127,6 +140,18 @@ const insights: DashboardInsights = {
     { id: "d-fcst", title: "Revise the FY27 forecast", status: "proposed", meeting: "Q3 Board Meeting", date: "2026-07-21T09:20:00Z" },
   ],
   reviewVelocity: [4, 6, 3, 7, 5, 8, 6, 9],
+  // Ends on the real p1.0.4 graph snapshot (731 entities / 1277 edges) so the
+  // demo reads true; earlier weeks are the corpus building up to it.
+  memoryGrowth: [
+    { date: "2026-06-01T00:00:00Z", entities: 214, edges: 289 },
+    { date: "2026-06-08T00:00:00Z", entities: 298, edges: 431 },
+    { date: "2026-06-15T00:00:00Z", entities: 367, edges: 562 },
+    { date: "2026-06-22T00:00:00Z", entities: 441, edges: 704 },
+    { date: "2026-06-29T00:00:00Z", entities: 528, edges: 871 },
+    { date: "2026-07-06T00:00:00Z", entities: 602, edges: 1013 },
+    { date: "2026-07-13T00:00:00Z", entities: 674, edges: 1158 },
+    { date: "2026-07-20T00:00:00Z", entities: 731, edges: 1277 },
+  ],
   pending: {
     decisionsToSign: 2,
     docsToIngest: 1,
