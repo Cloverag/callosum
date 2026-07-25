@@ -16,17 +16,33 @@ security cases), updated docs/status, runnable verification commands, and a revi
 No checkpoint may weaken evidence verification, human approval, RBAC, provenance, or audit
 requirements.
 
-## Current progress — 2026-07-17
+## Current progress — 2026-07-25
 
 | Track | Completed | Active | Remaining |
 |---|---:|---|---:|
 | Research engine | **14 / 14** accepted (`R0`–`R13`) | — research track CLOSED 2026-07-18, baseline frozen at `6ed5ed5` | 0 |
-| Meridian product | **0 / 13** accepted | **P0 authorized** (research handoff accepted) | **13** (`P0`–`P12`) |
+| Meridian product | **2 / 13** accepted (`P0`, `P1`) | **P2 in progress** (durable product domain) | **11** (`P2`–`P12`) |
 
 The counts must not be combined into one percentage: the research track validates the
 memory engine; the product track makes it a deployable board operating system. The CLI
-research foundation exists, but the product has no web application, workspace/meeting
-domain, production identity, integration layer, or pilot yet.
+research foundation exists, but the product still has no authenticated API, production
+identity, integration layer, or pilot yet.
+
+### P2 checkpoint status
+
+P2 is being delivered one aggregate root per checkpoint, each with its own migration,
+domain module, and tests.
+
+| Checkpoint | Aggregate | Status |
+|---|---|---|
+| CP1 | `Meeting` | ✅ merged (PR #17) |
+| CP2 | `AgendaItem` | ✅ merged (PR #20) |
+| CP3 | `BoardPack` / minutes | ⚠️ **skipped out of order** — recorded exception, owner Devguru-codes, issue #23 |
+| CP4 | `Decision` / `DecisionStance` | 🟩 in review (PR #22) |
+
+CP3 was skipped when CP4 took the `0009` migration slot; the chain is still linear and
+valid, and board pack becomes `0010`. Per the operating rule above, the exception is
+recorded here with an owner and a due checkpoint rather than left implicit.
 
 ### Retrieval core is FROZEN (2026-07-17)
 
@@ -242,7 +258,7 @@ the roadmap as an assumption — it must arrive as a reproduced gap.
 This track begins only after R13. It turns Callosum’s verified memory engine into the
 founder-facing board workflow specified in `PRD.md`.
 
-## P0 — Product contract and delivery controls
+## P0 — Product contract and delivery controls — ✅ ACCEPTED
 
 **Goal:** Make the PRD executable.
 
@@ -252,7 +268,14 @@ traceability; set decision-log/change-control rules; lock pilot segment and V1 s
 **Exit:** every V1 requirement has owner, priority, dependency, and testable evidence;
 human-control/evidence/RBAC invariants are signed off; no static prototype is called built.
 
-## P1 — Production security, tenancy, and governance design
+## P1 — Production security, tenancy, and governance design — ✅ ACCEPTED
+
+Shipped and re-frozen across `meridian-p1` → `p1.0.1` (conflict-scan tenant scope) →
+`p1.0.2` (Neo4j query gateway, defect class D-001) → `p1.0.3` (deterministic mechanism
+eval gate) → `p1.0.4` (workspace-scoped `entity_conflict` unique key). The exit criterion
+"unauthorized content is blocked in Cypher" was initially unmet — see the F2 defect in
+`docs/proposals/2026-07-20-p2-measurement-neo4j-tenant-surface.md` — and was closed by the
+`p1.0.1` patch before P1 was accepted.
 
 **Goal:** Define access, retention, and processing rules before real board data enters a
 web application.
@@ -264,7 +287,10 @@ and residency; evolve clearance-only retrieval to reviewed object-level policy.
 **Exit:** security approves threat/data-flow models and role matrix; unauthorized content is
 blocked in SQL, Cypher, quotes, chunks, logs, APIs, and UI; transcript policy is approved.
 
-## P2 — Durable product domain and migrations
+## P2 — Durable product domain and migrations — 🟩 IN PROGRESS
+
+Checkpoint-by-checkpoint status is tracked in the P2 table under
+[Current progress](#p2-checkpoint-status).
 
 **Goal:** Model the board workflow absent from Callosum.
 
