@@ -1,4 +1,16 @@
 @import "tailwindcss";
+/* Maps shadcn's token vocabulary onto the semantic layer below, so components
+   copied in from the KokonutUI / Animate UI / Bklit registries render in the
+   Meridian design language unedited. Read that file before adding a registry. */
+@import "./shadcn-compat.css";
+
+/* Added by `shadcn add`, and KEPT deliberately. Meridian is light-only (the v2
+   pivot removed next-themes entirely), but vendored registry components still
+   ship `dark:` classes. Tailwind v4 defaults `dark:` to prefers-color-scheme,
+   so without this a viewer whose OS is in dark mode would see those components
+   go half-dark inside a light app. Binding the variant to a `.dark` class we
+   never apply means `dark:` can never fire. Do not remove. */
+@custom-variant dark (&:is(.dark *));
 
 /* ============================================================================
    Meridian Board OS — semantic token layer (v2: blue-on-neutral, light-only)
@@ -130,7 +142,9 @@
     --surface-raised: #ffffff;         /* cards */
     --surface-alt: #f8fafc;            /* secondary / nested panel */
     --surface-sunken: #f1f5f9;         /* slate-100 — inset wells, quote blocks */
-    --surface-glass: rgba(255, 255, 255, 0.80);
+    /* Loosened 0.80 -> 0.72 (2026-07-26) so chrome reads as glass against the
+       ambient ground wash rather than as flat white. */
+    --surface-glass: rgba(255, 255, 255, 0.72);
     --surface-glass-border: rgba(15, 23, 42, 0.08);
   }
 }
@@ -142,6 +156,26 @@
     min-height: 100vh;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Ambient ground wash.
+     The chrome (header, AI rail, dialogs) is translucent, but translucency over
+     a flat fill is invisible — there was nothing behind it to see. Two very low
+     alpha radials give the page depth, so the glass surfaces finally read AS
+     glass and solid white cards lift off the ground.
+
+     Deliberately weak (5% / 4.5%) and fixed to the viewport: it must read as
+     light in the room, never as decoration. It sits on the page ground ONLY —
+     content cards stay solid per DESIGN.md. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(60rem 40rem at 12% -8%, rgba(109, 40, 217, 0.05), transparent 60%),
+      radial-gradient(52rem 36rem at 92% 4%, rgba(37, 99, 235, 0.045), transparent 62%);
   }
 
   /* One consistent focus treatment across the app: a 2px blue ring, never
