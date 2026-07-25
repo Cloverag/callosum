@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, CalendarDays, Users, FileText, Network, Settings, ChevronsUpDown } from "lucide-react";
+import { LayoutDashboard, CalendarDays, Users, FileText, Network, GitMerge, Settings, ChevronsUpDown } from "lucide-react";
 import { NavItem } from "./ui/nav-item";
 
 const nav = [
@@ -9,7 +9,8 @@ const nav = [
   { href: "/calendar", label: "Calendar", icon: <CalendarDays /> },
   { href: "/meetings", label: "Meetings", icon: <Users /> },
   { href: "/documents", label: "Documents", icon: <FileText /> },
-  { href: "/entity-conflicts", label: "Institutional Memory", icon: <Network /> },
+  { href: "/memory", label: "Institutional Memory", icon: <Network /> },
+  { href: "/entity-conflicts", label: "Review queue", icon: <GitMerge /> },
   { href: "/settings", label: "Settings", icon: <Settings /> },
 ];
 
