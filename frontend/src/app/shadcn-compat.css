@@ -90,60 +90,12 @@
 
 @layer base {
   :root {
-    /* Bklit chart internals -----------------------------------------------
-       Bklit reads these as plain custom properties (`var(--chart-grid)`), not
-       as Tailwind utilities, so `@theme` aliases above do not reach them —
-       every one of these is REQUIRED or the chart paints with invalid colours.
-
-       The series colours restate the memory ramp because charts live on
-       Institutional Memory surfaces; the chrome is drawn from the neutral
-       scale so a chart reads as part of the page, not as a foreign widget. */
-    --chart-1: var(--memory);
-    --chart-2: var(--memory-soft);
-    --chart-3: #a78bfa;
-    --chart-4: #c4b5fd;
-    --chart-5: var(--subtle-foreground);
-
-    --chart-line-primary: var(--memory);
-    --chart-line-secondary: var(--memory-soft);
-    --chart-indicator-color: var(--memory);
-    --chart-indicator-secondary-color: var(--memory-soft);
-
-    --chart-background: transparent;
-    --chart-grid: var(--border);
-    --chart-crosshair: var(--border-strong);
-    --chart-brush-border: var(--border-strong);
-    --chart-segment-background: var(--memory-subtle);
-    --chart-segment-line: var(--border);
-
-    --chart-foreground: var(--foreground);
-    --chart-foreground-muted: var(--muted-foreground);
-    --chart-label: var(--subtle-foreground);
-
-    /* Same neutral-dark bubble as the tooltip primitive — blue is ACTION only,
-       and a readout is not an action. */
-    --chart-tooltip-background: var(--foreground);
-    --chart-tooltip-foreground: var(--surface-raised);
-    /* Secondary text INSIDE the dark bubble — the neutral scale runs dark-on-
-       light, so the light end of it is what reads here. */
-    --chart-tooltip-muted: var(--border-strong);
-    --chart-marker-background: var(--surface-raised);
-    --chart-marker-foreground: var(--foreground);
-    --chart-marker-border: var(--border);
-    --chart-marker-badge-background: var(--surface-sunken);
-    --chart-marker-badge-foreground: var(--muted-foreground);
-
-    /* Density ramp for heatmap-style charts — light surface → full memory
-       violet, so "more" always reads as "more violet", never as a hue change. */
-    --chart-scale-01: var(--surface-sunken);
-    --chart-scale-02: var(--memory-subtle);
-    --chart-scale-03: #c4b5fd;
-    --chart-scale-04: var(--memory-soft);
-    --chart-scale-05: var(--memory);
-    --chart-scale-pattern-color: var(--surface-alt);
-
-    /* Bklit's loading label shimmer. */
-    --shimmering-color: var(--subtle-foreground);
+    /* NOTE — Bklit's chart variables were removed with the library (2026-07-26).
+       Its charts are a time-series renderer, and the real data is ten ordinal
+       points (documents ingested), so the dashboard chart is hand-rolled SVG on
+       the core tokens instead. If a Bklit chart is ever re-added, it needs the
+       ~24 `--chart-*` custom properties back — see the git history of this file
+       and `src/components/vendor/README.md`. */
 
     /* Raw `--radius` for the handful of registry components that read
        `var(--radius)` directly instead of a `rounded-*` utility. Meridian's

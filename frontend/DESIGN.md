@@ -262,7 +262,8 @@ Rules that follow from that, and apply to every chart here:
 ### Don't
 - **Don't** style like an enterprise board portal (Diligent, Boardvantage) or a generic SaaS dashboard (gradient hero-metric tiles, identical icon-heading-text card grids).
 - **Don't** use violet for buttons or navigation, or blue for success/warning — each color has one meaning.
-- **Don't** use gradients, neon, glow-as-default, or glass on content cards.
+- **Don't** use neon, glow-as-default, or glass on content cards.
+- **Don't** use gradients — with one **named exception**: the ambient ground wash on `body::before` (two ≤5%-alpha radials, fixed to the viewport). It exists so translucent chrome has something behind it to blur; without it the glass surfaces read as flat white. It never appears on a card, a button, a metric tile, or text. *(Amended 2026-07-26 at the owner's request for "a little glass look" — a gradient anywhere else is still a defect.)*
 - **Don't** ship sci-fi copy — write plainly: "Loading…", "No conflicts pending review."
 - **Don't** hardcode off-token hex or palette-step colors in components.
 - **Don't** use a `border-left`/`border-right` >1px as a colored accent stripe; use full hairlines or background tints.
