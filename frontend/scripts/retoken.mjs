@@ -23,7 +23,21 @@
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
-const DEFAULT_TARGET = "src/components/vendor";
+/**
+ * Where registry output actually lands. shadcn routes each file by its declared
+ * `type`, not by one alias, so a single directory is not enough:
+ *   registry:ui        → the `ui` alias        → src/components/vendor
+ *   registry:component → the `components` alias → src/components/<registry path>
+ * Bklit's charts are `registry:component`, so they arrive outside vendor/.
+ * Every root that exists is scanned; the rest are skipped silently.
+ */
+const DEFAULT_TARGETS = [
+  "src/components/vendor",
+  "src/components/charts",
+  "src/components/animate-ui",
+  "src/components/kokonutui",
+  "src/charts",
+];
 const EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx"]);
 
 /** Directories that hold hand-authored Meridian source. Never rewrite these. */
@@ -60,18 +74,28 @@ const RULES = [
 
 const args = process.argv.slice(2);
 const checkOnly = args.includes("--check");
-const target = args.find((a) => !a.startsWith("--")) ?? DEFAULT_TARGET;
+const explicit = args.filter((a) => !a.startsWith("--"));
+const targets = explicit.length > 0 ? explicit : DEFAULT_TARGETS;
 const root = process.cwd();
-const absTarget = resolve(root, target);
 
-for (const guard of PROTECTED) {
-  const absGuard = resolve(root, guard);
-  if (absTarget === absGuard || absTarget.startsWith(absGuard + "/")) {
-    console.error(
-      `refusing to rewrite ${target}: that is hand-authored Meridian source, ` +
-        `not vendored registry output.`
-    );
-    process.exit(2);
+/**
+ * The guard only applies to targets the caller named. The defaults are allowed
+ * to sit under src/components/ (that is where shadcn puts things) — but an
+ * explicit `retoken src/components/ui` must still be refused.
+ */
+if (explicit.length > 0) {
+  for (const target of explicit) {
+    const absTarget = resolve(root, target);
+    for (const guard of PROTECTED) {
+      const absGuard = resolve(root, guard);
+      if (absTarget === absGuard || absTarget.startsWith(absGuard + "/")) {
+        console.error(
+          `refusing to rewrite ${target}: that is hand-authored Meridian source, ` +
+            `not vendored registry output.`
+        );
+        process.exit(2);
+      }
+    }
   }
 }
 
@@ -95,12 +119,14 @@ function walk(dir) {
   return out;
 }
 
-const files = walk(absTarget);
+const files = targets.flatMap((t) => walk(resolve(root, t)));
 
 if (files.length === 0) {
   console.log(
-    `retoken: nothing to do — no components in ${target}.\n` +
-      `         Install one first, e.g. npx shadcn@latest add @animate-ui/tooltip`
+    `retoken: nothing to do — no vendored components found in:\n` +
+      targets.map((t) => `           ${t}`).join("\n") +
+      `\n         Install one first, e.g.\n` +
+      `           npx shadcn@latest add @animate-ui/components-radix-tooltip`
   );
   process.exit(0);
 }
