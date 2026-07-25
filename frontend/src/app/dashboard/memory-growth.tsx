@@ -14,9 +14,15 @@ import type { MemoryGrowthPoint } from "@/lib/insights";
  * get here, and when did it slow down". This can, and it stays hoverable so a
  * board member can read the actual week.
  *
- * Violet throughout: this is an Institutional Memory surface, and DESIGN.md
- * reserves violet for exactly that. `chart-1` / `chart-2` are the sequential
- * memory ramp defined in shadcn-compat.css — never blue, which means ACTION.
+ * FORM: emphasis, not two-series categorical. Verified edges are the point and
+ * carry the memory violet as a filled area; entities are context and recede to
+ * the neutral scale as a bare line. Two steps of one violet were tried first and
+ * measured at ΔE 11.7 for normal vision — below the 15 floor, i.e. genuinely
+ * hard to tell apart even with full colour vision. Violet vs slate measures
+ * 21.9, and the area-vs-line contrast means identity never rests on hue alone.
+ *
+ * This also keeps the colour doctrine intact: violet stays Institutional Memory,
+ * blue stays ACTION, and no third hue is invented to seat a second series.
  */
 export function MemoryGrowth({ growth }: { growth: MemoryGrowthPoint[] | null }) {
   const ready = growth !== null && growth.length > 0;
@@ -57,32 +63,42 @@ export function MemoryGrowth({ growth }: { growth: MemoryGrowthPoint[] | null })
           margin={{ top: 8, right: 12, bottom: 24, left: 12 }}
         >
           <Grid />
-          <Area
-            dataKey="edges"
-            fill="var(--color-chart-1)"
-            stroke="var(--color-chart-1)"
-            fillOpacity={0.24}
-          />
+          {/* Context first, so the emphasised series paints over it. A bare
+              2px line with no fill — nothing to occlude the area beneath. */}
           <Area
             dataKey="entities"
-            fill="var(--color-chart-2)"
-            stroke="var(--color-chart-2)"
-            fillOpacity={0.14}
+            fill="var(--subtle-foreground)"
+            stroke="var(--subtle-foreground)"
+            fillOpacity={0}
+            gradientToOpacity={0}
+            strokeWidth={2}
+            showHighlight={false}
+          />
+          {/* The point: verified edges, in memory violet. */}
+          <Area
+            dataKey="edges"
+            fill="var(--memory)"
+            stroke="var(--memory)"
+            fillOpacity={0.18}
+            strokeWidth={2}
           />
           <XAxis />
           <ChartTooltip />
         </AreaChart>
 
-        {/* Legend. Status is carried by the label, not by colour alone — the
-            two violets are close by design, so colour is never the only cue. */}
-        <div className="mt-2 flex items-center gap-5 px-2 text-xs text-muted-foreground">
+        {/* Legend — always present at two series, and it doubles as the direct
+            label by carrying each series' current value. Identity therefore
+            never rests on colour: there is a name, a value, and a mark shape
+            (filled swatch = area, rule = line) behind every series.
+            The text itself stays in ink tokens; only the swatch is coloured. */}
+        <div className="mt-2 flex items-center gap-6 px-2 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-2">
             <span
-              className="size-2 rounded-full"
-              style={{ background: "var(--color-chart-1)" }}
+              className="h-2 w-3 rounded-[2px]"
+              style={{ background: "var(--memory)" }}
               aria-hidden
             />
-            Edges
+            Verified edges
             {latest && (
               <span className="tabular-nums text-foreground">
                 {latest.edges.toLocaleString()}
@@ -91,8 +107,8 @@ export function MemoryGrowth({ growth }: { growth: MemoryGrowthPoint[] | null })
           </span>
           <span className="inline-flex items-center gap-2">
             <span
-              className="size-2 rounded-full"
-              style={{ background: "var(--color-chart-2)" }}
+              className="h-0.5 w-3 rounded-full"
+              style={{ background: "var(--subtle-foreground)" }}
               aria-hidden
             />
             Entities
@@ -103,6 +119,47 @@ export function MemoryGrowth({ growth }: { growth: MemoryGrowthPoint[] | null })
             )}
           </span>
         </div>
+
+        {/* The contrast WARN on the de-emphasis grey obliges a non-visual route
+            to the numbers; the tooltip is hover-only, so the table is it. */}
+        {growth && growth.length > 0 && (
+          <details className="mt-3 px-2">
+            <summary className="cursor-pointer text-xs text-muted-foreground underline decoration-dotted underline-offset-4 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised">
+              View as table
+            </summary>
+            <table className="mt-2 w-full text-xs">
+              <caption className="sr-only">
+                Verified edges and entities in institutional memory, by week
+              </caption>
+              <thead>
+                <tr className="text-left text-subtle-foreground">
+                  <th scope="col" className="py-1 font-medium">Week</th>
+                  <th scope="col" className="py-1 text-right font-medium">Verified edges</th>
+                  <th scope="col" className="py-1 text-right font-medium">Entities</th>
+                </tr>
+              </thead>
+              <tbody className="text-muted-foreground">
+                {growth.map((p) => (
+                  <tr key={p.date} className="border-t border-border">
+                    <td className="py-1">
+                      {new Date(p.date).toLocaleDateString("en-GB", {
+                        day: "numeric",
+                        month: "short",
+                        timeZone: "UTC",
+                      })}
+                    </td>
+                    <td className="py-1 text-right tabular-nums text-foreground">
+                      {p.edges.toLocaleString()}
+                    </td>
+                    <td className="py-1 text-right tabular-nums">
+                      {p.entities.toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </details>
+        )}
       </div>
     </Card>
   );

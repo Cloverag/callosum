@@ -239,6 +239,15 @@ Registry source is written in shadcn's token vocabulary, not ours. `src/app/shad
 
 **Charts.** `chart-1…5` is a *sequential violet ramp* scoped to memory surfaces, because violet is reserved for Institutional Memory and blue for action — a generic categorical rainbow is not available to us. For non-memory charts (e.g. meeting mix by status) use the status tokens directly; they already carry the right meaning. A categorical palette for genuinely unordered non-memory series is an **open decision**, not something to improvise per chart.
 
+**Multi-series memory charts use emphasis, never two steps of one violet.** One series carries `memory` violet as the emphasised mark; the rest recede to `subtle-foreground` grey. This is measured, not preferred: violet-700 against violet-500 scores **ΔE 11.7** for normal vision — below the 15 floor, i.e. hard to tell apart *even with full colour vision* — while violet against slate-500 scores **21.9**. Pair it with a mark-shape difference too (filled area for the emphasised series, bare line for context) so identity never rests on hue alone.
+
+Rules that follow from that, and apply to every chart here:
+- **Never a dual axis.** Two measures at different scales become two charts or one indexed to a common base.
+- **A legend is always present at two or more series**, and carries each series' current value so it doubles as the direct label. Never a number on every data point.
+- **Text wears ink tokens, never the series colour** — only the swatch is coloured.
+- **A grey series below 3:1 contrast obliges a non-visual route to the numbers.** The hover tooltip is not enough on its own; ship the table view alongside it.
+- Gridlines and axes are solid hairlines one step off the surface — never dashed.
+
 ## 6. Do's and Don'ts
 
 ### Do
