@@ -13,11 +13,23 @@
     "retoken:check": "node scripts/retoken.mjs --check"
   },
   "dependencies": {
+    "@number-flow/react": "^0.6.2",
+    "@visx/curve": "^4.0.1-alpha.0",
+    "@visx/event": "^4.0.1-alpha.0",
+    "@visx/gradient": "^4.0.1-alpha.0",
+    "@visx/grid": "^4.0.1-alpha.0",
+    "@visx/responsive": "^4.0.1-alpha.0",
+    "@visx/scale": "^4.0.1-alpha.0",
+    "@visx/shape": "^4.0.1-alpha.0",
     "clsx": "^2.1.1",
+    "d3-array": "^3.2.4",
+    "d3-shape": "^3.2.0",
     "framer-motion": "^12.42.2",
     "lucide-react": "^1.25.0",
+    "motion": "^12.42.2",
     "next": "16.2.10",
     "next-themes": "^0.4.6",
+    "radix-ui": "^1.6.7",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "tailwind-merge": "^3.6.0"

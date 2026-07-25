@@ -121,6 +121,81 @@ function walk(dir) {
 
 const files = targets.flatMap((t) => walk(resolve(root, t)));
 
+/* ---------------------------------------------------------------------------
+   Phase 2 — broken relative imports.
+
+   Registries declare file paths against THEIR repo layout, and shadcn re-homes
+   those files against OURS. When the two disagree in depth, relative imports
+   between installed files break. Bklit is the live example: it ships
+   `src/charts/*` and `src/components/shimmering-text.tsx` as siblings, so
+   `../components/shimmering-text` is correct there — but shadcn puts the charts
+   at `src/components/charts/`, where the same specifier overshoots into a
+   `src/components/components/` that does not exist.
+
+   This only ever touches imports that ALREADY fail to resolve (i.e. the build
+   is broken anyway), and only rewrites when exactly one candidate file matches
+   the basename. Ambiguous or unresolvable cases are reported, never guessed.
+   --------------------------------------------------------------------------- */
+
+const RESOLVE_EXTS = ["", ".ts", ".tsx", ".js", ".jsx", "/index.ts", "/index.tsx"];
+const IMPORT_RE = /(?<=from\s+["'])(\.[^"']+)(?=["'])/g;
+
+function resolves(base) {
+  return RESOLVE_EXTS.some((ext) => {
+    try {
+      return statSync(base + ext).isFile();
+    } catch {
+      return false;
+    }
+  });
+}
+
+/** basename (without extension) → absolute paths, across everything we scanned. */
+const byBasename = new Map();
+for (const file of files) {
+  const stem = file.slice(file.lastIndexOf("/") + 1).replace(/\.(tsx?|jsx?)$/, "");
+  if (!byBasename.has(stem)) byBasename.set(stem, []);
+  byBasename.get(stem).push(file);
+}
+/* Registry deps can also land beside the vendor roots (Bklit drops
+   shimmering-text straight into src/components/), so index that level too. */
+for (const extraRoot of ["src/components", "src/lib", "src/hooks"]) {
+  let entries = [];
+  try {
+    entries = readdirSync(resolve(root, extraRoot));
+  } catch {
+    continue;
+  }
+  for (const entry of entries) {
+    if (!/\.(tsx?|jsx?)$/.test(entry)) continue;
+    const full = join(resolve(root, extraRoot), entry);
+    const stem = entry.replace(/\.(tsx?|jsx?)$/, "");
+    if (!byBasename.has(stem)) byBasename.set(stem, []);
+    if (!byBasename.get(stem).includes(full)) byBasename.get(stem).push(full);
+  }
+}
+
+function repairImports(file, source) {
+  const dir = file.slice(0, file.lastIndexOf("/"));
+  const repairs = [];
+  const out = source.replace(IMPORT_RE, (spec) => {
+    if (resolves(resolve(dir, spec))) return spec;
+
+    const stem = spec.slice(spec.lastIndexOf("/") + 1);
+    const candidates = byBasename.get(stem) ?? [];
+    if (candidates.length !== 1) {
+      repairs.push({ spec, to: null, n: candidates.length });
+      return spec;
+    }
+
+    let rel = relative(dir, candidates[0]).replace(/\.(tsx?|jsx?)$/, "");
+    if (!rel.startsWith(".")) rel = "./" + rel;
+    repairs.push({ spec, to: rel, n: 1 });
+    return rel;
+  });
+  return { out, repairs };
+}
+
 if (files.length === 0) {
   console.log(
     `retoken: nothing to do — no vendored components found in:\n` +
@@ -133,6 +208,9 @@ if (files.length === 0) {
 
 let changedFiles = 0;
 let totalHits = 0;
+let importFixes = 0;
+const importDetail = [];
+const unresolvedImports = [];
 const perRule = new Map(RULES.map((r) => [r.to, 0]));
 
 for (const file of files) {
@@ -145,7 +223,22 @@ for (const file of files) {
     if (hits === 0) continue;
     after = after.replace(rule.from, rule.to);
     fileHits += hits;
+
     perRule.set(rule.to, perRule.get(rule.to) + hits);
+  }
+
+  const { out, repairs } = repairImports(file, after);
+  after = out;
+  const fixed = repairs.filter((r) => r.to);
+  const unresolved = repairs.filter((r) => !r.to);
+  fileHits += fixed.length;
+  importFixes += fixed.length;
+
+  for (const r of unresolved) {
+    unresolvedImports.push({ file, spec: r.spec, n: r.n });
+  }
+  for (const r of fixed) {
+    importDetail.push({ file, from: r.spec, to: r.to });
   }
 
   if (fileHits === 0) continue;
@@ -157,15 +250,32 @@ for (const file of files) {
   if (!checkOnly) writeFileSync(file, after, "utf8");
 }
 
+if (unresolvedImports.length > 0) {
+  console.error("\nunresolved imports — fix these by hand:");
+  for (const u of unresolvedImports) {
+    const reason = u.n === 0 ? "no file with that name" : `${u.n} candidates, ambiguous`;
+    console.error(`  ${relative(root, u.file)}\n    ${u.spec}  (${reason})`);
+  }
+}
+
 if (totalHits === 0) {
   console.log(`retoken: ${files.length} file(s) scanned, already Meridian-clean.`);
-  process.exit(0);
+  process.exit(unresolvedImports.length > 0 ? 1 : 0);
 }
 
 console.log("");
 for (const rule of RULES) {
   const n = perRule.get(rule.to);
   if (n > 0) console.log(`  → ${rule.to.padEnd(20)} ${String(n).padStart(3)}   ${rule.why}`);
+}
+if (importFixes > 0) {
+  console.log(
+    `  → ${"import path".padEnd(20)} ${String(importFixes).padStart(3)}   ` +
+      `registry layout re-homed by the shadcn CLI`
+  );
+  for (const d of importDetail) {
+    console.log(`      ${relative(root, d.file)}: ${d.from} → ${d.to}`);
+  }
 }
 console.log(
   `\nretoken: ${totalHits} replacement(s) across ${changedFiles} file(s).`

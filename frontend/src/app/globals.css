@@ -4,6 +4,14 @@
    Meridian design language unedited. Read that file before adding a registry. */
 @import "./shadcn-compat.css";
 
+/* Added by `shadcn add`, and KEPT deliberately. Meridian is light-only (the v2
+   pivot removed next-themes entirely), but vendored registry components still
+   ship `dark:` classes. Tailwind v4 defaults `dark:` to prefers-color-scheme,
+   so without this a viewer whose OS is in dark mode would see those components
+   go half-dark inside a light app. Binding the variant to a `.dark` class we
+   never apply means `dark:` can never fire. Do not remove. */
+@custom-variant dark (&:is(.dark *));
+
 /* ============================================================================
    Meridian Board OS — semantic token layer (v2: blue-on-neutral, light-only)
    The single source of truth for color, radius, elevation, and motion.
