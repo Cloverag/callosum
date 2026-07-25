@@ -105,12 +105,19 @@ export type DashboardInsights = {
 };
 
 /**
- * One weekly snapshot of the graph. Only APPROVED, evidence-backed records are
- * counted — quarantined extractions never appear here, so the curve is the
- * memory the board can actually rely on, not everything the extractor proposed.
+ * The graph after each source document is ingested. Cumulative and de-duplicated:
+ * a person named in three meetings is one entity, so the curve flattens where a
+ * document mostly refers to things already known — which is the honest shape of
+ * institutional memory, and more informative than a smooth upward line.
+ *
+ * NOT a time series. The x-axis is ingestion order, because that is the axis the
+ * data actually has; inventing dates for it would be fabrication.
  */
 export type MemoryGrowthPoint = {
-  date: string; // ISO
+  /** Source document, in ingestion order. */
+  document: string;
+  /** Short label for the axis. */
+  label: string;
   edges: number;
   entities: number;
 };
@@ -137,7 +144,7 @@ const insights: DashboardInsights = {
     entities: 38,
     edges: 40,
     relationTypes: 14,
-    documents: 16,
+    documents: 10, // documents seeded into the graph (GOLD_GROUPS); data/demo/ holds 16 files
   },
   // Every number here is measured, reproducible, and traceable to a file in the
   // repo. Nothing in this block is invented — that is the whole point of it.
@@ -232,17 +239,21 @@ const insights: DashboardInsights = {
     { id: "d-fcst", title: "Revise the FY27 forecast", status: "proposed", meeting: "Q3 Board Meeting", date: "2026-07-21T09:20:00Z" },
   ],
   reviewVelocity: [4, 6, 3, 7, 5, 8, 6, 9],
-  // Ends on the real p1.0.4 graph snapshot (731 entities / 1277 edges) so the
-  // demo reads true; earlier weeks are the corpus building up to it.
+  // Every row below was computed from the real gold graph, not estimated:
+  //   .venv/bin/python -c "from callosum.evaluate import GOLD_GROUPS; ..."
+  // accumulating unique entities and unique (source, relation, target) triples
+  // in GOLD_GROUPS order. Ends at 38 / 40, matching `memory` above.
   memoryGrowth: [
-    { date: "2026-06-01T00:00:00Z", entities: 214, edges: 289 },
-    { date: "2026-06-08T00:00:00Z", entities: 298, edges: 431 },
-    { date: "2026-06-15T00:00:00Z", entities: 367, edges: 562 },
-    { date: "2026-06-22T00:00:00Z", entities: 441, edges: 704 },
-    { date: "2026-06-29T00:00:00Z", entities: 528, edges: 871 },
-    { date: "2026-07-06T00:00:00Z", entities: 602, edges: 1013 },
-    { date: "2026-07-13T00:00:00Z", entities: 674, edges: 1158 },
-    { date: "2026-07-20T00:00:00Z", entities: 731, edges: 1277 },
+    { document: "board_meeting_12_transcript", label: "M12", entities: 7, edges: 6 },
+    { document: "board_meeting_13_transcript", label: "M13", entities: 15, edges: 16 },
+    { document: "board_meeting_14_transcript", label: "M14", entities: 25, edges: 28 },
+    { document: "finance_fy27_forecast", label: "Finance", entities: 27, edges: 29 },
+    { document: "sales_fy27_forecast", label: "Sales", entities: 29, edges: 30 },
+    { document: "board_meeting_15_transcript", label: "M15", entities: 31, edges: 34 },
+    { document: "board_meeting_16_transcript", label: "M16", entities: 34, edges: 37 },
+    { document: "messy_board_followup_email", label: "Board email", entities: 35, edges: 38 },
+    { document: "messy_audit_followup_email", label: "Audit email", entities: 37, edges: 39 },
+    { document: "compensation_review_CONFIDENTIAL", label: "Comp review", entities: 38, edges: 40 },
   ],
   pending: {
     decisionsToSign: 2,
