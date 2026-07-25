@@ -93,21 +93,44 @@ export function KnowledgeGraph({
   view,
   onSelect,
   selected,
+  focusDocument = null,
 }: {
   view: GraphView;
   onSelect: (id: string | null) => void;
   selected: string | null;
+  /** When set, everything this document did not contribute recedes. */
+  focusDocument?: string | null;
 }) {
-  /** Nodes one hop from the selection stay lit; the rest recede. */
+  /**
+   * Two ways to narrow the picture, and a node selection always wins — it is the
+   * more specific gesture, so clicking a node while a document filter is active
+   * answers the question the click asked rather than the filter's.
+   */
   const neighbours = useMemo(() => {
-    if (!selected) return null;
-    const set = new Set<string>([selected]);
-    for (const e of view.edges) {
-      if (e.source === selected) set.add(e.target);
-      if (e.target === selected) set.add(e.source);
+    if (selected) {
+      const set = new Set<string>([selected]);
+      for (const e of view.edges) {
+        if (e.source === selected) set.add(e.target);
+        if (e.target === selected) set.add(e.source);
+      }
+      return set;
     }
-    return set;
-  }, [selected, view.edges]);
+    if (focusDocument) {
+      const set = new Set<string>();
+      for (const n of view.nodes) if (n.document === focusDocument) set.add(n.id);
+      // An edge extracted from this document also lights the entities it joins,
+      // even when those entities were first introduced elsewhere — otherwise a
+      // relationship would appear to connect nothing.
+      for (const e of view.edges) {
+        if (e.document === focusDocument) {
+          set.add(e.source);
+          set.add(e.target);
+        }
+      }
+      return set;
+    }
+    return null;
+  }, [selected, focusDocument, view.edges, view.nodes]);
 
   const nodes: Node<NodePayload>[] = useMemo(
     () =>
@@ -126,9 +149,12 @@ export function KnowledgeGraph({
   const edges: Edge[] = useMemo(
     () =>
       view.edges.map((e) => {
-        const lit = !neighbours || (neighbours.has(e.source) && neighbours.has(e.target));
+        const fromDoc = focusDocument !== null && e.document === focusDocument;
+        const lit = focusDocument !== null && !selected
+          ? fromDoc
+          : !neighbours || (neighbours.has(e.source) && neighbours.has(e.target));
         const onPath =
-          selected !== null && (e.source === selected || e.target === selected);
+          selected !== null ? e.source === selected || e.target === selected : fromDoc;
         return {
           id: e.id,
           source: e.source,
@@ -150,7 +176,7 @@ export function KnowledgeGraph({
           },
         };
       }),
-    [view.edges, neighbours, selected]
+    [view.edges, neighbours, selected, focusDocument]
   );
 
   const handleNodeClick = useCallback(

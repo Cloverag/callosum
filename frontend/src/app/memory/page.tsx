@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { graphApi, NODE_TYPE_LABEL, type GraphView } from "@/lib/graph";
 import { KnowledgeGraph, EvidencePanel } from "./knowledge-graph";
+import { ProvenanceTimeline } from "./provenance-timeline";
 
 /**
  * Institutional Memory — the verified knowledge graph itself.
@@ -23,6 +24,7 @@ import { KnowledgeGraph, EvidencePanel } from "./knowledge-graph";
 export default function MemoryPage() {
   const [view, setView] = useState<GraphView | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const [activeDocument, setActiveDocument] = useState<string | null>(null);
   const [asFounder, setAsFounder] = useState(true);
 
   useEffect(() => {
@@ -32,11 +34,23 @@ export default function MemoryPage() {
       setView(v);
       // Drop a selection that this clearance can no longer see.
       setSelected((s) => (s && v.nodes.some((n) => n.id === s) ? s : null));
+      setActiveDocument((d) =>
+        d && (v.nodes.some((n) => n.document === d) || v.edges.some((e) => e.document === d))
+          ? d
+          : null
+      );
     });
     return () => {
       live = false;
     };
   }, [asFounder]);
+
+  /** Selecting a node answers a more specific question than a document filter,
+   *  so it clears the filter rather than compounding with it. */
+  const selectNode = (id: string | null) => {
+    setSelected(id);
+    if (id) setActiveDocument(null);
+  };
 
   const withheld = (view?.withheldNodes ?? 0) + (view?.withheldEdges ?? 0);
 
@@ -115,15 +129,36 @@ export default function MemoryPage() {
       <div className="mt-5 flex flex-col gap-5">
         <div className="h-[30rem] overflow-hidden rounded-[16px] border border-border bg-surface-raised shadow-card">
           {view ? (
-            <KnowledgeGraph view={view} selected={selected} onSelect={setSelected} />
+            <KnowledgeGraph
+              view={view}
+              selected={selected}
+              onSelect={selectNode}
+              focusDocument={activeDocument}
+            />
           ) : (
             <div className="h-full w-full animate-pulse bg-surface-sunken" />
           )}
         </div>
 
-        <aside className="max-h-[24rem] min-h-[10rem] overflow-hidden rounded-[16px] border border-border bg-surface-raised shadow-card">
-          {view && <EvidencePanel view={view} selected={selected} />}
-        </aside>
+        <div className="grid gap-5 xl:grid-cols-2">
+          <aside className="max-h-[26rem] min-h-[10rem] overflow-hidden rounded-[16px] border border-border bg-surface-raised shadow-card">
+            {view && <EvidencePanel view={view} selected={selected} />}
+          </aside>
+
+          <div className="max-h-[26rem] overflow-y-auto rounded-[16px] border border-border bg-surface-raised px-4 py-4 shadow-card">
+            {view && (
+              <ProvenanceTimeline
+                view={view}
+                activeDocument={activeDocument}
+                onSelectDocument={(d) => {
+                  setActiveDocument(d);
+                  setSelected(null);
+                }}
+                onSelectNode={selectNode}
+              />
+            )}
+          </div>
+        </div>
       </div>
 
       {/* A canvas is not reachable without a pointer and sight. The same graph,
