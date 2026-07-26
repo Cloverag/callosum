@@ -55,6 +55,7 @@ def upgrade() -> None:
             stance        TEXT NOT NULL CHECK (stance IN {_STANCES}),
             comment       TEXT,
             created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
             workspace_id  UUID NOT NULL DEFAULT '{DEFAULT_WORKSPACE_ID}' REFERENCES workspace(id),
 
             CONSTRAINT stance_person_not_empty CHECK (length(trim(person_name)) > 0),
