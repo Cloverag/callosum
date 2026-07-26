@@ -6,6 +6,7 @@ immutability of approved decisions, supersession version history, optimistic con
 Row-Level Security tenant isolation across workspaces.
 """
 
+from datetime import datetime, timedelta, timezone
 import os
 import uuid
 
@@ -458,5 +459,63 @@ def test_chained_supersession_history():
         assert f1.superseded_by_id == f2.id
         assert f2.superseded_by_id == f3.id
         assert f3.superseded_by_id is None
+    finally:
+        _cleanup(ws)
+
+
+def test_create_decision_during_in_progress_meeting():
+    ws = _new_workspace()
+    try:
+        now_dt = datetime.now(timezone.utc) if hasattr(datetime, "now") else datetime.utcnow()
+        m = meetings.create_meeting(
+            "Live Meeting",
+            scheduled_start=now_dt,
+            scheduled_end=now_dt + timedelta(hours=1),
+            workspace_id=ws,
+        )
+        m = meetings.transition_status(m.id, meetings.SCHEDULED, expected_version=1, workspace_id=ws)
+        m = meetings.transition_status(m.id, meetings.IN_PROGRESS, expected_version=2, workspace_id=ws)
+
+        # Decisions can be recorded during an IN_PROGRESS meeting
+        dec = decisions.create_decision(m.id, "Live Decision", workspace_id=ws)
+        assert dec.status == PROPOSED
+        assert dec.meeting_id == m.id
+    finally:
+        _cleanup(ws)
+
+
+def test_record_stance_on_non_proposed_decision_raises_locked_error():
+    ws = _new_workspace()
+    try:
+        m = meetings.create_meeting("Approved Stance Meeting", workspace_id=ws)
+        dec = decisions.create_decision(m.id, "Immutable Decision", workspace_id=ws)
+        dec = decisions.transition_decision_status(dec.id, APPROVED, expected_version=1, workspace_id=ws)
+
+        # Recording stance on an APPROVED decision must raise DecisionLockedError
+        with pytest.raises(DecisionLockedError):
+            decisions.record_stance(dec.id, "Late Director", STANCE_SUPPORTED, workspace_id=ws)
+    finally:
+        _cleanup(ws)
+
+
+def test_record_stance_upsert_preserves_created_at_and_updates_updated_at():
+    ws = _new_workspace()
+    try:
+        m = meetings.create_meeting("Stance Timestamp Meeting", workspace_id=ws)
+        dec = decisions.create_decision(m.id, "Stance Timestamp Decision", workspace_id=ws)
+
+        s1 = decisions.record_stance(dec.id, "Director Timestamp", STANCE_SUPPORTED, workspace_id=ws)
+        initial_created_at = s1.created_at
+        initial_updated_at = s1.updated_at
+
+        # Upsert stance with new comment
+        s2 = decisions.record_stance(
+            dec.id, "Director Timestamp", STANCE_APPROVED, workspace_id=ws, comment="Changed to approved"
+        )
+
+        assert s2.created_at == initial_created_at
+        assert s2.updated_at >= initial_updated_at
+        assert s2.stance == STANCE_APPROVED
+        assert s2.comment == "Changed to approved"
     finally:
         _cleanup(ws)

@@ -18,8 +18,6 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 
-import psycopg.errors
-
 from callosum import store
 from callosum.store import DEFAULT_WORKSPACE_ID
 from meridian.meetings import MeetingNotFound
@@ -47,7 +45,9 @@ STANCE_REQUESTED = "REQUESTED"
 
 ALLOWED_STANCES = frozenset({STANCE_SUPPORTED, STANCE_OPPOSED, STANCE_APPROVED, STANCE_REQUESTED})
 
-# Meeting statuses where decision creation/mutation is locked
+# Meeting statuses where decision creation/mutation is locked.
+# Note: Diverges from agenda.py (which locks on `in_progress`) because decisions are
+# recorded *during* live meetings, whereas meeting agenda structure is fixed once started.
 _LOCKED_MEETING_STATUSES = frozenset({"completed", "cancelled"})
 
 _UNSET = object()
@@ -90,6 +90,7 @@ class DecisionStance:
     stance: str
     comment: str | None
     created_at: datetime
+    updated_at: datetime
 
 
 @dataclass(frozen=True)
@@ -117,6 +118,7 @@ def _row_to_stance(row: dict) -> DecisionStance:
         stance=row["stance"],
         comment=row["comment"],
         created_at=row["created_at"],
+        updated_at=row["updated_at"],
     )
 
 
@@ -356,6 +358,11 @@ def record_stance(
         if dec is None:
             raise DecisionNotFound(str(decision_id))
 
+        if dec["status"] != PROPOSED:
+            raise DecisionLockedError(
+                f"cannot record stance for decision in status {dec['status']!r}; stances are locked on non-proposed decisions"
+            )
+
         _assert_meeting_active(conn, dec["meeting_id"])
 
         row = conn.execute(
@@ -366,14 +373,14 @@ def record_stance(
             ON CONFLICT (decision_id, person_name) DO UPDATE
                SET stance = EXCLUDED.stance,
                    comment = EXCLUDED.comment,
-                   created_at = now()
+                   updated_at = now()
             RETURNING *
             """,
             (
                 dec_uuid,
                 person_name.strip(),
                 stance,
-                comment.strip() if comment else None,
+                comment.strip() if comment and comment.strip() else None,
                 workspace_id,
             ),
         ).fetchone()
