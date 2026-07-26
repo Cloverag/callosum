@@ -237,3 +237,85 @@ def test_optimistic_concurrency():
             packs.update_pack(pack.id, expected_version=1, workspace_id=ws, title="Stale Title")
     finally:
         _cleanup(ws)
+
+
+def test_board_pack_validation_errors():
+    ws = _new_workspace()
+    try:
+        m = meetings.create_meeting("Validation Pack Meeting", workspace_id=ws)
+        d1 = _create_test_document(ws, "Doc 1.pdf")
+
+        # Empty title
+        with pytest.raises(BoardPackValidationError):
+            packs.create_pack(m.id, "   ", workspace_id=ws)
+
+        p = packs.create_pack(m.id, "Valid Pack Title", workspace_id=ws)
+
+        # Invalid status filter
+        with pytest.raises(BoardPackValidationError):
+            packs.list_packs(m.id, workspace_id=ws, status="INVALID_STATUS")
+
+        # No fields to update
+        with pytest.raises(BoardPackValidationError):
+            packs.update_pack(p.id, expected_version=1, workspace_id=ws)
+
+        # Superseding a draft pack (only published packs can be superseded)
+        with pytest.raises(BoardPackValidationError):
+            packs.supersede_pack(p.id, "New Title", expected_version=1, workspace_id=ws)
+    finally:
+        _cleanup(ws)
+
+
+def test_reorder_pack_items():
+    ws = _new_workspace()
+    try:
+        m = meetings.create_meeting("Reorder Pack Meeting", workspace_id=ws)
+        d1 = _create_test_document(ws, "Doc 1.pdf")
+        d2 = _create_test_document(ws, "Doc 2.pdf")
+        d3 = _create_test_document(ws, "Doc 3.pdf")
+
+        p = packs.create_pack(m.id, "Reorder Pack", workspace_id=ws)
+        i1 = packs.add_pack_item(p.id, d1, workspace_id=ws)
+        i2 = packs.add_pack_item(p.id, d2, workspace_id=ws)
+        i3 = packs.add_pack_item(p.id, d3, workspace_id=ws)
+
+        # Reorder to i3, i1, i2
+        reordered = packs.reorder_pack_items(p.id, [i3.id, i1.id, i2.id], workspace_id=ws)
+        item_order = [it.id for it in reordered.items]
+        assert item_order == [i3.id, i1.id, i2.id]
+        assert [it.position for it in reordered.items] == [1, 2, 3]
+    finally:
+        _cleanup(ws)
+
+
+def test_duplicate_document_rejection():
+    ws = _new_workspace()
+    try:
+        m = meetings.create_meeting("Dup Doc Meeting", workspace_id=ws)
+        d1 = _create_test_document(ws, "Single Doc.pdf")
+
+        p = packs.create_pack(m.id, "Dup Doc Pack", workspace_id=ws)
+        packs.add_pack_item(p.id, d1, workspace_id=ws)
+
+        # Adding same document twice raises BoardPackValidationError
+        with pytest.raises(BoardPackValidationError):
+            packs.add_pack_item(p.id, d1, workspace_id=ws)
+    finally:
+        _cleanup(ws)
+
+
+def test_mismatched_agenda_item_rejection():
+    ws = _new_workspace()
+    try:
+        m1 = meetings.create_meeting("Meeting 1", workspace_id=ws)
+        m2 = meetings.create_meeting("Meeting 2", workspace_id=ws)
+        d1 = _create_test_document(ws, "Doc 1.pdf")
+        ag2 = agenda.create_agenda_item(m2.id, "Agenda Item for Meeting 2", workspace_id=ws)
+
+        p1 = packs.create_pack(m1.id, "Pack for Meeting 1", workspace_id=ws)
+
+        # Attaching m2's agenda item to m1's pack raises BoardPackValidationError
+        with pytest.raises(BoardPackValidationError):
+            packs.add_pack_item(p1.id, d1, workspace_id=ws, agenda_item_id=ag2.id)
+    finally:
+        _cleanup(ws)

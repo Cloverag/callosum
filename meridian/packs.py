@@ -315,6 +315,16 @@ def add_pack_item(
         if doc is None:
             raise BoardPackValidationError(f"document {document_id} not found")
 
+        # Check duplicate document
+        dup = conn.execute(
+            "SELECT id FROM board_pack_item WHERE board_pack_id = %s AND document_id = %s",
+            (pack_uuid, doc_uuid),
+        ).fetchone()
+        if dup is not None:
+            raise BoardPackValidationError(
+                f"document {document_id} is already in board_pack {pack_id}"
+            )
+
         # Validate agenda_item if provided
         if ag_uuid:
             ag = conn.execute(
@@ -549,3 +559,65 @@ def supersede_pack(
         old_items_copied = _fetch_items_for_packs(conn, [old_uuid]).get(str(old_uuid), [])
 
     return _row_to_board_pack(new_row, items=new_items), _row_to_board_pack(updated_old, items=old_items_copied)
+
+
+def reorder_pack_items(
+    pack_id: str,
+    ordered_item_ids: list[str],
+    *,
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
+) -> BoardPack:
+    """Reorders the items of a draft board pack to match `ordered_item_ids` (1..N)."""
+    if not ordered_item_ids:
+        raise BoardPackValidationError("ordered_item_ids must not be empty")
+
+    pack_uuid = uuid.UUID(str(pack_id))
+    item_uuids = [uuid.UUID(str(i)) for i in ordered_item_ids]
+
+    with store.pg(workspace_id) as conn:
+        pack = conn.execute(
+            "SELECT meeting_id, status, version FROM board_pack WHERE id = %s FOR UPDATE",
+            (pack_uuid,),
+        ).fetchone()
+        if pack is None:
+            raise BoardPackNotFound(str(pack_id))
+
+        if pack["status"] != DRAFT:
+            raise BoardPackLockedError(
+                f"cannot reorder items for board pack in status {pack['status']!r}; published packs are immutable"
+            )
+
+        _assert_meeting_pre_meeting(conn, pack["meeting_id"])
+
+        existing_items = conn.execute(
+            "SELECT id FROM board_pack_item WHERE board_pack_id = %s", (pack_uuid,)
+        ).fetchall()
+        existing_ids = {r["id"] for r in existing_items}
+
+        if set(item_uuids) != existing_ids or len(item_uuids) != len(existing_ids):
+            raise BoardPackValidationError(
+                "ordered_item_ids must contain exactly the existing item IDs for this board pack"
+            )
+
+        # Temporary negative position assignment to avoid UNIQUE constraint collision during swap
+        for idx, item_id in enumerate(item_uuids, start=1):
+            conn.execute(
+                "UPDATE board_pack_item SET position = %s WHERE id = %s AND board_pack_id = %s",
+                (-idx, item_id, pack_uuid),
+            )
+
+        for idx, item_id in enumerate(item_uuids, start=1):
+            conn.execute(
+                "UPDATE board_pack_item SET position = %s WHERE id = %s AND board_pack_id = %s",
+                (idx, item_id, pack_uuid),
+            )
+
+        row = conn.execute(
+            "UPDATE board_pack SET version = version + 1, updated_at = now() WHERE id = %s RETURNING *",
+            (pack_uuid,),
+        ).fetchone()
+
+        items = _fetch_items_for_packs(conn, [pack_uuid]).get(str(pack_uuid), [])
+
+    return _row_to_board_pack(row, items=items)
+
