@@ -199,3 +199,36 @@ def test_optimistic_concurrency():
             minutes.update_minutes(min_rec.id, expected_version=1, workspace_id=ws, body="Stale Minutes")
     finally:
         _cleanup(ws)
+
+
+def test_minutes_validation_errors():
+    ws = _new_workspace()
+    try:
+        m = _create_live_meeting(ws)
+
+        # Empty body creation
+        with pytest.raises(MinutesValidationError):
+            minutes.create_minutes(m.id, "   ", workspace_id=ws)
+
+        min_rec = minutes.create_minutes(m.id, "Valid Minutes Body", workspace_id=ws)
+
+        # No fields to update
+        with pytest.raises(MinutesValidationError):
+            minutes.update_minutes(min_rec.id, expected_version=1, workspace_id=ws)
+
+        # Empty body update
+        with pytest.raises(MinutesValidationError):
+            minutes.update_minutes(min_rec.id, expected_version=1, workspace_id=ws, body="   ")
+
+        # Superseding draft minutes (only final minutes can be superseded)
+        with pytest.raises(MinutesValidationError):
+            minutes.supersede_minutes(min_rec.id, "New Body", expected_version=1, workspace_id=ws)
+
+        # Finalise minutes
+        finalised = minutes.finalise_minutes(min_rec.id, expected_version=1, workspace_id=ws)
+
+        # Finalising already finalised minutes raises MinutesValidationError
+        with pytest.raises(MinutesValidationError):
+            minutes.finalise_minutes(finalised.id, expected_version=2, workspace_id=ws)
+    finally:
+        _cleanup(ws)
