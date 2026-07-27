@@ -599,11 +599,11 @@ def reorder_pack_items(
                 "ordered_item_ids must contain exactly the existing item IDs for this board pack"
             )
 
-        # Temporary negative position assignment to avoid UNIQUE constraint collision during swap
+        # Temporary positive offset assignment to avoid UNIQUE constraint collision during swap
         for idx, item_id in enumerate(item_uuids, start=1):
             conn.execute(
                 "UPDATE board_pack_item SET position = %s WHERE id = %s AND board_pack_id = %s",
-                (-idx, item_id, pack_uuid),
+                (idx + 10000, item_id, pack_uuid),
             )
 
         for idx, item_id in enumerate(item_uuids, start=1):
