@@ -22,6 +22,9 @@ from callosum import store
 from callosum.store import DEFAULT_WORKSPACE_ID
 from meridian.meetings import MeetingNotFound
 
+PUBLIC_CLEARANCE = 1
+RESTRICTED_CLEARANCE = 4
+
 DRAFT = "draft"
 PUBLISHED = "published"
 
@@ -46,11 +49,11 @@ class BoardPackNotFound(BoardPackError):
 
 
 class BoardPackLockedError(BoardPackError):
-    """The board pack or parent meeting is in a locked/immutable state."""
+    """The parent meeting or board pack is in a non-mutable state."""
 
 
 class StaleBoardPackError(BoardPackError):
-    """Optimistic-concurrency conflict: board pack was modified since it was read."""
+    """Optimistic-concurrency conflict: pack was modified since it was read."""
 
 
 class BoardPackValidationError(BoardPackError):
@@ -58,7 +61,7 @@ class BoardPackValidationError(BoardPackError):
 
 
 # ---------------------------------------------------------------------------
-# Read Models
+# Read Model
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
@@ -89,6 +92,23 @@ class BoardPack:
     items: list[BoardPackItem]
 
 
+def _row_to_board_pack(row: dict, items: list[BoardPackItem]) -> BoardPack:
+    return BoardPack(
+        id=str(row["id"]),
+        meeting_id=str(row["meeting_id"]),
+        title=row["title"],
+        status=row["status"],
+        version_no=row["version_no"],
+        superseded_by_id=str(row["superseded_by_id"]) if row["superseded_by_id"] else None,
+        published_at=row["published_at"],
+        version=row["version"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        workspace_id=str(row["workspace_id"]),
+        items=items,
+    )
+
+
 def _row_to_pack_item(row: dict) -> BoardPackItem:
     return BoardPackItem(
         id=str(row["id"]),
@@ -102,29 +122,12 @@ def _row_to_pack_item(row: dict) -> BoardPackItem:
     )
 
 
-def _row_to_board_pack(row: dict, items: list[BoardPackItem] | None = None) -> BoardPack:
-    return BoardPack(
-        id=str(row["id"]),
-        meeting_id=str(row["meeting_id"]),
-        title=row["title"],
-        status=row["status"],
-        version_no=row["version_no"],
-        superseded_by_id=str(row["superseded_by_id"]) if row["superseded_by_id"] else None,
-        published_at=row["published_at"],
-        version=row["version"],
-        created_at=row["created_at"],
-        updated_at=row["updated_at"],
-        workspace_id=str(row["workspace_id"]),
-        items=items or [],
-    )
-
-
 # ---------------------------------------------------------------------------
 # Internal Helpers
 # ---------------------------------------------------------------------------
 
 def _assert_meeting_pre_meeting(conn, meeting_id_uuid: uuid.UUID) -> None:
-    """Verifies parent meeting exists and is in pre-meeting state (draft/scheduled)."""
+    """Verifies parent meeting exists and is in pre-meeting state (draft or scheduled)."""
     row = conn.execute(
         "SELECT status FROM meeting WHERE id = %s FOR SHARE", (meeting_id_uuid,)
     ).fetchone()
@@ -137,7 +140,7 @@ def _assert_meeting_pre_meeting(conn, meeting_id_uuid: uuid.UUID) -> None:
 
 
 def _fetch_items_for_packs(
-    conn, pack_ids: list[uuid.UUID], clearance: int = 4
+    conn, pack_ids: list[uuid.UUID], clearance: int
 ) -> dict[str, list[BoardPackItem]]:
     if not pack_ids:
         return {}
@@ -195,7 +198,7 @@ def get_pack(
     pack_id: str,
     *,
     workspace_id: str = DEFAULT_WORKSPACE_ID,
-    clearance: int = 4,
+    clearance: int,
 ) -> BoardPack:
     """Fetches a single board pack with items filtered by caller clearance level. Raises BoardPackNotFound if missing/invisible."""
     pack_uuid = uuid.UUID(str(pack_id))
@@ -214,7 +217,7 @@ def list_packs(
     *,
     workspace_id: str = DEFAULT_WORKSPACE_ID,
     status: str | None = None,
-    clearance: int = 4,
+    clearance: int,
 ) -> list[BoardPack]:
     """Returns all board packs for a meeting, ordered by version_no DESC, with items filtered by clearance."""
     meeting_uuid = uuid.UUID(str(meeting_id))
@@ -243,6 +246,7 @@ def update_pack(
     expected_version: int,
     workspace_id: str = DEFAULT_WORKSPACE_ID,
     title=_UNSET,
+    clearance: int,
 ) -> BoardPack:
     """Updates title of a `draft` board pack under version-guarded optimistic concurrency."""
     if title is _UNSET:
@@ -286,7 +290,7 @@ def update_pack(
         if row is None:
             raise StaleBoardPackError(f"board_pack {pack_id}: concurrent modification")
 
-        items = _fetch_items_for_packs(conn, [pack_uuid]).get(str(pack_uuid), [])
+        items = _fetch_items_for_packs(conn, [pack_uuid], clearance=clearance).get(str(pack_uuid), [])
 
     return _row_to_board_pack(row, items=items)
 
@@ -443,6 +447,7 @@ def publish_pack(
     *,
     expected_version: int,
     workspace_id: str = DEFAULT_WORKSPACE_ID,
+    clearance: int,
 ) -> BoardPack:
     """Publishes a draft board pack, locking its contents and setting published_at."""
     pack_uuid = uuid.UUID(str(pack_id))
@@ -478,7 +483,7 @@ def publish_pack(
         if row is None:
             raise StaleBoardPackError(f"board_pack {pack_id}: concurrent modification")
 
-        items = _fetch_items_for_packs(conn, [pack_uuid]).get(str(pack_uuid), [])
+        items = _fetch_items_for_packs(conn, [pack_uuid], clearance=clearance).get(str(pack_uuid), [])
 
     return _row_to_board_pack(row, items=items)
 
@@ -489,6 +494,7 @@ def supersede_pack(
     *,
     expected_version: int,
     workspace_id: str = DEFAULT_WORKSPACE_ID,
+    clearance: int,
 ) -> tuple[BoardPack, BoardPack]:
     """Supersedes a published board pack with a new draft board pack version."""
     if not new_title or not new_title.strip():
@@ -533,7 +539,7 @@ def supersede_pack(
         ).fetchone()
         new_uuid = new_row["id"]
 
-        # 2. Copy items from old pack to new pack
+        # 2. Copy items from old pack to new pack (unfiltered copy preserves all pack items in DB)
         old_items = conn.execute(
             "SELECT * FROM board_pack_item WHERE board_pack_id = %s ORDER BY position ASC",
             (old_uuid,),
@@ -567,8 +573,8 @@ def supersede_pack(
             (new_uuid, old_uuid, expected_version),
         ).fetchone()
 
-        new_items = _fetch_items_for_packs(conn, [new_uuid]).get(str(new_uuid), [])
-        old_items_copied = _fetch_items_for_packs(conn, [old_uuid]).get(str(old_uuid), [])
+        new_items = _fetch_items_for_packs(conn, [new_uuid], clearance=clearance).get(str(new_uuid), [])
+        old_items_copied = _fetch_items_for_packs(conn, [old_uuid], clearance=clearance).get(str(old_uuid), [])
 
     return _row_to_board_pack(new_row, items=new_items), _row_to_board_pack(updated_old, items=old_items_copied)
 
@@ -578,6 +584,7 @@ def reorder_pack_items(
     ordered_item_ids: list[str],
     *,
     workspace_id: str = DEFAULT_WORKSPACE_ID,
+    clearance: int,
 ) -> BoardPack:
     """Reorders the items of a draft board pack to match `ordered_item_ids` (1..N)."""
     if not ordered_item_ids:
@@ -629,7 +636,7 @@ def reorder_pack_items(
             (pack_uuid,),
         ).fetchone()
 
-        items = _fetch_items_for_packs(conn, [pack_uuid]).get(str(pack_uuid), [])
+        items = _fetch_items_for_packs(conn, [pack_uuid], clearance=clearance).get(str(pack_uuid), [])
 
     return _row_to_board_pack(row, items=items)
 

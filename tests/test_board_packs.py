@@ -21,6 +21,8 @@ from meridian import agenda, meetings, packs
 from meridian.packs import (
     DRAFT,
     PUBLISHED,
+    PUBLIC_CLEARANCE,
+    RESTRICTED_CLEARANCE,
     BoardPackLockedError,
     BoardPackNotFound,
     BoardPackValidationError,
@@ -90,7 +92,7 @@ def test_create_and_get_board_pack():
         assert item.position == 1
         assert item.note == "Main presentation"
 
-        fetched = packs.get_pack(pack.id, workspace_id=ws)
+        fetched = packs.get_pack(pack.id, workspace_id=ws, clearance=RESTRICTED_CLEARANCE)
         assert len(fetched.items) == 1
         assert fetched.items[0].document_id == doc
     finally:
@@ -114,7 +116,7 @@ def test_add_and_remove_pack_items():
         # Remove item 1 -> item 2 position shifts down to 1
         packs.remove_pack_item(i1.id, workspace_id=ws)
 
-        fetched = packs.get_pack(pack.id, workspace_id=ws)
+        fetched = packs.get_pack(pack.id, workspace_id=ws, clearance=RESTRICTED_CLEARANCE)
         assert len(fetched.items) == 1
         assert fetched.items[0].id == i2.id
         assert fetched.items[0].position == 1
@@ -132,7 +134,7 @@ def test_publish_board_pack_locks_mutations():
         packs.add_pack_item(pack.id, doc, workspace_id=ws)
 
         # Publish pack
-        published = packs.publish_pack(pack.id, expected_version=2, workspace_id=ws)
+        published = packs.publish_pack(pack.id, expected_version=2, workspace_id=ws, clearance=RESTRICTED_CLEARANCE)
         assert published.status == PUBLISHED
         assert published.published_at is not None
 
@@ -142,7 +144,7 @@ def test_publish_board_pack_locks_mutations():
             packs.add_pack_item(published.id, d2, workspace_id=ws)
 
         with pytest.raises(BoardPackLockedError):
-            packs.update_pack(published.id, expected_version=3, workspace_id=ws, title="Renamed Pack")
+            packs.update_pack(published.id, expected_version=3, workspace_id=ws, title="Renamed Pack", clearance=RESTRICTED_CLEARANCE)
     finally:
         _cleanup(ws)
 
@@ -155,11 +157,11 @@ def test_supersede_published_pack():
 
         p1 = packs.create_pack(m.id, "Pack v1", workspace_id=ws)
         packs.add_pack_item(p1.id, doc, workspace_id=ws)
-        p1 = packs.publish_pack(p1.id, expected_version=2, workspace_id=ws)
+        p1 = packs.publish_pack(p1.id, expected_version=2, workspace_id=ws, clearance=RESTRICTED_CLEARANCE)
 
         # Supersede p1 with p2
         p2, p1_updated = packs.supersede_pack(
-            p1.id, "Pack v2 (Amended)", expected_version=3, workspace_id=ws
+            p1.id, "Pack v2 (Amended)", expected_version=3, workspace_id=ws, clearance=RESTRICTED_CLEARANCE
         )
 
         assert p2.title == "Pack v2 (Amended)"
@@ -211,10 +213,10 @@ def test_cross_workspace_isolation():
         p_a = packs.create_pack(m_a.id, "Pack A", workspace_id=ws_a)
 
         # Workspace B cannot see or modify A's pack
-        assert packs.list_packs(m_a.id, workspace_id=ws_b) == []
+        assert packs.list_packs(m_a.id, workspace_id=ws_b, clearance=RESTRICTED_CLEARANCE) == []
 
         with pytest.raises(BoardPackNotFound):
-            packs.get_pack(p_a.id, workspace_id=ws_b)
+            packs.get_pack(p_a.id, workspace_id=ws_b, clearance=RESTRICTED_CLEARANCE)
 
         with pytest.raises(BoardPackNotFound):
             packs.add_pack_item(p_a.id, doc_a, workspace_id=ws_b)
@@ -229,12 +231,12 @@ def test_optimistic_concurrency():
         pack = packs.create_pack(m.id, "Original Pack Title", workspace_id=ws)
 
         # Update 1 -> version 2
-        updated = packs.update_pack(pack.id, expected_version=1, workspace_id=ws, title="New Title")
+        updated = packs.update_pack(pack.id, expected_version=1, workspace_id=ws, title="New Title", clearance=RESTRICTED_CLEARANCE)
         assert updated.version == 2
 
         # Update 2 with stale version 1 -> raises StaleBoardPackError
         with pytest.raises(StaleBoardPackError):
-            packs.update_pack(pack.id, expected_version=1, workspace_id=ws, title="Stale Title")
+            packs.update_pack(pack.id, expected_version=1, workspace_id=ws, title="Stale Title", clearance=RESTRICTED_CLEARANCE)
     finally:
         _cleanup(ws)
 
@@ -253,15 +255,15 @@ def test_board_pack_validation_errors():
 
         # Invalid status filter
         with pytest.raises(BoardPackValidationError):
-            packs.list_packs(m.id, workspace_id=ws, status="INVALID_STATUS")
+            packs.list_packs(m.id, workspace_id=ws, status="INVALID_STATUS", clearance=RESTRICTED_CLEARANCE)
 
         # No fields to update
         with pytest.raises(BoardPackValidationError):
-            packs.update_pack(p.id, expected_version=1, workspace_id=ws)
+            packs.update_pack(p.id, expected_version=1, workspace_id=ws, clearance=RESTRICTED_CLEARANCE)
 
         # Superseding a draft pack (only published packs can be superseded)
         with pytest.raises(BoardPackValidationError):
-            packs.supersede_pack(p.id, "New Title", expected_version=1, workspace_id=ws)
+            packs.supersede_pack(p.id, "New Title", expected_version=1, workspace_id=ws, clearance=RESTRICTED_CLEARANCE)
     finally:
         _cleanup(ws)
 
@@ -280,7 +282,7 @@ def test_reorder_pack_items():
         i3 = packs.add_pack_item(p.id, d3, workspace_id=ws)
 
         # Reorder to i3, i1, i2
-        reordered = packs.reorder_pack_items(p.id, [i3.id, i1.id, i2.id], workspace_id=ws)
+        reordered = packs.reorder_pack_items(p.id, [i3.id, i1.id, i2.id], workspace_id=ws, clearance=RESTRICTED_CLEARANCE)
         item_order = [it.id for it in reordered.items]
         assert item_order == [i3.id, i1.id, i2.id]
         assert [it.position for it in reordered.items] == [1, 2, 3]
