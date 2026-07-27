@@ -18,7 +18,7 @@ depends_on = None
 
 DEFAULT_WORKSPACE_ID = "00000000-0000-0000-0000-000000000001"
 _PREDICATE = "workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid"
-_PACK_STATUSES = "('draft', 'published', 'archived')"
+_PACK_STATUSES = "('draft', 'published')"
 _MINUTES_STATUSES = "('draft', 'final')"
 
 

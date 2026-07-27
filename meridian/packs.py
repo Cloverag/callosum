@@ -24,9 +24,8 @@ from meridian.meetings import MeetingNotFound
 
 DRAFT = "draft"
 PUBLISHED = "published"
-ARCHIVED = "archived"
 
-PACK_STATUSES = frozenset({DRAFT, PUBLISHED, ARCHIVED})
+PACK_STATUSES = frozenset({DRAFT, PUBLISHED})
 
 # Meeting statuses where board pack creation/mutation is locked
 _LOCKED_MEETING_STATUSES = frozenset({"in_progress", "completed", "cancelled"})
@@ -137,12 +136,21 @@ def _assert_meeting_pre_meeting(conn, meeting_id_uuid: uuid.UUID) -> None:
         )
 
 
-def _fetch_items_for_packs(conn, pack_ids: list[uuid.UUID]) -> dict[str, list[BoardPackItem]]:
+def _fetch_items_for_packs(
+    conn, pack_ids: list[uuid.UUID], clearance: int = 4
+) -> dict[str, list[BoardPackItem]]:
     if not pack_ids:
         return {}
     rows = conn.execute(
-        "SELECT * FROM board_pack_item WHERE board_pack_id = ANY(%s) ORDER BY position ASC",
-        (pack_ids,),
+        """
+        SELECT bpi.*
+          FROM board_pack_item bpi
+          JOIN document d ON d.id = bpi.document_id
+         WHERE bpi.board_pack_id = ANY(%s)
+           AND d.sensitivity <= %s
+         ORDER BY bpi.position ASC
+        """,
+        (pack_ids, clearance),
     ).fetchall()
     result: dict[str, list[BoardPackItem]] = {}
     for r in rows:
@@ -184,9 +192,12 @@ def create_pack(
 
 
 def get_pack(
-    pack_id: str, *, workspace_id: str = DEFAULT_WORKSPACE_ID
+    pack_id: str,
+    *,
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
+    clearance: int = 4,
 ) -> BoardPack:
-    """Fetches a single board pack with its items. Raises BoardPackNotFound if missing/invisible."""
+    """Fetches a single board pack with items filtered by caller clearance level. Raises BoardPackNotFound if missing/invisible."""
     pack_uuid = uuid.UUID(str(pack_id))
     with store.pg(workspace_id) as conn:
         row = conn.execute(
@@ -194,7 +205,7 @@ def get_pack(
         ).fetchone()
         if row is None:
             raise BoardPackNotFound(str(pack_id))
-        items = _fetch_items_for_packs(conn, [pack_uuid]).get(str(pack_uuid), [])
+        items = _fetch_items_for_packs(conn, [pack_uuid], clearance=clearance).get(str(pack_uuid), [])
     return _row_to_board_pack(row, items=items)
 
 
@@ -203,8 +214,9 @@ def list_packs(
     *,
     workspace_id: str = DEFAULT_WORKSPACE_ID,
     status: str | None = None,
+    clearance: int = 4,
 ) -> list[BoardPack]:
-    """Returns all board packs for a meeting, ordered by version_no DESC."""
+    """Returns all board packs for a meeting, ordered by version_no DESC, with items filtered by clearance."""
     meeting_uuid = uuid.UUID(str(meeting_id))
     query = "SELECT * FROM board_pack WHERE meeting_id = %s"
     params: list = [meeting_uuid]
@@ -220,7 +232,7 @@ def list_packs(
     with store.pg(workspace_id) as conn:
         rows = conn.execute(query, params).fetchall()
         pack_uuids = [r["id"] for r in rows]
-        items_map = _fetch_items_for_packs(conn, pack_uuids)
+        items_map = _fetch_items_for_packs(conn, pack_uuids, clearance=clearance)
 
     return [_row_to_board_pack(r, items=items_map.get(str(r["id"]), [])) for r in rows]
 
