@@ -6,6 +6,7 @@ insert/delete, atomic reordering, meeting-lifecycle lock enforcement, optimistic
 and Row-Level Security tenant isolation across workspaces.
 """
 
+from datetime import datetime, timezone
 import os
 import uuid
 
@@ -154,8 +155,8 @@ def test_agenda_locked_when_meeting_not_mutable():
         m = meetings.create_meeting(
             "Locked Meeting",
             workspace_id=ws,
-            scheduled_start=meetings.datetime(2026, 8, 1, 14, 0, tzinfo=meetings.timezone.utc),
-            scheduled_end=meetings.datetime(2026, 8, 1, 15, 0, tzinfo=meetings.timezone.utc),
+            scheduled_start=datetime(2026, 8, 1, 14, 0, tzinfo=timezone.utc),
+            scheduled_end=datetime(2026, 8, 1, 15, 0, tzinfo=timezone.utc),
         )
         i1 = agenda.create_agenda_item(m.id, "Pre-lock item", workspace_id=ws)
 
