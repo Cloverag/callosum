@@ -14,6 +14,13 @@ import {
 import type { MemoryHealth as MemoryHealthData } from "@/lib/insights";
 
 /**
+ * What a row shows when the underlying signal has no measurement behind it.
+ * An em dash rather than a zero: a number here would be read as a result, and
+ * "we did not measure this" is a different statement from "the count is nought".
+ */
+const notMeasured = "—";
+
+/**
  * A compact label/value row. `dot` marks quality categories; `tone` tints the label.
  * When `hint` is given the label becomes a tooltip trigger — these are Callosum
  * terms of art ("quarantined" is not standard board vocabulary), and the whole
@@ -120,19 +127,31 @@ export function MemoryHealth({
                 tone="text-success-emphasis"
                 hint="Share of graph edges whose evidence quote was located verbatim in the source document. An edge cannot exist without one."
               />
+              {/* Both rows report on the human-approval queue, which only a live
+                  extraction run populates. The graph on this page is the seeded
+                  gold graph, so there is nothing to count — and a `0` would read
+                  as "clean run" rather than "never ran". Say "not measured". */}
               <Row
                 label="Pending review"
-                value={String(memory.pendingReview)}
+                value={memory.pendingReview === null ? notMeasured : String(memory.pendingReview)}
                 dot="bg-warning"
                 tone="text-warning-emphasis"
-                hint="Facts that passed verification and are waiting for a human to approve them. Nothing enters memory unapproved."
+                hint={
+                  memory.pendingReview === null
+                    ? "Facts that passed verification and are waiting for a human to approve them. Not measured on this dataset: the graph shown here was seeded deterministically, so no approval queue was created. Wires up with the API at P3."
+                    : "Facts that passed verification and are waiting for a human to approve them. Nothing enters memory unapproved."
+                }
               />
               <Row
                 label="Quarantined"
-                value={String(memory.quarantined)}
+                value={memory.quarantined === null ? notMeasured : String(memory.quarantined)}
                 dot="bg-danger"
                 tone="text-danger-emphasis"
-                hint="Extractions the verifier rejected — kept, not deleted, so the failures stay auditable."
+                hint={
+                  memory.quarantined === null
+                    ? "Extractions the verifier rejected — kept, not deleted, so the failures stay auditable. Not measured on this dataset: the seeded graph bypasses extraction, so nothing was ever rejected. Wires up with the API at P3."
+                    : "Extractions the verifier rejected — kept, not deleted, so the failures stay auditable."
+                }
               />
             </div>
             <div className="mt-4 text-[10px] font-semibold uppercase tracking-[0.08em] text-subtle-foreground">Coverage</div>
@@ -150,23 +169,32 @@ export function MemoryHealth({
 
           {/* Trends */}
           <div className="space-y-6">
+            {/* The whole card falls back to the skeleton above while insights
+                load, so a null here is not "loading" — it is "no measurement
+                exists". Drawing a sparkline anyway would be drawing fiction. */}
             <div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">Review throughput</span>
                 {reviewVelocity && reviewVelocity.length > 0 && (
-                  <span className="text-sm tabular-nums text-foreground">{reviewVelocity[reviewVelocity.length - 1]}/wk</span>
+                  <span className="text-sm tabular-nums text-foreground">{reviewVelocity[reviewVelocity.length - 1]}</span>
                 )}
               </div>
-              {reviewVelocity && (
-                <Sparkline
-                  data={reviewVelocity}
-                  width={220}
-                  height={36}
-                  className="mt-2 w-full"
-                  ariaLabel="Weekly review throughput, trending up"
-                />
+              {reviewVelocity && reviewVelocity.length > 0 ? (
+                <>
+                  <Sparkline
+                    data={reviewVelocity}
+                    width={220}
+                    height={36}
+                    className="mt-2 w-full"
+                    ariaLabel="Review throughput per period, oldest to newest"
+                  />
+                  <p className="mt-1 text-xs text-subtle-foreground">last {reviewVelocity.length} periods</p>
+                </>
+              ) : (
+                <p className="mt-2 text-xs text-subtle-foreground">
+                  Not measured — the approval queue is not wired to this build.
+                </p>
               )}
-              <p className="mt-1 text-xs text-subtle-foreground">last 8 weeks</p>
             </div>
 
             <div>
