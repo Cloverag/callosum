@@ -132,14 +132,7 @@ def test_connection_helper_sets_workspace():
 
 
 def test_entity_conflict_unique_key_is_workspace_scoped():
-    """The SAME conflict pair is allowed in two workspaces, but rejected twice in one.
-
-    The UNIQUE index on entity_conflict is enforced below RLS — it sees every row — so
-    before migration 0006 the same (name_a, type_a, name_b, type_b) proposed in a second
-    workspace collided with the first tenant's row, coupling tenants that cannot see each
-    other. 0006 adds workspace_id to the key: identity is per-workspace, collisions are
-    per-workspace. This proves both directions.
-    """
+    """The SAME conflict pair is allowed in two workspaces, but rejected twice in one."""
     token = uuid.uuid4().hex[:8]
     wa, wb = uuid.uuid4(), uuid.uuid4()
     _admin(
@@ -168,4 +161,94 @@ def test_entity_conflict_unique_key_is_workspace_scoped():
             _insert(wa)
     finally:
         _admin("DELETE FROM entity_conflict WHERE name_a = %s", (name_a,))
+        _admin("DELETE FROM workspace WHERE id IN (%s, %s)", (wa, wb))
+
+
+def test_control_plane_rls_and_write_revocation():
+    """Control-plane tables (workspace, membership, principal) enforce RLS and deny write access to callosum_app.
+
+    Issue #32: Solves cross-tenant control-plane enumeration and revokes INSERT/UPDATE/DELETE
+    from callosum_app on workspace, membership, principal, and sensitivity.
+    """
+    token = uuid.uuid4().hex[:8]
+    wa, wb = uuid.uuid4(), uuid.uuid4()
+    pa, pb = uuid.uuid4(), uuid.uuid4()
+
+    _admin(
+        """
+        INSERT INTO workspace (id, name, external_id)
+        VALUES (%s, %s, %s), (%s, %s, %s)
+        """,
+        (wa, f"Alpha-{token}", f"a-{token}", wb, f"Beta-{token}", f"b-{token}"),
+    )
+    _admin(
+        """
+        INSERT INTO principal (id, name, email, role, clearance)
+        VALUES (%s, %s, %s, 'founder', 4), (%s, %s, %s, 'founder', 4)
+        """,
+        (pa, f"Alpha Founder-{token}", f"alpha-{token}@example.com", pb, f"Beta Founder-{token}", f"beta-{token}@example.com"),
+    )
+    _admin(
+        """
+        INSERT INTO membership (workspace_id, principal_id, role, clearance)
+        VALUES (%s, %s, 'founder', 4), (%s, %s, 'founder', 4)
+        """,
+        (wa, pa, wb, pb),
+    )
+
+    try:
+        # 1. Scoped to Alpha: callosum_app sees ONLY Alpha's workspace, membership, and principal
+        with store.pg(workspace_id=str(wa)) as conn:
+            workspaces = conn.execute("SELECT id, name FROM workspace WHERE id IN (%s, %s)", (wa, wb)).fetchall()
+            memberships = conn.execute("SELECT principal_id FROM membership WHERE workspace_id IN (%s, %s)", (wa, wb)).fetchall()
+            principals = conn.execute("SELECT id, name FROM principal WHERE id IN (%s, %s)", (pa, pb)).fetchall()
+
+            assert len(workspaces) == 1
+            assert workspaces[0]["id"] == wa
+            assert len(memberships) == 1
+            assert memberships[0]["principal_id"] == pa
+            assert len(principals) == 1
+            assert principals[0]["id"] == pa
+
+        # 2. Scoped to Beta: callosum_app sees ONLY Beta's entities
+        with store.pg(workspace_id=str(wb)) as conn:
+            workspaces = conn.execute("SELECT id, name FROM workspace WHERE id IN (%s, %s)", (wa, wb)).fetchall()
+            memberships = conn.execute("SELECT principal_id FROM membership WHERE workspace_id IN (%s, %s)", (wa, wb)).fetchall()
+            principals = conn.execute("SELECT id, name FROM principal WHERE id IN (%s, %s)", (pa, pb)).fetchall()
+
+            assert len(workspaces) == 1
+            assert workspaces[0]["id"] == wb
+            assert len(memberships) == 1
+            assert memberships[0]["principal_id"] == pb
+            assert len(principals) == 1
+            assert principals[0]["id"] == pb
+
+        # 3. Unset workspace: callosum_app sees ZERO control-plane rows
+        with psycopg.connect(settings().postgres_app_dsn, row_factory=dict_row) as conn:
+            workspaces = conn.execute("SELECT id FROM workspace WHERE id IN (%s, %s)", (wa, wb)).fetchall()
+            memberships = conn.execute("SELECT principal_id FROM membership WHERE workspace_id IN (%s, %s)", (wa, wb)).fetchall()
+            principals = conn.execute("SELECT id FROM principal WHERE id IN (%s, %s)", (pa, pb)).fetchall()
+            assert len(workspaces) == 0
+            assert len(memberships) == 0
+            assert len(principals) == 0
+
+        # 4. Write Revocation: callosum_app cannot INSERT/UPDATE/DELETE on control-plane tables
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            with store.pg(workspace_id=str(wa)) as conn:
+                conn.execute("INSERT INTO sensitivity (level, label) VALUES (99, 'test_level')")
+
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            with store.pg(workspace_id=str(wa)) as conn:
+                conn.execute("UPDATE workspace SET name = 'Hack' WHERE id = %s", (wa,))
+
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            with store.pg(workspace_id=str(wa)) as conn:
+                conn.execute("DELETE FROM membership WHERE workspace_id = %s", (wa,))
+
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            with store.pg(workspace_id=str(wa)) as conn:
+                conn.execute("DELETE FROM principal WHERE id = %s", (pa,))
+    finally:
+        _admin("DELETE FROM membership WHERE workspace_id IN (%s, %s)", (wa, wb))
+        _admin("DELETE FROM principal WHERE id IN (%s, %s)", (pa, pb))
         _admin("DELETE FROM workspace WHERE id IN (%s, %s)", (wa, wb))
