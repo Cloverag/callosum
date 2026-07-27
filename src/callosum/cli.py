@@ -8,8 +8,13 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+import psycopg
+from psycopg.rows import dict_row
+
 from callosum import conflicts, extract, ingest, llm, store
-from callosum.retrieve import Principal, ask
+from callosum.config import settings
+from callosum.identity import PrincipalNotFound, resolve_principal, resolve_principal_id
+from callosum.retrieve import ask
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 console = Console()
@@ -84,12 +89,19 @@ DEMO_PRINCIPALS = [
 
 @app.command()
 def init() -> None:
-    """Create graph constraints and seed the demo principals."""
+    """Create graph constraints and seed the demo principals and memberships."""
     driver = store.neo()
     store.ensure_constraints(driver)
     console.print("[green]✓[/] Neo4j constraints applied")
 
-    with store.pg() as conn:
+    # Bootstrap runs on the ADMIN connection, not `store.pg()`.
+    #
+    # `store.pg()` connects as `callosum_app`, the deliberately non-superuser
+    # runtime role. Seeding identities is an administrative act, and it was only
+    # ever possible from the runtime role because `principal` had no RLS and full
+    # write grants — the gap `0013_principal_rls` closes. Bootstrap belongs on the
+    # superuser path with the migrations, per the P1 role split.
+    with psycopg.connect(settings().postgres_dsn, row_factory=dict_row) as conn:
         for name, email, role, clearance, org in DEMO_PRINCIPALS:
             conn.execute(
                 """
@@ -99,7 +111,31 @@ def init() -> None:
                 """,
                 (name, email, role, clearance, org),
             )
+
+        # Every seeded principal gets a membership in the Default Workspace
+        # carrying the same clearance. This is what makes clearance readable at
+        # runtime: `callosum.identity` resolves it from here, never from
+        # `principal.clearance`, which is now a bootstrap seed value only.
+        #
+        # Sourced by SELECT rather than from DEMO_PRINCIPALS so that re-running
+        # `init` after a manual principal insert still grants that person a
+        # membership, instead of silently leaving them unable to ask anything.
+        seeded = conn.execute(
+            """
+            INSERT INTO membership (principal_id, workspace_id, role, clearance)
+            SELECT p.id, %s, p.role, p.clearance
+              FROM principal p
+             ON CONFLICT (principal_id, workspace_id) DO NOTHING
+            RETURNING principal_id
+            """,
+            (store.DEFAULT_WORKSPACE_ID,),
+        ).fetchall()
+        conn.commit()
+
     console.print(f"[green]✓[/] {len(DEMO_PRINCIPALS)} principals seeded")
+    console.print(
+        f"[green]✓[/] {len(seeded)} membership(s) granted in the Default Workspace"
+    )
     driver.close()
 
 
@@ -289,17 +325,18 @@ def query(
     driver = store.neo()
 
     with store.pg() as conn:
-        row = conn.execute(
-            "SELECT id, name, role, clearance FROM principal WHERE name ILIKE %s",
-            (f"%{as_user}%",),
-        ).fetchone()
-        if not row:
-            console.print(f"[red]No principal matching '{as_user}'. Run: callosum init[/]")
+        # Clearance comes from the caller's membership in this workspace, not from
+        # `principal.clearance`. A principal with no active membership here does
+        # not resolve at all — fail-closed, rather than falling back to whatever
+        # clearance they hold somewhere else.
+        try:
+            principal = resolve_principal(conn, as_user)
+        except PrincipalNotFound:
+            console.print(
+                f"[red]No principal matching '{as_user}' with a membership in this "
+                f"workspace. Run: callosum init[/]"
+            )
             raise typer.Exit(1)
-
-        principal = Principal(
-            id=row["id"], name=row["name"], role=row["role"], clearance=row["clearance"]
-        )
         console.print(
             f"[dim]Asking as [bold]{principal.name}[/] "
             f"({principal.role}, clearance {principal.clearance})[/]\n"
@@ -575,15 +612,17 @@ def review_conflicts(
       Reject  (marks as distinct):     callosum reject-conflict <id>
     """
     with store.pg() as conn:
-        row = conn.execute(
-            "SELECT id, name, role, clearance FROM principal WHERE name ILIKE %s",
-            (f"%{as_user}%",),
-        ).fetchone()
-        if not row:
-            console.print(f"[red]No principal matching '{as_user}'. Run: callosum init[/]")
+        try:
+            reviewer = resolve_principal(conn, as_user)
+        except PrincipalNotFound:
+            console.print(
+                f"[red]No principal matching '{as_user}' with a membership in this "
+                f"workspace. Run: callosum init[/]"
+            )
             raise typer.Exit(1)
-        clearance = row["clearance"]
-        rows = store.pending_entity_conflicts(conn, clearance=clearance, limit=limit)
+        # Membership clearance again — this filters which conflicts are shown, so
+        # reading the legacy global column here would over-disclose.
+        rows = store.pending_entity_conflicts(conn, clearance=reviewer.clearance, limit=limit)
 
     if not rows:
         console.print("[green]No entity conflicts pending review.[/] "
@@ -639,11 +678,11 @@ def approve_conflict(
     driver = store.neo()
     try:
         with store.pg() as conn:
-            reviewer = conn.execute(
-                "SELECT id FROM principal WHERE name ILIKE %s",
-                (f"%{as_user}%",),
-            ).fetchone()
-            reviewer_id = reviewer["id"] if reviewer else None
+            # Attribution, not authorization: this id is stamped on the approval
+            # record and no access decision hangs off it. Still resolved through
+            # membership so a name from another workspace cannot be recorded as a
+            # reviewer here.
+            reviewer_id = resolve_principal_id(conn, as_user)
 
             # Resolve short id prefix to full UUID
             full = conn.execute(
@@ -683,11 +722,11 @@ def reject_conflict(
     """
     try:
         with store.pg() as conn:
-            reviewer = conn.execute(
-                "SELECT id FROM principal WHERE name ILIKE %s",
-                (f"%{as_user}%",),
-            ).fetchone()
-            reviewer_id = reviewer["id"] if reviewer else None
+            # Attribution, not authorization: this id is stamped on the approval
+            # record and no access decision hangs off it. Still resolved through
+            # membership so a name from another workspace cannot be recorded as a
+            # reviewer here.
+            reviewer_id = resolve_principal_id(conn, as_user)
 
             full = conn.execute(
                 "SELECT id FROM entity_conflict WHERE id::text LIKE %s AND status = 'pending'",
