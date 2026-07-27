@@ -319,3 +319,44 @@ def test_mismatched_agenda_item_rejection():
             packs.add_pack_item(p1.id, d1, workspace_id=ws, agenda_item_id=ag2.id)
     finally:
         _cleanup(ws)
+
+
+def _create_restricted_test_document(ws: str, title: str = "Confidential Deck.pdf", sensitivity: int = 3) -> str:
+    doc_id = str(uuid.uuid4())
+    _admin(
+        """
+        INSERT INTO document (id, title, doc_type, raw_text, content_hash, sensitivity, workspace_id)
+        VALUES (%s, %s, 'board_deck', 'Confidential financial details', %s, %s, %s)
+        """,
+        (uuid.UUID(doc_id), title, doc_id, sensitivity, uuid.UUID(ws)),
+    )
+    return doc_id
+
+
+def test_board_pack_rbac_clearance_filtering():
+    ws = _new_workspace()
+    try:
+        m = meetings.create_meeting("RBAC Pack Meeting", workspace_id=ws)
+        public_doc = _create_test_document(ws, "Public Overview.pdf")
+        confidential_doc = _create_restricted_test_document(ws, "Restricted Financials.pdf", sensitivity=3)
+
+        p = packs.create_pack(m.id, "Q3 Board Package", workspace_id=ws)
+        packs.add_pack_item(p.id, public_doc, workspace_id=ws, note="Public item")
+        packs.add_pack_item(p.id, confidential_doc, workspace_id=ws, note="Confidential item")
+
+        # Full clearance (clearance=4) caller sees both items
+        full_pack = packs.get_pack(p.id, workspace_id=ws, clearance=4)
+        assert len(full_pack.items) == 2
+
+        # Low clearance (clearance=1) caller sees ONLY the public item (no title, note, or count leak of confidential item)
+        restricted_pack = packs.get_pack(p.id, workspace_id=ws, clearance=1)
+        assert len(restricted_pack.items) == 1
+        assert restricted_pack.items[0].document_id == public_doc
+
+        # Same for list_packs: low clearance caller receives filtered items
+        listed_packs = packs.list_packs(m.id, workspace_id=ws, clearance=1)
+        assert len(listed_packs) == 1
+        assert len(listed_packs[0].items) == 1
+        assert listed_packs[0].items[0].document_id == public_doc
+    finally:
+        _cleanup(ws)
