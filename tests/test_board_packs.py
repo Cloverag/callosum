@@ -50,10 +50,10 @@ def _create_test_document(ws: str, title: str = "Test Deck.pdf") -> str:
     doc_id = str(uuid.uuid4())
     _admin(
         """
-        INSERT INTO document (id, filename, doc_type, raw_text, sensitivity, workspace_id)
-        VALUES (%s, %s, 'board_deck', 'Sample deck content', 1, %s)
+        INSERT INTO document (id, title, doc_type, raw_text, content_hash, sensitivity, workspace_id)
+        VALUES (%s, %s, 'board_deck', 'Sample deck content', %s, 1, %s)
         """,
-        (uuid.UUID(doc_id), title, uuid.UUID(ws)),
+        (uuid.UUID(doc_id), title, doc_id, uuid.UUID(ws)),
     )
     return doc_id
 
