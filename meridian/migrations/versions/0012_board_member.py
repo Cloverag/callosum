@@ -54,7 +54,13 @@ def upgrade() -> None:
             created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
             updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-            CONSTRAINT board_member_name_not_empty CHECK (length(trim(full_name)) > 0)
+            CONSTRAINT board_member_name_not_empty CHECK (length(trim(full_name)) > 0),
+
+            -- Redundant against the primary key for uniqueness purposes, and that
+            -- is not why it is here: a composite FOREIGN KEY needs a matching
+            -- unique constraint to target. This is what lets `decision_stance`
+            -- reference (id, workspace_id) as a pair. See the FK below.
+            CONSTRAINT board_member_id_workspace_uq UNIQUE (id, workspace_id)
         )
         """
     )
@@ -84,9 +90,34 @@ def upgrade() -> None:
     # the stance was taken, which is audit data the immutability contract keeps;
     # `board_member_id` is an optional resolution of that string to a directory
     # entry. Collapsing them would lose the record of what was actually minuted.
+    #
+    # THE FOREIGN KEY IS COMPOSITE, AND THAT IS THE POINT.
+    #
+    # Postgres validates foreign keys as the table owner, which BYPASSES row-level
+    # security — so a single-column `REFERENCES board_member(id)` happily validates
+    # against a row the caller cannot see. Reproduced before this was written: a
+    # stance in workspace A successfully referenced a director in workspace B.
+    #
+    # Referencing the pair makes that impossible by construction rather than by
+    # convention. The existing modules avoid the same hole with an RLS-scoped
+    # existence check before insert (`add_pack_item` does exactly this), which
+    # works but depends on every future author remembering it. Same reasoning as
+    # P1's Neo4j fix, where `workspace_id` went into the MERGE identity: a WHERE
+    # clause cannot fix a shared node.
+    #
+    # ON DELETE RESTRICT, not SET NULL: `decision_stance.workspace_id` is NOT NULL,
+    # so a composite SET NULL would try to null it and fail. RESTRICT is the better
+    # answer regardless — the domain rule is deactivate-never-delete, so an attempt
+    # to delete a member with recorded stances should fail loudly.
+    op.execute("ALTER TABLE decision_stance ADD COLUMN board_member_id UUID")
     op.execute(
-        "ALTER TABLE decision_stance "
-        "ADD COLUMN board_member_id UUID REFERENCES board_member(id) ON DELETE SET NULL"
+        """
+        ALTER TABLE decision_stance
+            ADD CONSTRAINT decision_stance_board_member_fk
+            FOREIGN KEY (board_member_id, workspace_id)
+            REFERENCES board_member (id, workspace_id)
+            ON DELETE RESTRICT
+        """
     )
     op.execute(
         "CREATE INDEX ix_decision_stance_board_member ON decision_stance (board_member_id)"
@@ -94,6 +125,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.execute(
+        "ALTER TABLE decision_stance DROP CONSTRAINT IF EXISTS decision_stance_board_member_fk"
+    )
     op.execute("DROP INDEX IF EXISTS ix_decision_stance_board_member")
     op.execute("ALTER TABLE decision_stance DROP COLUMN IF EXISTS board_member_id")
     op.execute("DROP POLICY IF EXISTS tenant_isolation ON board_member")

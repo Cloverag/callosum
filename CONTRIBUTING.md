@@ -84,6 +84,34 @@ found and fixed there. Do not touch it without review.
 4. **Approval-workflow UX.** Design what a founder sees when reviewing proposed edges —
    a product/design problem, not a backend one.
 
+## House rules for the product domain (`meridian/`)
+
+Small conventions that every P2 aggregate follows. They are written down because
+each has now been re-explained at more than one checkpoint review.
+
+**`version` vs `version_no` — they are different things, and both are correct.**
+
+| Column | Meaning |
+|---|---|
+| `version` | Optimistic-concurrency counter. Bumped by *every* mutation, and guarded with `WHERE id = %s AND version = %s`. A stale value raises a typed `Stale*Error`. |
+| `version_no` | Published-artifact lineage. Incremented only when supersession creates a **new row**, so a reader can follow amendment history. |
+
+A board pack edited three times as a draft and then published once is `version = 4,
+version_no = 1`. They are not redundant and neither should be folded into the other.
+
+**Tenant-scoped foreign keys should reference the `(id, workspace_id)` pair.**
+
+Postgres validates foreign keys as the table owner, which **bypasses row-level
+security** — so a single-column `REFERENCES other(id)` will happily validate against
+a row the caller cannot see, letting one workspace reference another's data. A
+composite FK against a matching `UNIQUE (id, workspace_id)` makes that impossible by
+construction. `decision_stance.board_member_id` is the reference implementation.
+
+Older FKs instead rely on an RLS-scoped existence check in the domain module before
+insert (see `add_pack_item` in `meridian/packs.py`), which works but depends on every
+author remembering it. New relationships should prefer the composite key. Whether the
+existing ones get migrated is an open question — see the tracking issue.
+
 ## Good first tasks
 
 - Add one new document to `data/` + 3 gold questions to `eval/gold.jsonl`, then run
