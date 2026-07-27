@@ -13,7 +13,7 @@ import {
 } from "@/lib/meetings";
 import { apiClient, type EntityConflict } from "@/lib/api";
 import { insightsApi, type DashboardInsights } from "@/lib/insights";
-import { startOfDay } from "@/lib/calendar";
+import { addDays, startOfDay, startOfWeek } from "@/lib/calendar";
 import { DailyBrief } from "./daily-brief";
 import { MeetingHero } from "./meeting-hero";
 import { BoardReadiness } from "./board-readiness";
@@ -52,6 +52,35 @@ export default function DashboardPage() {
     };
   }, [meetings, conflicts, insights, upcoming]);
 
+  /**
+   * The orientation line, assembled here rather than stored as prose.
+   *
+   * The counts used to be baked into `insights.dailyBrief` as a sentence — which
+   * meant the page could greet you with "3 meetings this week" on a week with
+   * none, and restated an approval-queue figure that was never measured. Every
+   * number below is counted from the same mock data the cards render, so the
+   * brief cannot contradict the page beneath it. Clauses with nothing to report
+   * are dropped instead of printing a zero.
+   */
+  const brief: string | null = useMemo(() => {
+    if (!meetings || !conflicts || !insights) return null;
+    const weekStart = startOfWeek(new Date());
+    const weekEnd = addDays(weekStart, 7);
+    const thisWeek = meetings.filter((m) => {
+      const start = new Date(m.start);
+      return start >= weekStart && start < weekEnd;
+    }).length;
+
+    const clauses: string[] = [];
+    if (thisWeek > 0) clauses.push(`${thisWeek} meeting${thisWeek === 1 ? "" : "s"} this week`);
+    if (conflicts.length > 0) {
+      clauses.push(`${conflicts.length} name conflict${conflicts.length === 1 ? "" : "s"} awaiting your review`);
+    }
+
+    const lead = clauses.length ? `${clauses.join(" and ")}. ` : "";
+    return `${lead}${insights.dailyBrief}`;
+  }, [meetings, conflicts, insights]);
+
   const statusSegments: StatSegment[] = useMemo(() => {
     const byStatus = new Map<Meeting["status"], number>();
     for (const m of meetings ?? []) byStatus.set(m.status, (byStatus.get(m.status) ?? 0) + 1);
@@ -67,7 +96,7 @@ export default function DashboardPage() {
       <PageHeader title="Dashboard" description="What needs you now, and whether the memory can be trusted." icon={<LayoutDashboard />} />
 
       <div className="mt-6">
-        <DailyBrief brief={insights?.dailyBrief ?? null} />
+        <DailyBrief brief={brief} />
       </div>
 
       {/* Band A — operational: what needs me now */}
