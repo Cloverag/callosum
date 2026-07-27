@@ -26,6 +26,7 @@ from meridian.decisions import (
     REJECTED,
     STANCE_APPROVED,
     STANCE_OPPOSED,
+    STANCE_REQUESTED,
     STANCE_SUPPORTED,
     SUPERSEDED,
     DecisionLockedError,
