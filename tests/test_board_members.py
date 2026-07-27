@@ -240,6 +240,55 @@ def test_stance_links_to_directory_optionally_and_keeps_the_recorded_name():
         _cleanup(ws)
 
 
+def test_stance_cannot_reference_a_member_from_another_workspace():
+    """The composite foreign key blocks cross-tenant linking in the database.
+
+    Postgres validates foreign keys as the table owner, which BYPASSES row-level
+    security — so a plain `REFERENCES board_member(id)` validates happily against
+    a row the caller cannot see. That was reproduced before this constraint
+    existed: a stance in workspace A successfully referenced a director in
+    workspace B.
+
+    Referencing the (id, workspace_id) pair makes it impossible by construction
+    rather than by convention. The other modules avoid the same hole with an
+    RLS-scoped existence check before insert, which works but relies on every
+    future author remembering it.
+
+    This asserts through the SUPERUSER connection deliberately: the superuser
+    bypasses RLS, so if the rejection still holds here it is the constraint doing
+    the work and not the policy.
+    """
+    wa, wb = _new_workspace(), _new_workspace()
+    try:
+        beta_member = board_members.create_member("Beta Director", DIRECTOR, workspace_id=wb)
+        meeting = meetings.create_meeting("Alpha Meeting", workspace_id=wa)
+        d = decisions.create_decision(meeting.id, "Alpha decision", workspace_id=wa)
+        stance = decisions.record_stance(d.id, "Someone", "SUPPORTED", workspace_id=wa)
+
+        with psycopg.connect(settings().postgres_dsn) as conn:
+            with pytest.raises(psycopg.errors.ForeignKeyViolation):
+                conn.execute(
+                    "UPDATE decision_stance SET board_member_id = %s WHERE id = %s",
+                    (uuid.UUID(beta_member.id), uuid.UUID(stance.id)),
+                )
+
+        # The same link within one workspace remains perfectly legal.
+        alpha_member = board_members.create_member("Alpha Director", DIRECTOR, workspace_id=wa)
+        with psycopg.connect(settings().postgres_dsn) as conn:
+            conn.execute(
+                "UPDATE decision_stance SET board_member_id = %s WHERE id = %s",
+                (uuid.UUID(alpha_member.id), uuid.UUID(stance.id)),
+            )
+            conn.commit()
+            linked = conn.execute(
+                "SELECT board_member_id FROM decision_stance WHERE id = %s",
+                (uuid.UUID(stance.id),),
+            ).fetchone()[0]
+        assert str(linked) == alpha_member.id
+    finally:
+        _cleanup(wa, wb)
+
+
 def test_cross_workspace_isolation():
     """A member created in one workspace is invisible from another."""
     wa, wb = _new_workspace(), _new_workspace()
