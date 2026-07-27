@@ -341,7 +341,12 @@ def record_stance(
     workspace_id: str = DEFAULT_WORKSPACE_ID,
     comment: str | None = None,
 ) -> DecisionStance:
-    """Records or updates a person's stance (SUPPORTED, OPPOSED, APPROVED, REQUESTED)."""
+    """Records or updates a person's stance (SUPPORTED, OPPOSED, APPROVED, REQUESTED).
+
+    Only decisions in `proposed` status can receive stance updates. Raises DecisionLockedError
+    if the decision is not in `proposed` status or if the parent meeting is inactive (completed/cancelled).
+    Raises DecisionValidationError if stance/person_name is invalid, or DecisionNotFound if missing.
+    """
     if not person_name or not person_name.strip():
         raise DecisionValidationError("person_name must not be empty")
 

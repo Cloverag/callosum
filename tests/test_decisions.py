@@ -467,7 +467,7 @@ def test_chained_supersession_history():
 def test_create_decision_during_in_progress_meeting():
     ws = _new_workspace()
     try:
-        now_dt = datetime.now(timezone.utc) if hasattr(datetime, "now") else datetime.utcnow()
+        now_dt = datetime.now(timezone.utc)
         m = meetings.create_meeting(
             "Live Meeting",
             scheduled_start=now_dt,
@@ -515,7 +515,7 @@ def test_record_stance_upsert_preserves_created_at_and_updates_updated_at():
         )
 
         assert s2.created_at == initial_created_at
-        assert s2.updated_at >= initial_updated_at
+        assert s2.updated_at > initial_updated_at
         assert s2.stance == STANCE_APPROVED
         assert s2.comment == "Changed to approved"
     finally:
