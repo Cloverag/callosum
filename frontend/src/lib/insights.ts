@@ -81,16 +81,14 @@ export type PendingActions = {
   docsToIngest: number;
 };
 
-export type DecisionStatus = "approved" | "pending" | "proposed";
-
-/** A governed board decision, sourced to the meeting where it was made. */
-export type Decision = {
-  id: string;
-  title: string;
-  status: DecisionStatus;
-  meeting: string;
-  date: string; // ISO
-};
+// REMOVED 2026-07-28: `DecisionStatus` and `Decision` used to be declared here.
+// They were invented — the status set was "approved" | "pending" | "proposed",
+// and the domain has never had a "pending" decision, while "rejected",
+// "superseded" and "deferred" were all missing. There were no stances at all.
+//
+// The real contract shipped in PR #22 (`meridian/decisions.py`, migration
+// `0009_decision`, 20 integration tests). It now lives in `lib/decisions.ts`,
+// mirrored field for field. Import from there.
 
 /** Prep completeness for the next board meeting, 0–100 per track. */
 export type BoardReadiness = {
@@ -112,7 +110,6 @@ export type DashboardInsights = {
   memory: MemoryHealth;
   quality: GraphQuality;
   approvedFacts: ApprovedFact[];
-  decisions: Decision[];
   /**
    * Weekly review throughput, oldest → newest. Feeds the sparkline.
    *
@@ -272,13 +269,6 @@ const insights: DashboardInsights = {
       source: "Board Meeting #14",
       approvedAt: "2026-07-09T11:20:00Z",
     },
-  ],
-  decisions: [
-    { id: "d-price", title: "Adopt usage-based pricing (Model B)", status: "approved", meeting: "Board Meeting 13", date: "2026-07-20T16:40:00Z" },
-    { id: "d-seq", title: "Sequoia to lead the Series B round", status: "approved", meeting: "Investor Update — Sequoia", date: "2026-07-19T11:05:00Z" },
-    { id: "d-terms", title: "Series B final terms", status: "pending", meeting: "Q3 Board Meeting", date: "2026-07-21T09:00:00Z" },
-    { id: "d-hire", title: "Six-person engineering hire", status: "approved", meeting: "Board Meeting #14", date: "2026-07-09T11:20:00Z" },
-    { id: "d-fcst", title: "Revise the FY27 forecast", status: "proposed", meeting: "Q3 Board Meeting", date: "2026-07-21T09:20:00Z" },
   ],
   // CORRECTED 2026-07-27. Was [4, 6, 3, 7, 5, 8, 6, 9] rendered under a
   // "last 8 weeks" caption: an invented series on an invented axis, measuring an
