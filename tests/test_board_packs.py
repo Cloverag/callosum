@@ -19,7 +19,9 @@ import psycopg
 from callosum.config import settings
 from meridian import agenda, meetings, packs
 from meridian.packs import (
+    CONFIDENTIAL_CLEARANCE,
     DRAFT,
+    INVESTOR_CLEARANCE,
     PUBLISHED,
     PUBLIC_CLEARANCE,
     RESTRICTED_CLEARANCE,
@@ -339,26 +341,74 @@ def test_board_pack_rbac_clearance_filtering():
     ws = _new_workspace()
     try:
         m = meetings.create_meeting("RBAC Pack Meeting", workspace_id=ws)
-        public_doc = _create_test_document(ws, "Public Overview.pdf")
-        confidential_doc = _create_restricted_test_document(ws, "Restricted Financials.pdf", sensitivity=3)
+        # `_create_test_document` writes sensitivity 1, which is `investor`, not
+        # `public` — naming it accurately here matters, because the whole test is
+        # an assertion about which level sees what.
+        investor_doc = _create_test_document(ws, "Quarterly Overview.pdf")
+        confidential_doc = _create_restricted_test_document(
+            ws, "Restricted Financials.pdf", sensitivity=CONFIDENTIAL_CLEARANCE
+        )
 
         p = packs.create_pack(m.id, "Q3 Board Package", workspace_id=ws)
-        packs.add_pack_item(p.id, public_doc, workspace_id=ws, note="Public item")
+        packs.add_pack_item(p.id, investor_doc, workspace_id=ws, note="Investor item")
         packs.add_pack_item(p.id, confidential_doc, workspace_id=ws, note="Confidential item")
 
-        # Full clearance (clearance=4) caller sees both items
-        full_pack = packs.get_pack(p.id, workspace_id=ws, clearance=4)
+        # Full clearance sees both items.
+        full_pack = packs.get_pack(p.id, workspace_id=ws, clearance=RESTRICTED_CLEARANCE)
         assert len(full_pack.items) == 2
 
-        # Low clearance (clearance=1) caller sees ONLY the public item (no title, note, or count leak of confidential item)
-        restricted_pack = packs.get_pack(p.id, workspace_id=ws, clearance=1)
+        # Investor clearance sees only the investor item — no title, note, or count
+        # leak of the confidential one.
+        restricted_pack = packs.get_pack(p.id, workspace_id=ws, clearance=INVESTOR_CLEARANCE)
         assert len(restricted_pack.items) == 1
-        assert restricted_pack.items[0].document_id == public_doc
+        assert restricted_pack.items[0].document_id == investor_doc
 
-        # Same for list_packs: low clearance caller receives filtered items
-        listed_packs = packs.list_packs(m.id, workspace_id=ws, clearance=1)
+        # Same for list_packs: it is a second read path, not a way around the filter.
+        listed_packs = packs.list_packs(m.id, workspace_id=ws, clearance=INVESTOR_CLEARANCE)
         assert len(listed_packs) == 1
         assert len(listed_packs[0].items) == 1
-        assert listed_packs[0].items[0].document_id == public_doc
+        assert listed_packs[0].items[0].document_id == investor_doc
+
+        # PUBLIC_CLEARANCE is the floor, and it is 0 — not 1. A reader at the very
+        # bottom of the ladder sees neither document. This is the case that would
+        # have failed silently while PUBLIC_CLEARANCE was defined as the investor
+        # level: "public" would have admitted investor material.
+        public_pack = packs.get_pack(p.id, workspace_id=ws, clearance=PUBLIC_CLEARANCE)
+        assert public_pack.items == []
+    finally:
+        _cleanup(ws)
+
+
+def test_pack_item_positions_leave_no_hole_where_an_item_was_withheld():
+    """Withheld items leave no gap in the position sequence.
+
+    The restricted document is deliberately FIRST here. Filtering the last item
+    happens to leave a contiguous sequence by luck, so a test that only removes a
+    trailing item passes without proving anything. Removing the first one is the
+    case that exposes whether positions are renumbered: returning [2, 3] tells the
+    reader a position 1 exists which they may not see, and lets them count the
+    holes — the same disclosure as a placeholder, just quieter.
+    """
+    ws = _new_workspace()
+    try:
+        m = meetings.create_meeting("Position Gap Meeting", workspace_id=ws)
+        p = packs.create_pack(m.id, "Q3 Board Package", workspace_id=ws)
+
+        restricted = _create_restricted_test_document(
+            ws, "Compensation review.pdf", sensitivity=RESTRICTED_CLEARANCE
+        )
+        packs.add_pack_item(p.id, restricted, workspace_id=ws, position=1)
+        packs.add_pack_item(p.id, _create_test_document(ws, "Agenda.pdf"), workspace_id=ws, position=2)
+        packs.add_pack_item(p.id, _create_test_document(ws, "Metrics.pdf"), workspace_id=ws, position=3)
+
+        visible = packs.get_pack(p.id, workspace_id=ws, clearance=INVESTOR_CLEARANCE)
+        assert len(visible.items) == 2
+        assert [i.position for i in visible.items] == [1, 2], (
+            "withheld item left a hole in the position sequence"
+        )
+
+        # The filter must not renumber away the real ordering for a cleared reader.
+        full = packs.get_pack(p.id, workspace_id=ws, clearance=RESTRICTED_CLEARANCE)
+        assert [i.position for i in full.items] == [1, 2, 3]
     finally:
         _cleanup(ws)

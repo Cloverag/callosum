@@ -15,14 +15,25 @@ Design contract:
 """
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from callosum import store
 from callosum.store import DEFAULT_WORKSPACE_ID
 from meridian.meetings import MeetingNotFound
 
-PUBLIC_CLEARANCE = 1
+# The clearance ladder, mirroring the `sensitivity` lookup table seeded by
+# `schema/postgres.sql`. A caller's clearance admits every document at or below
+# their level, so these are the only values `clearance=` should ever receive.
+#
+# `PUBLIC_CLEARANCE` was 1 when these constants were introduced, which is the
+# `investor` level — a caller asking for "public" would have been handed investor
+# material. Corrected to 0. Keep this block in step with the table; if a level is
+# ever added, a hard-coded RESTRICTED_CLEARANCE silently stops meaning "maximum".
+PUBLIC_CLEARANCE = 0
+INVESTOR_CLEARANCE = 1
+INTERNAL_CLEARANCE = 2
+CONFIDENTIAL_CLEARANCE = 3
 RESTRICTED_CLEARANCE = 4
 
 DRAFT = "draft"
@@ -142,6 +153,20 @@ def _assert_meeting_pre_meeting(conn, meeting_id_uuid: uuid.UUID) -> None:
 def _fetch_items_for_packs(
     conn, pack_ids: list[uuid.UUID], clearance: int
 ) -> dict[str, list[BoardPackItem]]:
+    """Pack items the caller is cleared to read, renumbered from 1.
+
+    The clearance predicate is pushed into the WHERE clause rather than applied in
+    Python: Invariant #1 is filter-before-retrieval, and a Python-side filter would
+    still pull restricted rows across the wire and into logs and tracebacks.
+
+    **Positions are renumbered for the caller.** Returning stored positions leaks:
+    an investor-clearance reader shown items at positions [2, 3] learns that a
+    position 1 exists which they may not see, and can count the holes. That is the
+    same disclosure as returning a placeholder, just quieter. Renumbering is safe
+    because `position` is a display ordinal, not a stable reference — `id` is the
+    identifier, and `reorder_pack_items` takes item IDs, so no caller can write a
+    presented position back and corrupt the stored ordering.
+    """
     if not pack_ids:
         return {}
     rows = conn.execute(
@@ -158,7 +183,10 @@ def _fetch_items_for_packs(
     result: dict[str, list[BoardPackItem]] = {}
     for r in rows:
         it = _row_to_pack_item(r)
-        result.setdefault(it.board_pack_id, []).append(it)
+        visible = result.setdefault(it.board_pack_id, [])
+        # Rows arrive in stored-position order, so the running length is the
+        # caller's contiguous ordinal.
+        visible.append(replace(it, position=len(visible) + 1))
     return result
 
 
