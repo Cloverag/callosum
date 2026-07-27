@@ -169,3 +169,59 @@ def test_entity_conflict_unique_key_is_workspace_scoped():
     finally:
         _admin("DELETE FROM entity_conflict WHERE name_a = %s", (name_a,))
         _admin("DELETE FROM workspace WHERE id IN (%s, %s)", (wa, wb))
+
+
+def test_control_plane_membership_is_workspace_scoped():
+    """A scoped caller cannot enumerate other tenants' members (issue #32).
+
+    Before `0011_control_plane_rls`, `membership`, `workspace`, `principal` and
+    `sensitivity` carried no row-level security while `callosum_app` held full
+    DML on all four. A connection scoped to one workspace could read every other
+    tenant's name, member names, roles and clearance levels — no document text,
+    but "who sits on which board at what clearance" is confidential in its own
+    right, and P1's exit criterion requires blocking it in SQL.
+    """
+    wa, wb = uuid.uuid4(), uuid.uuid4()
+    pa, pb = uuid.uuid4(), uuid.uuid4()
+    _admin(
+        "INSERT INTO workspace (id, name, external_id) VALUES (%s, %s, %s), (%s, %s, %s)",
+        (wa, f"ws-{wa}", str(wa), wb, f"ws-{wb}", str(wb)),
+    )
+    _admin(
+        "INSERT INTO principal (id, name, role, clearance) VALUES (%s, %s, 'founder', 4), (%s, %s, 'founder', 4)",
+        (pa, f"A-{pa}", pb, f"B-{pb}"),
+    )
+    _admin(
+        "INSERT INTO membership (principal_id, workspace_id, role, clearance)"
+        " VALUES (%s, %s, 'founder', 4), (%s, %s, 'founder', 4)",
+        (pa, wa, pb, wb),
+    )
+
+    try:
+        with store.pg(workspace_id=str(wa)) as conn:
+            rows = conn.execute(
+                "SELECT workspace_id FROM membership WHERE principal_id IN (%s, %s)", (pa, pb)
+            ).fetchall()
+            assert [r["workspace_id"] for r in rows] == [wa], (
+                "membership leaked another tenant's row to a scoped caller"
+            )
+
+            # `workspace` is scoped on its own id, so a caller sees exactly the
+            # workspace it is scoped to and cannot enumerate tenant names.
+            names = conn.execute(
+                "SELECT id FROM workspace WHERE id IN (%s, %s)", (wa, wb)
+            ).fetchall()
+            assert [r["id"] for r in names] == [wa]
+
+            # Least privilege: the control plane is administrative. The runtime
+            # role reads it and must not be able to grant itself membership.
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                conn.execute(
+                    "INSERT INTO membership (principal_id, workspace_id, role, clearance)"
+                    " VALUES (%s, %s, 'founder', 4)",
+                    (pa, wa),
+                )
+    finally:
+        _admin("DELETE FROM membership WHERE workspace_id IN (%s, %s)", (wa, wb))
+        _admin("DELETE FROM principal WHERE id IN (%s, %s)", (pa, pb))
+        _admin("DELETE FROM workspace WHERE id IN (%s, %s)", (wa, wb))
