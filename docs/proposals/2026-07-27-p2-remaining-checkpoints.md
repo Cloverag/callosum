@@ -17,13 +17,13 @@ ROADMAP P2's goal names eleven object families. Six are done or in review:
 | agenda | ✅ CP2 | `0008`, PR #20 |
 | decision | ✅ CP4 | `0009`, PR #22 |
 | pack / minutes versions | 🟡 CP3 in review | `0010`, PR #33 |
-| **board** | ❌ | — |
+| **board** | ⛔ not an aggregate | resolved to BoardMember — see §6 |
 | **resolution** | ❌ | — |
 | **commitment** | ❌ | — |
 | **notification** | ❌ | — |
 | **audit** | ❌ | — |
 
-P2 does not end when CP3 merges. Five object families remain, plus an exit criterion no aggregate checkpoint covers: *"migration/recovery plan is tested."*
+P2 does not end when CP3 merges. Four object families remain to build, plus an exit criterion no aggregate checkpoint covers: *"migration/recovery plan is tested."*
 
 ## 2. The P2 / P8 boundary — read this before scoping anything
 
@@ -62,21 +62,23 @@ Scope: `commitment` table, lifecycle (`open → in_progress → {completed, bloc
 
 **The invariant to test hardest:** a commitment cannot exist without a source decision, and FR-EXEC-03's rule that failed delivery must never falsely mark an action delivered has to be structurally impossible — `delivery_status` cannot reach `delivered` without an `external_task_id`.
 
-### CP8 — Notification (`0014_notification`)
+### CP8 — Audit event (`0014_audit_event`)
+
+PRD §251: actor, action, target, previous/current state where appropriate, time, request/integration result.
+
+Ahead of Notification deliberately. Audit is what every later feature reads from, and Notification is the one checkpoint that might legitimately be deferred out of V1 — if audit sat last, a deferred Notification would take audit with it.
+
+**Must reconcile with what exists rather than duplicate it.** `query_log` already satisfies FR-MEM-09 (principal, plan, hits, denied count, answer, latency) and is the *retrieval* audit. `audit_event` is the *domain* audit — membership changes, publication, supersession, delivery confirmation. Two tables with clear, documented remits is right; one table trying to be both is not.
+
+**The one place "one aggregate per checkpoint" breaks down.** The table is small; the work is retrofitting CP1–CP7 to emit events, which means touching five already-merged, already-accepted modules in a single diff. That needs deciding up front: either CP8 ships the table plus a write path and each module's emit lands as its own small follow-up commit, or CP8 is explicitly a cross-cutting checkpoint reviewed differently from the aggregate ones. Recommended: the former, so no accepted module is modified without its own reviewable diff.
+
+### CP9 — Notification (`0015_notification`)
 
 FR-EXEC-04: owners are notified of due, overdue, changed and blocked commitments, and recipients can see *why* they received it and which decision originated it.
 
 Scope: `notification` (recipient, kind, subject reference, reason, originating decision, state, attempts, last_error). Channels, templates and sending are P8.
 
-This is the checkpoint most at risk of being over-built. If the answer to "what actually creates a notification in V1?" is "nothing yet, P8 does", then the honest V1 shape is a small table with a clean state machine and no producer — and that should be stated in the decision record rather than padded out.
-
-### CP9 — Audit event (`0015_audit_event`)
-
-PRD §251: actor, action, target, previous/current state where appropriate, time, request/integration result. Last, because it must cover every aggregate built before it.
-
-**Must reconcile with what exists rather than duplicate it.** `query_log` already satisfies FR-MEM-09 (principal, plan, hits, denied count, answer, latency) and is the *retrieval* audit. `audit_event` is the *domain* audit — membership changes, publication, supersession, delivery confirmation. Two tables with clear, documented remits is the right answer; one table trying to be both is not.
-
-Scope: table + RLS + a write path used by the existing aggregates for their state transitions. Retrofitting the CP1–CP8 modules to emit events is the bulk of the work and belongs here, not scattered backwards.
+This is the checkpoint most at risk of being over-built, and the only one that is a legitimate candidate for deferral out of P2 entirely. If the answer to "what actually creates a notification in V1?" is "nothing yet, P8 does", then the honest options are a small table with a clean state machine and no producer, or an explicit deferral recorded with an owner and due checkpoint per the ROADMAP operating rule. Both are defensible; padding it out is not.
 
 ### CP10 — P2 exit gate (no migration)
 
@@ -88,28 +90,47 @@ Scope: a documented and **executed** restore drill — fresh volume, `0001` → 
 
 ```
 CP3 (in review) ──> CP5 board_member ──┬──> CP6 resolution ──┐
-                                       └──> CP7 commitment ──┴──> CP8 notification ──> CP9 audit ──> CP10 exit gate
+                                       └──> CP7 commitment ──┴──> CP8 audit ──> CP9 notification ──> CP10 exit gate
 ```
 
 CP6 and CP7 both depend only on CP5 and could run in parallel — but the standing rule is one task at a time, and there is one backend contributor, so they stay sequential.
+
+CP9 is the only checkpoint whose removal does not break the chain. That is why audit precedes it.
 
 ## 5. Not in P2 — deliberately
 
 - **Issue #32 (control-plane RLS) is a P1 patch, not a P2 checkpoint.** P1's exit criterion already requires unauthorized content be blocked *in SQL*, so this is an unmet P1 gate, not new scope. Same reasoning as F2 → `p1.0.1`. It should ship as **`p1.0.5`** ahead of CP5, because CP5 adds another table that references `principal`.
 - **`acl_grant` is unused.** P1 recorded an intent to "evolve clearance-only retrieval to reviewed object-level policy". The table exists and nothing reads it. That is a real decision to make, but it is a retrieval-policy change and the retrieval core is frozen — so it needs measured justification, not a checkpoint slot. Leave it; record it.
 
-## 6. Open questions — answer before CP5 starts
+## 6. DECIDED — no `Board` aggregate in P2 (owner, 2026-07-27)
 
-1. **What is "board" in the ROADMAP's object list?** It reads "workspace, member, board, meeting…" as three distinct things. This proposal assumes **board = the board-member directory** (FR-WS-03). The alternative reading is a `board` entity proper, enabling committees — main board, audit committee, remuneration committee — each with its own membership and meetings. That is a materially bigger model and would change CP5's shape and probably CP1's. The PRD does not settle it: §242 lists Workspace as holding members and meetings, with no separate Board object. **Owner decision needed.**
+The ROADMAP's object list reads "workspace, member, board, meeting…", which could have meant a `board` entity proper. **It does not.** The model is:
 
-2. **Does `decision_stance` migrate to `board_member_id`, and when?** Proposed: add nullable in CP5, backfill separately, make required only once the directory is real. Confirm, or say if the free-text column should simply stay.
+```
+Workspace → BoardMember → Meeting → AgendaItem → Resolution → Commitment
+```
 
-3. **`version_no` vs `version` — settle it as a house rule.** Three aggregates now carry both (`version` = optimistic-concurrency counter, `version_no` = published-artifact lineage). It is correct but reads as duplication to every new reader. This should become one line in `CONTRIBUTING.md` rather than being re-explained at each checkpoint. (Raised as #23 §6 Q3 and never answered.)
+- **Workspace** = the organization / tenant.
+- **BoardMember** = a governance participant within a workspace, who may have no login.
+- **Meeting** keeps `workspace_id` and hangs off the workspace directly. **CP1 is not revisited.**
+- BoardMember participates in meetings, votes on resolutions, and owns commitments.
 
-4. **Does CP8 have a producer in V1?** See above. If not, say so in the decision record and keep it small.
+**Rationale:** the PRD models one board per workspace throughout. A `Board` aggregate today adds a foreign key and a migration and unlocks no behaviour.
 
-## 7. Rough shape
+**Revisit only if a real requirement appears:** multiple boards per workspace (main board, audit committee, risk committee), per-board governance rules, or separate calendars, memberships and permissions. Introducing `Board` later is a migration plus a nullable FK on `meeting` — deliberately left cheap.
+
+## 7. Open questions — answer before CP5 starts
+
+1. **Does `decision_stance` migrate to `board_member_id`, and when?** Proposed: add nullable in CP5, backfill separately, make required only once the directory is populated. Confirm, or say the free-text column simply stays.
+
+2. **`version_no` vs `version` — settle it as a house rule.** Three aggregates now carry both (`version` = optimistic-concurrency counter, `version_no` = published-artifact lineage). It is correct but reads as duplication to every new reader, and should become one line in `CONTRIBUTING.md` rather than being re-explained at each checkpoint. (Raised as #23 §6 Q3, never answered.)
+
+3. **Is CP9 built or deferred?** If nothing produces notifications in V1, a recorded deferral with owner and due checkpoint is the better answer than an empty table.
+
+4. **CP8 shape:** table + write path in the checkpoint, with each module's emit as its own follow-up commit — or one cross-cutting diff? Recommended: the former.
+
+## 8. Rough shape
 
 Five aggregate checkpoints plus an exit gate. On the observed CP1–CP4 cadence — roughly one checkpoint per two to three days with one backend contributor, review included — that is on the order of two to three weeks, assuming the open questions above are answered before CP5 rather than during it.
 
-The estimate is worth little; the sequencing is the point. What would genuinely change the number is question 1: if "board" means committees, CP5 grows and CP1 needs revisiting.
+The estimate is worth little; the sequencing is the point. The Board question that would have moved it most is now settled (§6), so the remaining variance is CP8's retrofit and whether CP9 is built at all.
