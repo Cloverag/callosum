@@ -14,7 +14,7 @@ flowchart LR
 
     ING["<b>1. Ingestion</b><br/>parse → dedupe by hash → chunk"]
 
-    EXT["<b>2. Extraction — Claude Opus</b><br/>entities: Person, Decision, Meeting,<br/>Topic, ActionItem, Metric<br/>edges: APPROVED, OPPOSED, SUPERSEDES<br/><i>every edge carries a verbatim quote</i>"]
+    EXT["<b>2. Extraction — pluggable LLM</b><br/>default gpt-oss:120b-cloud (Ollama)<br/>entities: Person, Decision, Meeting,<br/>Topic, ActionItem, Metric<br/>edges: APPROVED, OPPOSED, SUPERSEDES<br/><i>every edge carries a verbatim quote</i>"]
 
     subgraph STORE["3. Storage"]
         direction TB
@@ -33,7 +33,7 @@ flowchart LR
         PERM --> MERGE
     end
 
-    LLM["<b>5. Claude</b><br/>grounded answer + citations"]
+    LLM["<b>5. Synthesis — same pluggable LLM</b><br/>grounded answer + citations"]
     USER(["Founder<br/><i>Why did we reject Pricing Model B?</i>"])
     APPROVE["<b>Human Approval Queue</b><br/>the LLM proposes, a human approves<br/><i>the AI never writes to memory directly</i>"]
 
@@ -60,6 +60,15 @@ flowchart LR
     class EXT,LLM ai
 ```
 
+**The model is a variable, not a fixture.** Boxes 2 and 5 above are deliberately unnamed: the provider is selected by the `PROVIDER` environment variable, and which model does the extracting is one of the research questions this system exists to answer. Two backends are implemented, and they are interchangeable because both embedding models are 1024-dimensional — the width `chunk.embedding VECTOR(1024)` is fixed to in `schema/postgres.sql`:
+
+| `PROVIDER` | Extraction + synthesis | Embeddings | Status |
+|---|---|---|---|
+| `ollama` (default) | `gpt-oss:120b-cloud` | `bge-m3` (local) | The path every published result was measured on, including `eval-baseline-v3` |
+| `anthropic` | `claude-opus-4-8` | `voyage-3` | Implemented and live, but dormant — held for the open-weight-vs-frontier comparison |
+
+Defaults live in `src/callosum/config.py`. Every extracted edge and every quarantined failure is stamped with the provider, model, prompt version, and ontology version that produced it, so a result can always be attributed to the configuration that generated it.
+
 **The bridge is the thesis.** A chunk row in Postgres and its `(:Chunk)` node in Neo4j share one UUID. So a semantic hit can traverse into the graph, and a graph traversal can pull back the exact paragraph that proves it. Neither store alone can do this:
 
 | Store | Answers | Cannot answer |
@@ -79,7 +88,7 @@ sequenceDiagram
     participant G as Neo4j
     participant V as pgvector
     participant A as Permission filter
-    participant L as Claude
+    participant L as Synthesis LLM
 
     F->>P: Why did we reject Pricing Model B?
     Note over P: Intent: a decision and its rationale.<br/>Needs BOTH stores.
@@ -131,7 +140,7 @@ stateDiagram-v2
 
     note right of Pending
         Founder reviews the evidence quote
-        that Claude was forced to attach
+        the extractor was forced to attach
     end note
 
     note right of Committed
