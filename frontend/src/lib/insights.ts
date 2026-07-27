@@ -6,10 +6,22 @@
 export type MemoryHealth = {
   /** Share of graph edges with a located verbatim evidence quote. The thesis metric. */
   verifiedPct: number;
-  /** Facts awaiting human approval before they enter institutional memory. */
-  pendingReview: number;
-  /** Rejected-but-retained extractions (the extraction process is the dataset). */
-  quarantined: number;
+  /**
+   * Facts awaiting human approval before they enter institutional memory.
+   * Backed by `proposed_change WHERE status = 'pending'` (see `store.pending()`).
+   *
+   * `null` means NOT MEASURED, and the UI must say so rather than print a number.
+   * It is deliberately not `0`: the graph on this dashboard is the deterministic
+   * seeded gold graph, which never passed through extraction, so a `0` would
+   * assert "the queue is empty" when the truth is "no queue was ever populated".
+   */
+  pendingReview: number | null;
+  /**
+   * Rejected-but-retained extractions (the extraction process is the dataset).
+   * Backed by the `extraction_failure` table (see `store.failure_stats()`).
+   * `null` for the same reason as `pendingReview` above.
+   */
+  quarantined: number | null;
   entities: number;
   edges: number;
   /** Distinct ontology relation types actually present in the graph. */
@@ -89,7 +101,11 @@ export type BoardReadiness = {
 };
 
 export type DashboardInsights = {
-  /** One-line, evidence-grounded orientation for the operator. */
+  /**
+   * The narrative half of the operator's orientation line. Counts are NOT in
+   * here — the dashboard derives those from live mock data and prepends them,
+   * so the sentence cannot drift out of step with what the page shows.
+   */
   dailyBrief: string;
   /** How ready the next board pack is, by track. */
   readiness: BoardReadiness;
@@ -97,8 +113,15 @@ export type DashboardInsights = {
   quality: GraphQuality;
   approvedFacts: ApprovedFact[];
   decisions: Decision[];
-  /** Weekly review throughput, oldest → newest. Feeds the sparkline. */
-  reviewVelocity: number[];
+  /**
+   * Weekly review throughput, oldest → newest. Feeds the sparkline.
+   *
+   * `null` = not measured. This is throughput of the *same* approval queue that
+   * backs `memory.pendingReview`, so it cannot be real while that one is not,
+   * and a weekly axis would additionally invent time the data does not have —
+   * the mistake already corrected in `memoryGrowth` below.
+   */
+  reviewVelocity: number[] | null;
   /** Institutional memory accumulating, week by week. Feeds the growth chart. */
   memoryGrowth: MemoryGrowthPoint[];
   pending: PendingActions;
@@ -123,8 +146,13 @@ export type MemoryGrowthPoint = {
 };
 
 const insights: DashboardInsights = {
-  dailyBrief:
-    "3 meetings this week and 5 items awaiting your review. Series B terms are still open ahead of the Q3 board meeting.",
+  // CORRECTED 2026-07-27. Previously opened "3 meetings this week and 5 items
+  // awaiting your review" — a hard-coded meeting count that no mock backed, and
+  // a restatement of the invented `pendingReview: 5`. The counts now come from
+  // the real mock data in `dashboard/page.tsx`; this field carries only the
+  // narrative tail, which the gold graph does support (Sequoia leading the
+  // Series B is an approved fact in `graph.ts`).
+  dailyBrief: "Series B terms are still open ahead of the Q3 board meeting.",
   readiness: {
     agenda: 90,
     metrics: 55,
@@ -139,8 +167,22 @@ const insights: DashboardInsights = {
   // (counted from the GOLD_* tables in `src/callosum/evaluate.py`).
   memory: {
     verifiedPct: 100, // true by construction: verify() refuses an edge with no located quote
-    pendingReview: 5, // demo value — no approval queue is wired to the frontend yet
-    quarantined: 4, // demo value — see docs/findings.md for real quarantine counts
+    // CORRECTED 2026-07-27. These previously read `pendingReview: 5` and
+    // `quarantined: 4`, both labelled "demo value" in a comment nobody sees at
+    // runtime — the dashboard printed them as measurements. They were the last
+    // invented numbers on this page.
+    //
+    // There is no honest number to substitute. Both counts come from tables that
+    // only an extraction run populates (`proposed_change`, `extraction_failure`),
+    // and the graph shown here is the seeded gold graph, which bypasses
+    // extraction entirely. `0` would be a claim, not a fact. The one recorded
+    // live run (docs/findings.md, 2026-07-15) is prose, and self-inconsistent at
+    // that — "57 + 36 proposed edges, 4 quarantined" alongside "93 edges
+    // committed" — so it is not sound provenance either.
+    //
+    // Wire these at P3, from store.pending() and store.failure_stats().
+    pendingReview: null,
+    quarantined: null,
     entities: 38,
     edges: 40,
     relationTypes: 14,
@@ -238,7 +280,10 @@ const insights: DashboardInsights = {
     { id: "d-hire", title: "Six-person engineering hire", status: "approved", meeting: "Board Meeting #14", date: "2026-07-09T11:20:00Z" },
     { id: "d-fcst", title: "Revise the FY27 forecast", status: "proposed", meeting: "Q3 Board Meeting", date: "2026-07-21T09:20:00Z" },
   ],
-  reviewVelocity: [4, 6, 3, 7, 5, 8, 6, 9],
+  // CORRECTED 2026-07-27. Was [4, 6, 3, 7, 5, 8, 6, 9] rendered under a
+  // "last 8 weeks" caption: an invented series on an invented axis, measuring an
+  // approval queue that has never been populated. See the type note above.
+  reviewVelocity: null,
   // Every row below was computed from the real gold graph, not estimated:
   //   .venv/bin/python -c "from callosum.evaluate import GOLD_GROUPS; ..."
   // accumulating unique entities and unique (source, relation, target) triples
