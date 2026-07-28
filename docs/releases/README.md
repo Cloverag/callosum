@@ -74,6 +74,11 @@ came from.
 - **Composite `(id, workspace_id)` foreign keys for new tenant-scoped relationships.** Postgres
   validates foreign keys as the table owner, which bypasses RLS, so a single-column reference to a
   tenant-scoped table is an unscoped reference. Also in `CONTRIBUTING.md`. — *p1.0.5*
+- **Never pin a migration number in a spec, issue or plan — claim the slot at implementation time.**
+  Every checkpoint from CP3 onward has had its planned number taken by something else: #21 pinned
+  `0009_board_pack` and CP4 got there first; the CP5–CP9 proposal pinned `0011`–`0015` and all five
+  were claimed. Alembic linearises on `down_revision`, so nothing corrupts — the cost is confusion
+  and rework. Refer to checkpoints by name. Also in `CONTRIBUTING.md`. — *CP3/CP4, CP5–CP7*
 - **When adding any constraint, ask which role evaluates it.** If the answer is the table owner, RLS
   is not involved and tenancy must be enforced in the constraint itself. — *p1.0.5*
 

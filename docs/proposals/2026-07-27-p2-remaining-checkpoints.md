@@ -5,6 +5,28 @@
 
 ---
 
+> ## ⚠ THE MIGRATION NUMBERS BELOW ARE WRONG. DO NOT COPY THEM.
+>
+> Every slot this document names has been taken by something else. Read the next
+> free slot from `meridian/migrations/versions/`, never from a spec.
+>
+> | This doc says | Actually shipped as |
+> |---|---|
+> | CP5 `0011_board_member` | **CP5a `0012_board_member`** + **CP5b `0013_principal_rls`** (`0011` went to the control-plane RLS patch, #38) |
+> | CP6 `0012_resolution` | **`0014_resolution`** |
+> | CP7 `0013_commitment` | **`0015_commitment`** |
+> | CP8 `0014_audit_event` | `0014` **is taken** — next free slot is `0016` |
+> | CP9 `0015_notification` | `0015` **is taken** |
+>
+> This is the same failure that produced the CP3/CP4 collision: issue #21 pinned
+> `0009_board_pack`, CP4 took `0009` first, and CP3 had to become `0010`. The chain
+> survived both times because Alembic linearises on `down_revision`, not on the
+> number in the name — but a spec that names a slot weeks before anyone implements
+> it will always be overtaken. The design content below is still current; only the
+> numbering is stale.
+
+---
+
 ## 1. Where P2 actually is
 
 ROADMAP P2's goal names eleven object families. Six are done or in review:
