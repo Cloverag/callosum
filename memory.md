@@ -4,6 +4,18 @@ A human-readable log of the decisions that shaped the project and *why* — the 
 
 ---
 
+### 2026-07-28 — Next.js `frontend/` is the product frontend; the glass prototype is not
+The repo has carried two frontends since 24 July: Next.js `frontend/` and the Vite
+glassmorphism prototype at `frontendglass/meridian-glass/`. **Decision (owner): the product is
+the Next.js app.** The glass prototype is not the path forward and does not get wired to the
+P3 API.
+**Why:** P3 puts a real authenticated API behind the UI, and wiring two frontends would double
+that work for one product. The Next.js app is where the substance already is — 10 routes, the
+design system, the CP3/CP4 surfaces, and 96 tests — while the prototype was a look study, last
+touched 24 July and never given data, tests, or a11y work.
+Left in the tree for now rather than deleted: it is a visual reference, and removing 78 MB of
+vendored prototype is a separate, deliberate commit. No further work goes into it.
+
 ### 2026-07-22 — Frontend v2: pivot to blue/light "Calm Desk"
 The shipped v1 design system (violet-on-zinc, dark-canonical "Situation Room") is superseded by a new color system: **light-mode only, blue `#2563EB` for action, violet `#6D28D9` reserved for Institutional Memory only**, 95% neutral / 5% semantic. Decision: **rebuild the look from scratch, keep the implemented features** (`src/lib/*`, calendar, entity-conflicts). Reference feel = Linear + Stripe + Vercel: premium, calm, built for long sessions.
 **Why:** v1 read as generic/"AI slop" and wasn't interactive enough; the owner wants earned executive trust through hierarchy and elevation, not decoration or extra color. v1 is kept on its branch as a rollback baseline.
