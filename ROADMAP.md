@@ -16,7 +16,7 @@ security cases), updated docs/status, runnable verification commands, and a revi
 No checkpoint may weaken evidence verification, human approval, RBAC, provenance, or audit
 requirements.
 
-## Current progress — 2026-07-28
+## Current progress — 2026-07-29
 
 | Track | Completed | Active | Remaining |
 |---|---:|---|---:|
@@ -41,11 +41,11 @@ domain module, and tests.
 | CP4 | `Decision` / `DecisionStance` | `0009_decision` | ✅ merged (PR #22) |
 | CP5a | `BoardMember` directory | `0012_board_member` | ✅ merged (PR #42, issue #39) |
 | CP5b | membership wiring + `principal` scoping | `0013_principal_rls` | ✅ merged (PR #43, issue #40) |
-| CP6 | `Resolution` | next free slot | ⬜ not filed — to be scoped with the backend owner |
-| CP7 | `Commitment` | — | ⬜ planned |
-| CP8 | audit event | — | ⬜ planned |
-| CP9 | notification | — | ⬜ planned |
-| CP10 | P2 exit gate (no migration) | — | ⬜ planned |
+| CP6 | `Resolution` / `ResolutionVote` | `0014_resolution` | ✅ merged (PR #54) |
+| CP7 | `Commitment` / `CommitmentUpdate` | `0015_commitment` | ✅ merged (PR #57) |
+| CP8 | `AuditEvent` | `0016_audit_event` | ✅ merged (PR #61) |
+| CP9 | notification | — | ⏸️ **deferred to P8** — recorded exception, owner Devguru-codes, issue #62 |
+| CP10 | P2 exit gate (no migration) | — | ⬜ next |
 
 CP5 was split into **CP5a** (the `BoardMember` directory) and **CP5b** (wiring `membership`
 and scoping `principal`) once CP5a's security review showed that clearance was still being
@@ -55,6 +55,14 @@ read from the legacy `principal.clearance` column. Detail for CP6–CP10 is in
 **CP3 exception — closed.** CP4 took the `0009` slot that CP3 had reserved, so CP3 shipped
 later as `0010`. The chain stayed linear and valid throughout; both checkpoints are merged
 and the recorded exception (issue #23) is closed.
+
+**CP9 deferred to P8 — recorded exception (owner: Devguru-codes, issue #62).** Nothing in P2
+produces a notification: there is no dispatcher, adapter, scheduler, or user-facing trigger.
+Building the table now would put a schema in the frozen chain that no code writes to, designed
+against zero real call sites. P8 is where notification *delivery* lives, alongside the retry
+state CP7 already models on `commitment`. The proposal's own dependency graph notes that CP9
+is the only checkpoint whose removal does not break the chain — CP10 depends on CP8, not CP9.
+**Do not close CP9 by adding an empty table.**
 
 **Migration numbers have shifted since the CP5–CP9 proposal was written.** That document
 assigned `0011_board_member` through `0015_notification`. `0011` was taken by the P1

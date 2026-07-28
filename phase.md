@@ -28,14 +28,19 @@ Measure-first, one aggregate root per checkpoint (own migration → domain modul
 | CP4 | `Decision` / `DecisionStance` | `0009_decision` | ✅ merged (PR #22) |
 | CP5a | `BoardMember` directory | `0012_board_member` | ✅ merged (PR #42) |
 | CP5b | membership wiring + `principal` scoping | `0013_principal_rls` | ✅ merged (PR #43) |
-| CP6 | `Resolution` | next free slot | ⬜ not filed — to be scoped with the backend owner |
-| CP7–CP10 | commitment, audit, notification, exit gate | — | ⬜ planned |
+| CP6 | `Resolution` / `ResolutionVote` | `0014_resolution` | ✅ merged (PR #54) |
+| CP7 | `Commitment` / `CommitmentUpdate` | `0015_commitment` | ✅ merged (PR #57) |
+| CP8 | `AuditEvent` | `0016_audit_event` | ✅ merged (PR #61) |
+| CP9 | notification | — | ⏸️ **deferred to P8** — recorded exception, issue #62 |
+| CP10 | P2 exit gate (no migration) | — | ⬜ next |
 
-- **Six aggregate roots merged.** Thirteen migrations apply cleanly from an empty volume; the chain is linear.
+- **Nine aggregate roots merged.** Sixteen migrations apply cleanly from an empty volume; the chain is linear.
+- **P2 is one checkpoint from done.** CP10 is the exit gate and needs no migration.
 - **CP3 exception — closed.** CP4 took the `0009` slot CP3 had reserved, so CP3 shipped later as `0010`. Both are merged and issue #23 is closed.
 - **CP5 was split** into CP5a (directory) and CP5b (membership wiring) when CP5a's review found clearance still being read from the legacy `principal.clearance` column.
 - **Released:** `0011`–`0013` are frozen in tag **`meridian-p1.0.5`** (2026-07-28) — 176 passed, mechanism gate byte-identical. Three limitations carried forward; see the [freeze note](./docs/reviews/2026-07-28-meridian-p1.0.5-freeze.md).
-- **CP6 is deliberately unfiled** — to be scoped with the backend owner rather than handed over as a spec written without him.
+- **CP9 deferred to P8** (owner Devguru-codes, issue #62). Nothing in P2 produces a notification — no dispatcher, adapter, scheduler or trigger — so the table would enter the frozen chain designed against zero call sites. P8 owns notification delivery, alongside the retry state CP7 already models on `commitment`. CP10 depends on CP8, not CP9. **Do not close CP9 by adding an empty table.**
+- **Test count:** 263 backend (gated, real Postgres) and 121 frontend.
 - Deferred: retirement of the frozen-query gateway allowlist (rides the next planned retrieval change).
 
 ## Frontend — 🟩 IN PROGRESS (maintainer)
@@ -44,10 +49,10 @@ Measure-first, one aggregate root per checkpoint (own migration → domain modul
 `feat/frontend-*` branches are history, not work in progress.
 
 - **Design system (v2 "Calm Desk"):** light-mode only; blue `#2563EB` = action; violet `#6D28D9` reserved for Institutional Memory. Token layer, primitives, white sidebar, persistent collapsible AI rail, elevation + typography ramp, brand mark / icons / favicon. See [frontend/DESIGN.md](./frontend/DESIGN.md).
-- **Routes shipped:** dashboard, calendar, meetings, documents, settings, entity-conflicts, `/memory` (knowledge graph + provenance timeline + ontology bars, closes #13), `/decisions` (PR #37).
+- **Routes shipped:** dashboard, calendar, meetings, documents, settings, entity-conflicts, `/memory` (knowledge graph + provenance timeline + ontology bars, closes #13), `/decisions` (#37), `/packs` (#46), `/minutes` (#48), `/resolutions` (#60).
 - **Data honesty is the standing constraint.** Two rounds of fabricated figures were found and removed — repository metadata shown as memory coverage, an invented health %, a contradictory growth series, invented assistant citations, and unwired review-queue counts. Numbers on screen trace to a source or are labelled "not measured". Chart rules live in `frontend/DESIGN.md`.
 - **Settled 2026-07-28 — the product frontend is Next.js `frontend/`.** The Vite glassmorphism prototype at `frontendglass/meridian-glass/` is a visual reference only: it does not get wired to the P3 API and no further work goes into it. It stays in the tree for now; removing it is a separate deliberate commit. See [memory.md](./memory.md).
-- **Next:** BoardPack + Minutes surfaces against the merged CP3 contract (`meridian/packs.py`, `meridian/minutes.py`); then calendar unit tests (#28, blocked behind #15), responsive/mobile AI rail.
+- **Next:** `/commitments` against the merged CP7 contract; then resolving `decision_stance` to the board directory (`decisions.ts` still says `board_member_id` is "coming in CP5" — CP5a shipped it), and the responsive/mobile AI rail.
 
 ## Product P3 — Web API layer — ⬜ NOT STARTED
 
