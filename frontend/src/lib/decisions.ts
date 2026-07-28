@@ -110,12 +110,24 @@ export type DecisionStance = {
   decision_id: string;
   workspace_id: string;
   /**
-   * Free text in the backend today — `decision_stance.person_name` is a TEXT
-   * column with no foreign key, so two spellings of one director are two people.
-   * CP5 (issue #36) adds a nullable `board_member_id`; until then this is the
-   * only identifier available and the UI must not imply it is resolvable.
+   * The name as recorded when the stance was taken. Free text, `NOT NULL`, and
+   * **permanent** — it is audit data, not a denormalised copy of the directory.
+   *
+   * It stays even when `board_member_id` resolves, because the two answer different
+   * questions: this is what was minuted, that is who the minute refers to. Collapsing
+   * them would lose the record of what was actually written down.
    */
   person_name: string;
+  /**
+   * Optional resolution to the board directory. Shipped in CP5a (`0012_board_member`)
+   * as a composite `(board_member_id, workspace_id)` foreign key, so a stance cannot
+   * reference a director in another workspace.
+   *
+   * **Nullable forever.** A stance recorded before the directory existed, or against
+   * someone who is not in it, is still a valid stance. Treat `null` as "not resolved",
+   * never as an error, and never invent a name to fill it.
+   */
+  board_member_id: string | null;
   stance: Stance;
   comment: string | null;
   created_at: string; // ISO
@@ -166,6 +178,20 @@ export function supersededBy(d: Decision, all: Decision[]): Decision | null {
 
 const WS = "00000000-0000-0000-0000-000000000001";
 
+/**
+ * Names that resolve to the board directory in `board-members.ts`.
+ *
+ * Not every recorded name does, and that is the realistic case rather than an
+ * oversight: `board_member_id` is nullable forever, and a stance minuted before the
+ * directory existed still has to render.
+ */
+const DIRECTORY: Record<string, string> = {
+  "Raj Malhotra": "bm-raj",
+  "Priya Nair": "bm-priya",
+  "Marcus Webb": "bm-marcus",
+  "Elena Fischer": "bm-elena",
+};
+
 function stance(
   decision_id: string,
   n: number,
@@ -179,6 +205,10 @@ function stance(
     decision_id,
     workspace_id: WS,
     person_name,
+    // Resolved where the directory knows the name, null where it does not — the
+    // shape the real column has, rather than a uniformly populated one that would
+    // let an unresolved-stance bug go unnoticed.
+    board_member_id: DIRECTORY[person_name] ?? null,
     stance: s,
     comment,
     created_at: at,
@@ -215,6 +245,11 @@ const mockDecisions: Decision[] = [
       stance("d-price-reject", 2, "Priya Nair", "SUPPORTED", "Agreed — the forecast doesn't support it yet.", "2026-07-09T10:37:00Z"),
       stance("d-price-reject", 3, "Marcus Webb", "OPPOSED", "I think we're leaving revenue on the table.", "2026-07-09T10:38:00Z"),
       stance("d-price-reject", 4, "Elena Fischer", "SUPPORTED", null, "2026-07-09T10:39:00Z"),
+      // Deliberately not in the board directory. A stance minuted before the
+      // directory existed — or taken by someone who was never added to it — is still
+      // a valid stance, which is why `board_member_id` is nullable forever. Without a
+      // row like this the null path never renders and a bug in it goes unnoticed.
+      stance("d-price-reject", 5, "Sarah Lindqvist", "OPPOSED", "Recorded from the minutes; seat has since ended.", "2026-07-09T10:40:00Z"),
     ],
   },
   {
