@@ -4,6 +4,24 @@ A human-readable log of the decisions that shaped the project and *why* — the 
 
 ---
 
+### 2026-07-29 — P3 authentication: OIDC, cookie session, no auto-provisioning
+Owner approved D1–D5, recorded as **ADR-009 – ADR-013**. Authentication is **OIDC**; the
+session is an **httpOnly signed cookie** (same-origin Next.js, so no bearer token). The
+subject maps to a principal through a new **`principal_identity`** table on
+`(provider, subject)` — **not** on email, which is mutable and gets reassigned between
+people. An **unknown subject is rejected**: provisioning is an administrative act, not a
+side effect of a stranger visiting a URL. Workspace is **selected explicitly and
+re-validated against `membership` on every request**, so access ends when the membership
+does rather than when the session expires.
+**Why the enforcement matters most:** `workspace_id` and `clearance` are session-derived and
+may never appear as endpoint inputs, because `store.pg()` sets the GUC every RLS policy
+reads — a request that can influence it makes RLS advisory. That rule is enforced by **a
+test walking the OpenAPI schema**, not by convention, because an endpoint accepting
+`workspace_id` looks entirely ordinary in review.
+**Ownership:** maintainer is backend owner for P3 while Devguru is unavailable, so the phase
+does not stall. If he returns before implementation, review the design together and split
+checkpoints — but a single owner during implementation, to avoid duplicated architectural work.
+
 ### 2026-07-28 — Next.js `frontend/` is the product frontend; the glass prototype is not
 The repo has carried two frontends since 24 July: Next.js `frontend/` and the Vite
 glassmorphism prototype at `frontendglass/meridian-glass/`. **Decision (owner): the product is

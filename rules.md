@@ -32,6 +32,12 @@ Related: [PRD.md](./PRD.md) · [ROADMAP.md](./ROADMAP.md) · [AGENTS.md](./AGENT
 
 - **Frontend** = maintainer/owner. **Backend** (domain model, migrations, RLS/tenancy, API contracts, tests, infra) = Devguru.
 - Backend publishes stable contracts; the frontend consumes only those (or mocks until the P3 API exists). No API layer exists yet — all frontend data is mock-driven.
+- **P3 interim (owner decision, 2026-07-29):** while Devguru is unavailable, the maintainer is
+  backend owner so the phase does not stall. If he returns before CP-A implementation begins,
+  review the design (ADR-009 – ADR-013) together and split the checkpoints then. **One owner
+  during implementation** — two people building an auth layer from the same design is how
+  architectural work gets done twice and agrees with itself nowhere. CP6/CP7 were taken the
+  same way and handed back in #58.
 
 ## 6. Frontend design rules
 
