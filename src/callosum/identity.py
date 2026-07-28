@@ -33,6 +33,25 @@ class PrincipalNotFound(Exception):
     """
 
 
+class IdentityNotProvisioned(PrincipalNotFound):
+    """The external identity authenticated, but no `principal_identity` row maps it.
+
+    ADR-011: an unknown subject is rejected rather than auto-provisioned, so this is
+    the expected outcome for a stranger the identity provider is willing to
+    authenticate — not an error condition to work around.
+
+    **Distinct from `PrincipalNotFound`, and safe to be distinct**, because there is
+    no membership oracle here: reaching this point required proving control of the
+    subject through OIDC, so the caller only learns a fact about their *own* account.
+    That distinction is what lets a login page say "ask an administrator for access"
+    instead of a bare refusal.
+
+    It subclasses `PrincipalNotFound` so every existing `except PrincipalNotFound`
+    still catches it — a caller that does not care about the difference cannot
+    accidentally let this one through.
+    """
+
+
 # The membership rule, written once.
 #
 # "A principal is resolvable here only if they hold an ACTIVE membership in THIS
@@ -140,8 +159,9 @@ def resolve_principal_by_id(
     inverting it would break the package separation R13 established.
 
     **What this deliberately does not do:** map an OIDC subject to a principal. That
-    mapping is decision D2 in the P3 roadmap and needs a schema of its own; this
-    function takes the principal id that mapping will eventually produce.
+    is `resolve_identity()`, which reads `principal_identity` and takes no workspace,
+    because login happens before one is chosen. This function takes the principal id
+    that lookup produces. `resolve_principal_by_subject()` composes the two.
     """
     try:
         pid = principal_id if isinstance(principal_id, uuid.UUID) else uuid.UUID(str(principal_id))
@@ -191,3 +211,79 @@ def resolve_principal_id(
         workspace_id=workspace_id,
     )
     return row["id"] if row else None
+
+
+def resolve_identity(
+    conn: psycopg.Connection,
+    provider: str,
+    subject: str,
+) -> uuid.UUID:
+    """Maps an authenticated OIDC `(issuer, subject)` onto a `principal.id`.
+
+    **Deliberately takes no workspace.** This runs at login, before a workspace has
+    been selected — there is nothing to scope by yet, and `principal_identity` is not
+    tenant-scoped for exactly that reason (ADR-010). Clearance is *not* resolved here;
+    it is a property of a membership, and which membership depends on the workspace
+    the caller goes on to choose.
+
+    So this is only half of authentication. The other half is
+    `resolve_principal_by_id()`, which applies the membership rule once a workspace is
+    known. Splitting them is what keeps identity global and authorization per-tenant.
+
+    Raises `IdentityNotProvisioned` when no row maps the subject. Provisioning is an
+    administrative act (ADR-011) and this function never creates one — the runtime
+    role does not even hold `INSERT` on the table.
+
+    Matching is exact and case-sensitive on both columns. Subjects are opaque, and
+    issuers are compared verbatim by the OIDC spec; normalising either would risk
+    collapsing two distinct identities into one.
+    """
+    if not provider or not provider.strip():
+        raise IdentityNotProvisioned("provider must not be empty")
+    if not subject or not subject.strip():
+        raise IdentityNotProvisioned("subject must not be empty")
+
+    row = conn.execute(
+        """
+        SELECT principal_id
+          FROM principal_identity
+         WHERE provider = %s
+           AND subject = %s
+        """,
+        (provider, subject),
+    ).fetchone()
+
+    if row is None:
+        # The subject is not echoed back. It is the caller's own, so this is not a
+        # leak — but an exception message ends up in logs, and an external identifier
+        # is not something to scatter through them by default.
+        raise IdentityNotProvisioned("no principal is provisioned for that identity")
+
+    return row["principal_id"]
+
+
+def resolve_principal_by_subject(
+    conn: psycopg.Connection,
+    provider: str,
+    subject: str,
+    *,
+    workspace_id: str,
+) -> Principal:
+    """Both halves: external identity → principal → clearance in this workspace.
+
+    The composition an authenticated request uses once its workspace is settled.
+    Equivalent to `resolve_principal_by_id(conn, resolve_identity(...), ...)`, and
+    written as a composition rather than a second query so the membership rule stays
+    in one place.
+
+    Raises `IdentityNotProvisioned` if the subject maps to nobody, and
+    `PrincipalNotFound` if it maps to someone with no active membership in
+    `workspace_id`. Both are refusals; the first is about the account, the second
+    about this tenant.
+
+    `workspace_id` is required and unvalidated here by design — validating it belongs
+    to `meridian.tenancy.require_workspace()` at the API boundary, and this module
+    cannot import that helper without inverting the Meridian → Callosum dependency.
+    """
+    principal_id = resolve_identity(conn, provider, subject)
+    return resolve_principal_by_id(conn, principal_id, workspace_id=workspace_id)

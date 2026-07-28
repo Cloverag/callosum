@@ -12,7 +12,7 @@ import inspect
 
 import pytest
 
-from callosum.identity import PrincipalNotFound
+from callosum.identity import IdentityNotProvisioned, PrincipalNotFound
 from meridian import (
     agenda,
     audit,
@@ -152,6 +152,10 @@ class TestAuthorizationDoesNotExplainItself:
         [
             PrincipalNotFound("Raj Malhotra"),
             audit.ActorNotInWorkspace("11111111-1111-1111-1111-111111111111"),
+            # Subclass of PrincipalNotFound. The taxonomy matches on isinstance, so a
+            # new subclass inherits the right status without being registered — which
+            # is the property that keeps the map from rotting as auth grows.
+            IdentityNotProvisioned("no principal is provisioned for that identity"),
         ],
         ids=lambda e: type(e).__name__,
     )
