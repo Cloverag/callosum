@@ -99,6 +99,19 @@ each has now been re-explained at more than one checkpoint review.
 A board pack edited three times as a draft and then published once is `version = 4,
 version_no = 1`. They are not redundant and neither should be folded into the other.
 
+**Never pin a migration number in a spec, an issue, or a plan.**
+
+Claim the slot when you implement, by reading `meridian/migrations/versions/`. A
+number written at design time will be taken by the time anyone builds it — this has
+happened on every checkpoint from CP3 onward. Issue #21 pinned `0009_board_pack`;
+CP4 took `0009` first and CP3 shipped as `0010`. The CP5–CP9 proposal then pinned
+`0011`–`0015` and every one of those was claimed by something else.
+
+Nothing broke either time, because Alembic linearises on `down_revision` and not on
+the number in the filename. The cost is confusion and rework, not corruption — but
+it is entirely avoidable. Refer to checkpoints by name in specs ("CP8 — audit
+event"), and let the number be decided by whoever writes the file.
+
 **Tenant-scoped foreign keys should reference the `(id, workspace_id)` pair.**
 
 Postgres validates foreign keys as the table owner, which **bypasses row-level
