@@ -309,16 +309,22 @@ endpoint, so the tree never holds two implementations of one contract.
 
 ## 10. Decisions requiring maintainer approval before implementation
 
-| # | Decision | Recommendation | Blocks |
-|---|---|---|---|
-| D1 | Session transport | httpOnly signed cookie | everything |
-| D2 | OIDC subject → principal link | new `principal_identity` table | CP-A |
-| D3 | Unknown subject on first login | **reject**, no auto-provisioning | CP-A |
-| D4 | Multi-workspace selection | explicit step, stored in session, re-validated per request | CP-A |
-| D5 | Enforcement of "never from the request" | dependency + OpenAPI test | CP-A |
-| D6 | 1:1 vs task-shaped endpoints | 1:1 for P3 | CP-B |
-| D7 | Who may read the audit trail | open | `audit` endpoint only |
-| — | `graph` + `assistant` deferred to P6 | recorded exception, as CP9 was | CP-E |
-| — | `insights` tiles | derive or delete, never approximate | CP-E |
+**D1–D5 were approved by the owner on 2026-07-29** and are now recorded as
+**ADR-009 – ADR-013** in [docs/ARCHITECTURE_DECISIONS.md](../ARCHITECTURE_DECISIONS.md),
+which is the authoritative statement. The table below is a summary.
 
-**Nothing in §7 starts until D1–D5 are approved.** §5 work can begin immediately.
+| # | Decision | Resolution | ADR | Blocks |
+|---|---|---|---|---|
+| D1 | Session transport | OIDC; httpOnly `SameSite=Lax` signed cookie, not a bearer token | ADR-009 | everything |
+| D2 | OIDC subject → principal link | new `principal_identity` table on `(provider, subject)`; **never matched on email** | ADR-010 | CP-A |
+| D3 | Unknown subject on first login | **rejected** — no auto-provisioning; provisioning stays an administrative act | ADR-011 | CP-A |
+| D4 | Multi-workspace selection | explicit step, stored in session, **re-validated against `membership` every request** | ADR-012 | CP-A |
+| D5 | Enforcement of "never from the request" | scoped-connection dependency **+ a test that walks the OpenAPI schema** and fails if any endpoint declares `workspace_id` or `clearance` | ADR-013 | CP-A |
+| D6 | 1:1 vs task-shaped endpoints | **still open** — recommend 1:1 for P3 | — | CP-B |
+| D7 | Who may read the audit trail | **still open** | — | `audit` endpoint only |
+| — | `graph` + `assistant` deferred to P6 | still open — recommend a recorded exception, as CP9 was | — | CP-E |
+| — | `insights` tiles | still open — recommend derive or delete, never approximate | — | CP-E |
+
+**§5 is complete** (#67 guard, #68 id-keyed lookup, #69 error taxonomy, #70 `decisions.ts`,
+#71 `/commitments`). D1–D5 no longer block, so **CP-A is unblocked and awaiting a start
+instruction** — it has not begun. D6 blocks CP-B and is still open.
