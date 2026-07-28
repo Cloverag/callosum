@@ -21,7 +21,12 @@ import psycopg
 
 from callosum import store
 from callosum.config import settings
-from callosum.identity import PrincipalNotFound, resolve_principal, resolve_principal_id
+from callosum.identity import (
+    PrincipalNotFound,
+    resolve_principal,
+    resolve_principal_by_id,
+    resolve_principal_id,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -166,3 +171,133 @@ def test_reviewer_id_resolution_is_also_membership_scoped():
             assert resolve_principal_id(conn, "Reviewer", workspace_id=elsewhere) is None
     finally:
         _cleanup([pid], [home, elsewhere])
+
+
+# ---------------------------------------------------------------------------
+# resolve_principal_by_id — the lookup an authenticated request should use (P3 §5.2)
+#
+# resolve_principal() matches on `name ILIKE '%fragment%'` and takes the first
+# alphabetical hit. That is fine when a human types their own name into a CLI and
+# unacceptable as an authentication path. These pin the exact-identifier behaviour.
+# ---------------------------------------------------------------------------
+
+def test_by_id_resolves_clearance_from_membership_not_the_legacy_column():
+    """Same disagreement fixture as the name-based test, for the same reason.
+
+    Seeding the two values identically would let this pass while still reading the
+    old column — which is the bug CP5b existed to fix.
+    """
+    ws = _workspace()
+    pid = _person("Exact Match Director", legacy_clearance=4)
+    _member(pid, ws, clearance=1)
+    try:
+        with store.pg(ws) as conn:
+            p = resolve_principal_by_id(conn, pid, workspace_id=ws)
+            assert p.clearance == 1, "read principal.clearance, not the membership"
+            assert str(p.id) == pid
+            assert p.workspace_id == ws
+    finally:
+        _cleanup([pid], [ws])
+
+
+def test_by_id_accepts_a_uuid_object_as_well_as_a_string():
+    ws = _workspace()
+    pid = _person("Uuid Form Director")
+    _member(pid, ws, clearance=2)
+    try:
+        with store.pg(ws) as conn:
+            assert resolve_principal_by_id(conn, uuid.UUID(pid), workspace_id=ws).clearance == 2
+    finally:
+        _cleanup([pid], [ws])
+
+
+def test_by_id_fails_closed_without_a_membership():
+    """A real principal, a real workspace, and no membership between them."""
+    ws = _workspace()
+    pid = _person("Stranger Here")
+    try:
+        with store.pg(ws) as conn:
+            with pytest.raises(PrincipalNotFound):
+                resolve_principal_by_id(conn, pid, workspace_id=ws)
+    finally:
+        _cleanup([pid], [ws])
+
+
+def test_by_id_fails_closed_on_a_deactivated_membership():
+    ws = _workspace()
+    pid = _person("Departed Director")
+    _member(pid, ws, clearance=3, active=False)
+    try:
+        with store.pg(ws) as conn:
+            with pytest.raises(PrincipalNotFound):
+                resolve_principal_by_id(conn, pid, workspace_id=ws)
+    finally:
+        _cleanup([pid], [ws])
+
+
+def test_by_id_does_not_resolve_across_workspaces():
+    """The membership is in B; the lookup is in A. The id alone must not be enough."""
+    ws_a, ws_b = _workspace(), _workspace()
+    pid = _person("Member Of B Only")
+    _member(pid, ws_b, clearance=4)
+    try:
+        with store.pg(ws_a) as conn:
+            with pytest.raises(PrincipalNotFound):
+                resolve_principal_by_id(conn, pid, workspace_id=ws_a)
+        # ...and resolves normally in the workspace they actually belong to.
+        with store.pg(ws_b) as conn:
+            assert resolve_principal_by_id(conn, pid, workspace_id=ws_b).clearance == 4
+    finally:
+        _cleanup([pid], [ws_a, ws_b])
+
+
+def test_by_id_gives_one_answer_for_unknown_absent_and_malformed():
+    """No membership oracle, and no distinguishable error for a malformed id either.
+
+    A caller learning "that id was invalid" versus "that id was not found" learns
+    nothing useful, and two error shapes are two things to reason about.
+    """
+    ws = _workspace()
+    try:
+        with store.pg(ws) as conn:
+            for bad in (str(uuid.uuid4()), "not-a-uuid", "", None, 12345):
+                with pytest.raises(PrincipalNotFound):
+                    resolve_principal_by_id(conn, bad, workspace_id=ws)
+    finally:
+        _cleanup([], [ws])
+
+
+def test_by_id_is_exact_where_the_name_lookup_is_fuzzy():
+    """The defect that makes the name lookup unusable for authentication.
+
+    Two principals whose names share a substring: `resolve_principal("An")` returns
+    whichever sorts first, so it can hand back the WRONG person. By id, each resolves
+    to themselves.
+    """
+    ws = _workspace()
+    anna = _person("Anna Fischer")
+    joanna = _person("Joanna Fischer")
+    _member(anna, ws, clearance=1)
+    _member(joanna, ws, clearance=4)
+    try:
+        with store.pg(ws) as conn:
+            # The fuzzy lookup collapses both onto one arbitrary winner...
+            fuzzy = resolve_principal(conn, "anna", workspace_id=ws)
+            assert str(fuzzy.id) in (anna, joanna)
+
+            # ...while the exact lookup cannot confuse them, and — the part that
+            # matters — cannot hand the low-clearance reader the high clearance.
+            assert resolve_principal_by_id(conn, anna, workspace_id=ws).clearance == 1
+            assert resolve_principal_by_id(conn, joanna, workspace_id=ws).clearance == 4
+    finally:
+        _cleanup([anna, joanna], [ws])
+
+
+def test_by_id_requires_an_explicit_workspace():
+    """No default. An authenticated request always knows its workspace, and
+    defaulting one would reintroduce the fail-open behaviour meridian.tenancy
+    exists to prevent."""
+    import inspect
+
+    sig = inspect.signature(resolve_principal_by_id)
+    assert sig.parameters["workspace_id"].default is inspect.Parameter.empty
