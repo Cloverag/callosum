@@ -84,3 +84,83 @@ graph inconsistency self-healing — **without** a message queue (which would ad
 for little V1 gain).
 **Status:** Proposed — design-only, tracked in issue #10. Not built. Do not implement before P2
 planning and only after evidence justifies it.
+
+## ADR-009 — Authentication is OIDC; the session is an httpOnly signed cookie
+**Decision:** authenticate via an external OIDC provider. The result is a server-side
+session carried in an **httpOnly, `SameSite=Lax`, signed cookie** — not a bearer token.
+**Alternatives:** local password auth (credentials table, hashing, reset flow); magic-link
+email; bearer token in `Authorization`.
+**Why:** `principal` has no credential column and never has — there is nothing to
+authenticate against, so *some* identity system had to be built. OIDC holds no secrets in
+this repo, which removes password storage, reset flows and breach surface in one move.
+The cookie follows from the deployment shape: the frontend is same-origin Next.js, so a
+cookie is simpler *and* keeps the session out of JavaScript's reach. A bearer token earns
+its keep only with a non-browser client, and none exists — adding one now would be paying
+for a consumer we do not have.
+**Status:** Accepted (P3, owner-approved 2026-07-29). Not yet built — CP-A.
+
+## ADR-010 — OIDC subject → principal via a separate `principal_identity` table
+**Decision:** a new table keying `(provider, subject)` UNIQUE → `principal_id`. **Not** a
+column on `principal`, and **not** matched on email.
+**Alternatives:** an `oidc_subject` column on `principal`; matching the OIDC `email` claim
+against `principal.email` (which is already UNIQUE).
+**Why:** email is the tempting option and the wrong one — it is mutable, it gets reassigned
+between people when someone leaves, and providers do not guarantee it. OIDC identifies by
+`(issuer, subject)`, which is stable and opaque, and that is what should be stored. A
+separate table earns its place three ways: more than one provider becomes possible, an
+identity can be revoked without touching the person record, and `principal` — declared in
+the frozen `schema/postgres.sql` — is not reshaped. It is deliberately **not** tenant-scoped
+and needs no RLS: identity is global, `membership` is what scopes. It must not be listable
+by the runtime role beyond what login requires, because a table mapping people to external
+identities is a directory leak if it can be enumerated.
+**Status:** Accepted (P3, owner-approved 2026-07-29). Not yet built — CP-A, one migration.
+
+## ADR-011 — An unknown OIDC subject is rejected, never auto-provisioned
+**Decision:** a successfully-authenticated subject with no `principal_identity` row is
+**refused**. No `principal` is created as a side effect of login.
+**Alternatives:** auto-provision a principal with no membership (authenticates, sees
+nothing); auto-provision with a default membership.
+**Why:** auto-provisioning creates identity records as a side effect of a stranger visiting
+a URL, which turns an authentication endpoint into a write endpoint for anyone the provider
+will authenticate — and with a public IdP that is potentially anyone. The middle option is
+worse than it looks: it accumulates ghost principals that appear in no directory but exist
+in the table, and `principal_identity` rows for people who were never invited. Membership is
+what grants clearance in this system; an identity with no membership is not a lesser user,
+it is a record nobody asked for. Provisioning is an administrative act and stays one.
+**Status:** Accepted (P3, owner-approved 2026-07-29). Not yet built — CP-A.
+
+## ADR-012 — Workspace is selected explicitly and re-validated on every request
+**Decision:** where a principal holds more than one membership, an explicit selection step
+writes the chosen workspace into the session. Every subsequent request re-validates it
+against `membership` before use.
+**Alternatives:** infer a default (first, most recent, or only membership); accept the
+workspace as a request parameter.
+**Why:** storing the choice without re-checking it makes the session a cache of an
+authorization fact, and a revoked membership would keep working until the session expired —
+which is precisely when it must stop. Re-validating per request costs one indexed lookup and
+means access ends when the membership does. Inferring a default is a smaller wrong: a
+founder who belongs to two boards should never be *guessed* into one of them. Accepting it
+from the request is ADR-013's whole subject.
+**Status:** Accepted (P3, owner-approved 2026-07-29). Not yet built — CP-A.
+
+## ADR-013 — `workspace_id` and `clearance` are session-derived, enforced by a schema test
+**Decision:** neither value may appear as an endpoint input — no path segment, query
+parameter, body field or header. Both are derived server-side from the authenticated
+session. **Enforced by an automated test that walks the OpenAPI schema and fails if any
+endpoint declares either as a request input.**
+**Alternatives:** a documented convention plus code review.
+**Why:** every domain function takes `workspace_id` and passes it to `store.pg()`, which
+sets the `app.workspace_id` GUC that **every RLS policy reads**. The moment a request can
+influence that value, RLS is advisory for anyone who can send one —
+`GET /api/resolutions?workspace_id=<someone-else's>` would be honoured, because the database
+was told to trust the GUC. This is the limitation P2's acceptance record carries forward,
+and P3 is where it stops being theoretical.
+
+Convention is the wrong enforcement mechanism for a rule whose violation is invisible in
+review: an endpoint that accepts `workspace_id` looks *ordinary*. The schema test makes the
+rule mechanical — the same reasoning that made composite `(id, workspace_id)` foreign keys a
+standing rule after p1.0.5, and the reason `meridian/tenancy.py` raises rather than
+defaulting. Three layers now hold the same line: the guard rejects a missing workspace, the
+session is the only source of a present one, and the test proves no endpoint offers a third.
+**Status:** Accepted (P3, owner-approved 2026-07-29). Guard built (#67); test not yet built
+— CP-A.
