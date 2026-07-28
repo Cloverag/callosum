@@ -1,0 +1,627 @@
+"""Resolution domain — product-domain aggregate (Meridian P2, checkpoint 6).
+
+This module owns formal resolutions and the votes cast on them. A resolution hangs off
+the `Decision` that produced it.
+
+A Decision is what the board concluded; a Resolution is the formal instrument recording
+it. FR-EXEC-02 requires a draft action item, a formally adopted resolution, and an
+external task to stay separable — this is the middle one.
+
+Design contract:
+  - All database operations execute through `store.pg(workspace_id)` under `callosum_app`
+    role, so Row-Level Security automatically enforces tenant isolation.
+  - Allowed status set: ('draft', 'adopted', 'rejected', 'superseded').
+  - State machine: `draft` -> `adopted` | `rejected`. An adopted resolution is immutable;
+    its only exit is `supersede_resolution`, which creates a new version and marks the old
+    one `superseded`.
+  - Votes may only be cast or changed while the resolution is `draft`. Once adopted or
+    rejected, the voting record is frozen — a board's voting record is the evidence for the
+    outcome, so it cannot be editable after the outcome is recorded.
+  - Every mutation is version-guarded by optimistic concurrency (`version = version + 1`).
+
+Legal scope: NONE. `signing_state` is a single-value enum pinned to `not_applicable`.
+Nothing here asserts that a resolution is legally executed; e-signature and jurisdiction
+are P8.
+"""
+
+import uuid
+from dataclasses import dataclass
+from datetime import datetime
+
+from callosum import store
+from callosum.store import DEFAULT_WORKSPACE_ID
+
+DRAFT = "draft"
+ADOPTED = "adopted"
+REJECTED = "rejected"
+SUPERSEDED = "superseded"
+
+RESOLUTION_STATUSES = frozenset({DRAFT, ADOPTED, REJECTED, SUPERSEDED})
+
+_ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
+    DRAFT: frozenset({ADOPTED, REJECTED}),
+    ADOPTED: frozenset(),  # Only exit is supersede_resolution -> SUPERSEDED
+    REJECTED: frozenset(),
+    SUPERSEDED: frozenset(),
+}
+
+VOTE_FOR = "for"
+VOTE_AGAINST = "against"
+VOTE_ABSTAIN = "abstain"
+VOTE_RECUSED = "recused"
+
+ALLOWED_VOTES = frozenset({VOTE_FOR, VOTE_AGAINST, VOTE_ABSTAIN, VOTE_RECUSED})
+
+# Votes that count toward the outcome. `abstain` and `recused` are recorded but do
+# not weigh: an abstention is a deliberate non-vote, and a recusal is a declared
+# conflict. Counting either as opposition would misreport the board.
+_COUNTED_VOTES = frozenset({VOTE_FOR, VOTE_AGAINST})
+
+# Meeting statuses where resolution creation/mutation is locked.
+#
+# Matches decisions.py rather than agenda.py, and for the same reason: a resolution
+# is drafted and voted on *during* a live meeting, so `in_progress` must stay open.
+# It is the completed/cancelled meeting that freezes the instrument.
+_LOCKED_MEETING_STATUSES = frozenset({"completed", "cancelled"})
+
+_UNSET = object()
+
+
+# ---------------------------------------------------------------------------
+# Typed Domain Exceptions
+# ---------------------------------------------------------------------------
+
+class ResolutionError(Exception):
+    """Base class for resolution-domain errors."""
+
+
+class ResolutionNotFound(ResolutionError):
+    """No resolution with that ID is visible in this workspace."""
+
+
+class ResolutionLockedError(ResolutionError):
+    """The resolution or its parent meeting is in a locked/terminal state."""
+
+
+class StaleResolutionError(ResolutionError):
+    """Optimistic-concurrency conflict: resolution was modified since it was read."""
+
+
+class ResolutionValidationError(ResolutionError):
+    """Requested change violates domain rules (e.g. empty body, invalid vote)."""
+
+
+class DecisionNotFound(ResolutionError):
+    """No decision with that ID is visible in this workspace.
+
+    Deliberately raised for both "no such decision" and "that decision belongs to
+    another workspace": the RLS-scoped read cannot see the latter, and reporting
+    them differently would confirm the existence of another tenant's row.
+    """
+
+
+class BoardMemberNotFound(ResolutionError):
+    """No board member with that ID is visible in this workspace, or they are inactive."""
+
+
+# ---------------------------------------------------------------------------
+# Read Models
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class ResolutionVote:
+    id: str
+    resolution_id: str
+    board_member_id: str
+    vote: str
+    created_at: datetime
+    updated_at: datetime
+    workspace_id: str
+
+
+@dataclass(frozen=True)
+class Resolution:
+    id: str
+    decision_id: str
+    title: str
+    body: str
+    status: str
+    signing_state: str
+    version_no: int
+    superseded_by_id: str | None
+    adopted_at: datetime | None
+    version: int
+    created_at: datetime
+    updated_at: datetime
+    workspace_id: str
+    votes: list[ResolutionVote]
+
+
+@dataclass(frozen=True)
+class VoteTally:
+    """Counts by vote, plus whether the motion carried.
+
+    `carried` is a simple majority of votes actually cast for or against, which is
+    the only rule this system is entitled to apply: quorum and supermajority
+    thresholds are governance policy that varies per board and per motion type, and
+    the product has nowhere to record them yet. `carried` is therefore advisory —
+    the authoritative outcome is `status`, which a human sets via `adopt_resolution`.
+    """
+
+    for_: int
+    against: int
+    abstain: int
+    recused: int
+
+    @property
+    def counted(self) -> int:
+        return self.for_ + self.against
+
+    @property
+    def carried(self) -> bool:
+        return self.for_ > self.against
+
+
+def _row_to_vote(row: dict) -> ResolutionVote:
+    return ResolutionVote(
+        id=str(row["id"]),
+        resolution_id=str(row["resolution_id"]),
+        board_member_id=str(row["board_member_id"]),
+        vote=row["vote"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        workspace_id=str(row["workspace_id"]),
+    )
+
+
+def _row_to_resolution(row: dict, votes: list[ResolutionVote]) -> Resolution:
+    return Resolution(
+        id=str(row["id"]),
+        decision_id=str(row["decision_id"]),
+        title=row["title"],
+        body=row["body"],
+        status=row["status"],
+        signing_state=row["signing_state"],
+        version_no=row["version_no"],
+        superseded_by_id=str(row["superseded_by_id"]) if row["superseded_by_id"] else None,
+        adopted_at=row["adopted_at"],
+        version=row["version"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        workspace_id=str(row["workspace_id"]),
+        votes=votes,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Internal Helpers
+# ---------------------------------------------------------------------------
+
+def _assert_meeting_mutable(conn, decision_id_uuid: uuid.UUID) -> None:
+    """Verifies the resolution's grandparent meeting is not completed or cancelled.
+
+    Joins through `decision`. Both reads are RLS-scoped, so a decision in another
+    workspace is simply not found.
+    """
+    row = conn.execute(
+        """
+        SELECT m.status
+          FROM decision d
+          JOIN meeting m ON m.id = d.meeting_id
+         WHERE d.id = %s
+         FOR SHARE OF m
+        """,
+        (decision_id_uuid,),
+    ).fetchone()
+    if row is None:
+        raise DecisionNotFound(str(decision_id_uuid))
+    if row["status"] in _LOCKED_MEETING_STATUSES:
+        raise ResolutionLockedError(
+            f"cannot modify a resolution for a meeting in status {row['status']!r}"
+        )
+
+
+def _fetch_votes(conn, resolution_uuids: list[uuid.UUID]) -> dict[str, list[ResolutionVote]]:
+    if not resolution_uuids:
+        return {}
+    rows = conn.execute(
+        """
+        SELECT * FROM resolution_vote
+         WHERE resolution_id = ANY(%s)
+         ORDER BY created_at ASC
+        """,
+        (resolution_uuids,),
+    ).fetchall()
+    out: dict[str, list[ResolutionVote]] = {}
+    for r in rows:
+        v = _row_to_vote(r)
+        out.setdefault(v.resolution_id, []).append(v)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Public Operations
+# ---------------------------------------------------------------------------
+
+def create_resolution(
+    decision_id: str,
+    title: str,
+    body: str,
+    *,
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
+) -> Resolution:
+    """Creates a draft resolution recording `decision_id`."""
+    if not title or not title.strip():
+        raise ResolutionValidationError("title must not be empty")
+    if not body or not body.strip():
+        raise ResolutionValidationError("body must not be empty")
+
+    dec_uuid = uuid.UUID(str(decision_id))
+
+    with store.pg(workspace_id) as conn:
+        # RLS-scoped existence check. The composite FK would also reject a
+        # cross-workspace decision_id, but it would surface as a ForeignKeyViolation
+        # rather than a domain error, and callers should not have to catch psycopg
+        # exceptions to handle a missing parent.
+        dec = conn.execute("SELECT id FROM decision WHERE id = %s", (dec_uuid,)).fetchone()
+        if dec is None:
+            raise DecisionNotFound(str(decision_id))
+
+        _assert_meeting_mutable(conn, dec_uuid)
+
+        row = conn.execute(
+            """
+            INSERT INTO resolution
+                (decision_id, title, body, status, version_no, workspace_id)
+            VALUES (%s, %s, %s, 'draft', 1, %s)
+            RETURNING *
+            """,
+            (dec_uuid, title.strip(), body.strip(), workspace_id),
+        ).fetchone()
+
+    return _row_to_resolution(row, votes=[])
+
+
+def get_resolution(
+    resolution_id: str, *, workspace_id: str = DEFAULT_WORKSPACE_ID
+) -> Resolution:
+    """Fetches a single resolution with its votes. Raises ResolutionNotFound if invisible."""
+    res_uuid = uuid.UUID(str(resolution_id))
+    with store.pg(workspace_id) as conn:
+        row = conn.execute("SELECT * FROM resolution WHERE id = %s", (res_uuid,)).fetchone()
+        if row is None:
+            raise ResolutionNotFound(str(resolution_id))
+        votes = _fetch_votes(conn, [res_uuid]).get(str(res_uuid), [])
+    return _row_to_resolution(row, votes=votes)
+
+
+def list_resolutions(
+    *,
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
+    decision_id: str | None = None,
+    status: str | None = None,
+) -> list[Resolution]:
+    """Returns resolutions, newest first, optionally filtered by decision or status."""
+    query = "SELECT * FROM resolution WHERE true"
+    params: list = []
+
+    if decision_id is not None:
+        query += " AND decision_id = %s"
+        params.append(uuid.UUID(str(decision_id)))
+
+    if status is not None:
+        if status not in RESOLUTION_STATUSES:
+            raise ResolutionValidationError(f"unknown resolution status: {status!r}")
+        query += " AND status = %s"
+        params.append(status)
+
+    query += " ORDER BY version_no DESC, created_at DESC"
+
+    with store.pg(workspace_id) as conn:
+        rows = conn.execute(query, params).fetchall()
+        votes = _fetch_votes(conn, [r["id"] for r in rows])
+
+    return [_row_to_resolution(r, votes=votes.get(str(r["id"]), [])) for r in rows]
+
+
+def update_resolution(
+    resolution_id: str,
+    *,
+    expected_version: int,
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
+    title=_UNSET,
+    body=_UNSET,
+) -> Resolution:
+    """Updates the text of a `draft` resolution under optimistic concurrency."""
+    if title is _UNSET and body is _UNSET:
+        raise ResolutionValidationError("no fields to update")
+    if title is not _UNSET and (not title or not title.strip()):
+        raise ResolutionValidationError("title must not be empty")
+    if body is not _UNSET and (not body or not body.strip()):
+        raise ResolutionValidationError("body must not be empty")
+
+    res_uuid = uuid.UUID(str(resolution_id))
+
+    with store.pg(workspace_id) as conn:
+        current = conn.execute(
+            "SELECT decision_id, status, version FROM resolution WHERE id = %s FOR UPDATE",
+            (res_uuid,),
+        ).fetchone()
+        if current is None:
+            raise ResolutionNotFound(str(resolution_id))
+
+        if current["version"] != expected_version:
+            raise StaleResolutionError(
+                f"resolution {resolution_id}: expected version {expected_version}, "
+                f"current {current['version']}"
+            )
+
+        if current["status"] != DRAFT:
+            raise ResolutionLockedError(
+                f"cannot update a resolution in status {current['status']!r}; "
+                "adopted resolutions are immutable"
+            )
+
+        _assert_meeting_mutable(conn, current["decision_id"])
+
+        sets, params = [], []
+        if title is not _UNSET:
+            sets.append("title = %s")
+            params.append(title.strip())
+        if body is not _UNSET:
+            sets.append("body = %s")
+            params.append(body.strip())
+
+        params.extend([res_uuid, expected_version])
+        row = conn.execute(
+            f"""
+            UPDATE resolution
+               SET {', '.join(sets)}, version = version + 1, updated_at = now()
+             WHERE id = %s AND version = %s
+            RETURNING *
+            """,
+            params,
+        ).fetchone()
+
+        if row is None:
+            raise StaleResolutionError(f"resolution {resolution_id}: concurrent modification")
+
+        votes = _fetch_votes(conn, [res_uuid]).get(str(res_uuid), [])
+
+    return _row_to_resolution(row, votes=votes)
+
+
+def record_vote(
+    resolution_id: str,
+    board_member_id: str,
+    vote: str,
+    *,
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
+) -> ResolutionVote:
+    """Records or changes a board member's vote on a `draft` resolution.
+
+    Only `draft` resolutions accept votes. Once a resolution is adopted or rejected the
+    voting record is frozen — it is the evidence for the outcome, so allowing it to
+    change afterwards would let the record contradict the result it produced. This is
+    the `record_stance` finding from the CP4 review, applied here from the start.
+    """
+    if vote not in ALLOWED_VOTES:
+        raise ResolutionValidationError(f"unknown vote: {vote!r}")
+
+    res_uuid = uuid.UUID(str(resolution_id))
+    member_uuid = uuid.UUID(str(board_member_id))
+
+    with store.pg(workspace_id) as conn:
+        res = conn.execute(
+            "SELECT decision_id, status FROM resolution WHERE id = %s FOR SHARE",
+            (res_uuid,),
+        ).fetchone()
+        if res is None:
+            raise ResolutionNotFound(str(resolution_id))
+
+        if res["status"] != DRAFT:
+            raise ResolutionLockedError(
+                f"cannot record a vote on a resolution in status {res['status']!r}; "
+                "the voting record is frozen once the outcome is recorded"
+            )
+
+        _assert_meeting_mutable(conn, res["decision_id"])
+
+        member = conn.execute(
+            "SELECT voting, active FROM board_member WHERE id = %s", (member_uuid,)
+        ).fetchone()
+        if member is None or not member["active"]:
+            # Inactive is conflated with absent on purpose: both mean "not eligible
+            # to vote here", and distinguishing them tells a caller that a member
+            # exists in a workspace whose directory they may not be reading.
+            raise BoardMemberNotFound(str(board_member_id))
+
+        if member["voting"] == "non_voting" and vote != VOTE_RECUSED:
+            # An observer or adviser has no vote to cast. `recused` stays permitted
+            # so that a standing recusal can still be minuted against the motion.
+            raise ResolutionValidationError(
+                f"board member {board_member_id} is non_voting and cannot cast {vote!r}"
+            )
+
+        row = conn.execute(
+            """
+            INSERT INTO resolution_vote
+                (resolution_id, board_member_id, vote, workspace_id)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (resolution_id, board_member_id) DO UPDATE
+                SET vote = EXCLUDED.vote, updated_at = now()
+            RETURNING *
+            """,
+            (res_uuid, member_uuid, vote, workspace_id),
+        ).fetchone()
+
+        # `created_at` is deliberately absent from the DO UPDATE list: it records
+        # when this member first voted on this motion, which is audit history.
+        conn.execute(
+            "UPDATE resolution SET version = version + 1, updated_at = now() WHERE id = %s",
+            (res_uuid,),
+        )
+
+    return _row_to_vote(row)
+
+
+def tally(resolution: Resolution) -> VoteTally:
+    """Counts the votes on a resolution. Pure — takes a read model, touches no database."""
+    counts = {v: 0 for v in ALLOWED_VOTES}
+    for v in resolution.votes:
+        counts[v.vote] += 1
+    return VoteTally(
+        for_=counts[VOTE_FOR],
+        against=counts[VOTE_AGAINST],
+        abstain=counts[VOTE_ABSTAIN],
+        recused=counts[VOTE_RECUSED],
+    )
+
+
+def transition_resolution(
+    resolution_id: str,
+    new_status: str,
+    *,
+    expected_version: int,
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
+) -> Resolution:
+    """Moves a `draft` resolution to `adopted` or `rejected`.
+
+    The outcome is set by a human, not derived from the tally. `VoteTally.carried` is
+    advisory: quorum and supermajority rules vary per board and this system has nowhere
+    to record them, so inferring the outcome from a simple majority would be asserting a
+    governance rule the product was never told.
+    """
+    if new_status not in RESOLUTION_STATUSES:
+        raise ResolutionValidationError(f"unknown resolution status: {new_status!r}")
+
+    res_uuid = uuid.UUID(str(resolution_id))
+
+    with store.pg(workspace_id) as conn:
+        current = conn.execute(
+            "SELECT decision_id, status, version FROM resolution WHERE id = %s FOR UPDATE",
+            (res_uuid,),
+        ).fetchone()
+        if current is None:
+            raise ResolutionNotFound(str(resolution_id))
+
+        if current["version"] != expected_version:
+            raise StaleResolutionError(
+                f"resolution {resolution_id}: expected version {expected_version}, "
+                f"current {current['version']}"
+            )
+
+        allowed = _ALLOWED_TRANSITIONS[current["status"]]
+        if new_status not in allowed:
+            raise ResolutionLockedError(
+                f"cannot move a resolution from {current['status']!r} to {new_status!r}"
+            )
+
+        _assert_meeting_mutable(conn, current["decision_id"])
+
+        row = conn.execute(
+            """
+            UPDATE resolution
+               SET status = %s,
+                   adopted_at = CASE WHEN %s = 'adopted' THEN now() ELSE adopted_at END,
+                   version = version + 1,
+                   updated_at = now()
+             WHERE id = %s AND version = %s
+            RETURNING *
+            """,
+            (new_status, new_status, res_uuid, expected_version),
+        ).fetchone()
+
+        if row is None:
+            raise StaleResolutionError(f"resolution {resolution_id}: concurrent modification")
+
+        votes = _fetch_votes(conn, [res_uuid]).get(str(res_uuid), [])
+
+    return _row_to_resolution(row, votes=votes)
+
+
+def supersede_resolution(
+    old_resolution_id: str,
+    new_title: str,
+    new_body: str,
+    *,
+    expected_version: int,
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
+) -> tuple[Resolution, Resolution]:
+    """Amends an adopted resolution by creating a new draft version.
+
+    Returns `(new, old)`. Votes are NOT copied: they were cast on the old text, and
+    carrying them forward would attribute to a director a vote on wording they never
+    saw. The new version starts unvoted.
+    """
+    if not new_title or not new_title.strip():
+        raise ResolutionValidationError("new_title must not be empty")
+    if not new_body or not new_body.strip():
+        raise ResolutionValidationError("new_body must not be empty")
+
+    old_uuid = uuid.UUID(str(old_resolution_id))
+
+    with store.pg(workspace_id) as conn:
+        old = conn.execute(
+            """
+            SELECT decision_id, status, version, version_no
+              FROM resolution WHERE id = %s FOR UPDATE
+            """,
+            (old_uuid,),
+        ).fetchone()
+        if old is None:
+            raise ResolutionNotFound(str(old_resolution_id))
+
+        if old["version"] != expected_version:
+            raise StaleResolutionError(
+                f"resolution {old_resolution_id}: expected version {expected_version}, "
+                f"current {old['version']}"
+            )
+
+        if old["status"] != ADOPTED:
+            raise ResolutionValidationError(
+                f"only ADOPTED resolutions can be superseded; current status is {old['status']!r}"
+            )
+
+        _assert_meeting_mutable(conn, old["decision_id"])
+
+        new_row = conn.execute(
+            """
+            INSERT INTO resolution
+                (decision_id, title, body, status, version_no, workspace_id)
+            VALUES (%s, %s, %s, 'draft', %s, %s)
+            RETURNING *
+            """,
+            (
+                old["decision_id"],
+                new_title.strip(),
+                new_body.strip(),
+                old["version_no"] + 1,
+                workspace_id,
+            ),
+        ).fetchone()
+
+        updated_old = conn.execute(
+            """
+            UPDATE resolution
+               SET status = 'superseded',
+                   superseded_by_id = %s,
+                   version = version + 1,
+                   updated_at = now()
+             WHERE id = %s AND version = %s
+            RETURNING *
+            """,
+            (new_row["id"], old_uuid, expected_version),
+        ).fetchone()
+
+        if updated_old is None:
+            raise StaleResolutionError(
+                f"resolution {old_resolution_id}: concurrent modification"
+            )
+
+        old_votes = _fetch_votes(conn, [old_uuid]).get(str(old_uuid), [])
+
+    return (
+        _row_to_resolution(new_row, votes=[]),
+        _row_to_resolution(updated_old, votes=old_votes),
+    )
