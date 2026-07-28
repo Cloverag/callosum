@@ -13,32 +13,41 @@ Legend: ✅ done/frozen · 🟩 in progress · ⬜ not started
 ## Product P1 — Multi-tenancy — ✅ COMPLETE
 
 - `workspace_id` across Postgres (RLS ENABLE+FORCE, non-superuser app role) and Neo4j (entity-partitioned MERGE identity + scoped reads via the query gateway).
-- Hardening line shipped and re-frozen: `meridian-p1` → `p1.0.1` (conflict-scan tenant scope) → `p1.0.2` (Neo4j query gateway / defect class D-001) → `p1.0.3` (deterministic mechanism eval gate) → **`p1.0.4`** (workspace-scoped `entity_conflict` unique key). Published to origin.
+- Hardening line shipped and re-frozen: `meridian-p1` → `p1.0.1` (conflict-scan tenant scope) → `p1.0.2` (Neo4j query gateway / defect class D-001) → `p1.0.3` (deterministic mechanism eval gate) → `p1.0.4` (workspace-scoped `entity_conflict` unique key) → **`p1.0.5`** (control-plane RLS, composite foreign keys, clearance resolved through `membership`). Published to origin.
+- `p1.0.5` also carries the CP5a/CP5b P2 checkpoints: the three migrations only make sense together, so the patch-line name now spans some P2 work.
 
 ## Product P2 — Durable product domain — 🟩 PHASED (backend, Devguru)
 
 Measure-first, one aggregate root per checkpoint (own migration → domain module → tests).
 
-| CP | Aggregate | Status |
-|---|---|---|
-| CP1 | `Meeting` | ✅ merged (PR #17) |
-| CP2 | `AgendaItem` | ✅ merged (PR #20) |
-| CP3 | `BoardPack` / minutes | ⚠️ **skipped out of order** — recorded exception, owner Devguru-codes, issue #23 |
-| CP4 | `Decision` / `DecisionStance` | 🟩 in review (PR #22) |
+| CP | Aggregate | Migration | Status |
+|---|---|---|---|
+| CP1 | `Meeting` | `0007_meeting` | ✅ merged (PR #17) |
+| CP2 | `AgendaItem` | `0008_agenda_item` | ✅ merged (PR #20) |
+| CP3 | `BoardPack` / minutes | `0010_board_pack` | ✅ merged (PR #33) |
+| CP4 | `Decision` / `DecisionStance` | `0009_decision` | ✅ merged (PR #22) |
+| CP5a | `BoardMember` directory | `0012_board_member` | ✅ merged (PR #42) |
+| CP5b | membership wiring + `principal` scoping | `0013_principal_rls` | ✅ merged (PR #43) |
+| CP6 | `Resolution` | next free slot | ⬜ not filed — to be scoped with the backend owner |
+| CP7–CP10 | commitment, audit, notification, exit gate | — | ⬜ planned |
 
-- **CP3 skip:** CP4 took the `0009` migration slot that issue #21 had reserved for `0009_board_pack`. The chain is still linear and valid; board pack becomes `0010`. Recorded per the ROADMAP operating rule (exception needs an owner + due checkpoint).
-- **CP4 open change:** `record_stance()` has no decision-status guard (votes remain mutable on an `approved`/`rejected`/`superseded` decision) and its upsert resets `created_at`, losing audit history. Review posted on PR #22.
+- **Six aggregate roots merged.** Thirteen migrations apply cleanly from an empty volume; the chain is linear.
+- **CP3 exception — closed.** CP4 took the `0009` slot CP3 had reserved, so CP3 shipped later as `0010`. Both are merged and issue #23 is closed.
+- **CP5 was split** into CP5a (directory) and CP5b (membership wiring) when CP5a's review found clearance still being read from the legacy `principal.clearance` column.
+- **Released:** `0011`–`0013` are frozen in tag **`meridian-p1.0.5`** (2026-07-28) — 176 passed, mechanism gate byte-identical. Three limitations carried forward; see the [freeze note](./docs/reviews/2026-07-28-meridian-p1.0.5-freeze.md).
+- **CP6 is deliberately unfiled** — to be scoped with the backend owner rather than handed over as a spec written without him.
 - Deferred: retirement of the frozen-query gateway allowlist (rides the next planned retrieval change).
 
 ## Frontend — 🟩 IN PROGRESS (maintainer)
 
-- **v1 (shipped, branch `feat/frontend-design-system` @71df854):** violet-on-zinc dual-theme "Situation Room" design system + primitives + shell + Calendar #16 + dashboard. Kept as a rollback baseline.
-- **v2 (branch `feat/frontend-redesign-v2`):** rebuild the look from scratch, keep the implemented features. **Light-mode only; blue `#2563EB` = action; violet `#6D28D9` = Institutional Memory only.** Persistent collapsible AI rail. New token layer, primitives, white sidebar, dashboard (Board Readiness). See [frontend/DESIGN.md](./frontend/DESIGN.md).
-  - Done: tokens, primitives, shell, AI rail, dashboard re-skin, DESIGN.md rewrite, 3-level elevation + typography hierarchy pass, brand mark / icons / favicon, design sidecar regenerated.
-- **Glass Board OS (current, branch `feat/frontendglass-board-os`):** a separate Vite + React prototype at `frontendglass/meridian-glass/` exploring a glassmorphism treatment of the same Board OS surfaces.
-  - The three branches are one **linear stack**, not competing alternatives: `master` → `feat/frontend-design-system` → `feat/frontend-redesign-v2` → `feat/frontendglass-board-os`.
-  - **Open question:** the repo now carries two frontends — Next.js `frontend/` and Vite `frontendglass/meridian-glass/`. Whether the glass prototype replaces, feeds, or is dropped from `frontend/` is undecided and must be settled before P3 wires a real API.
-- Next: land the stack on `master`; then remaining page rebuilds (Calendar, Meetings, Documents, Settings, Entity Conflicts), responsive/mobile AI rail, Graph Viewer (#13).
+**The whole frontend line is on `master`** (merged 2026-07-26, PRs #25 + #27 + #24). The long-lived
+`feat/frontend-*` branches are history, not work in progress.
+
+- **Design system (v2 "Calm Desk"):** light-mode only; blue `#2563EB` = action; violet `#6D28D9` reserved for Institutional Memory. Token layer, primitives, white sidebar, persistent collapsible AI rail, elevation + typography ramp, brand mark / icons / favicon. See [frontend/DESIGN.md](./frontend/DESIGN.md).
+- **Routes shipped:** dashboard, calendar, meetings, documents, settings, entity-conflicts, `/memory` (knowledge graph + provenance timeline + ontology bars, closes #13), `/decisions` (PR #37).
+- **Data honesty is the standing constraint.** Two rounds of fabricated figures were found and removed — repository metadata shown as memory coverage, an invented health %, a contradictory growth series, invented assistant citations, and unwired review-queue counts. Numbers on screen trace to a source or are labelled "not measured". Chart rules live in `frontend/DESIGN.md`.
+- **Open question:** the repo carries two frontends — Next.js `frontend/` and Vite `frontendglass/meridian-glass/` (a glassmorphism prototype of the same surfaces, tracked on `master`). Whether it replaces, feeds, or is dropped from `frontend/` is undecided and must be settled before P3 wires a real API.
+- **Next:** BoardPack + Minutes surfaces against the merged CP3 contract (`meridian/packs.py`, `meridian/minutes.py`); then calendar unit tests (#28, blocked behind #15), responsive/mobile AI rail.
 
 ## Product P3 — Web API layer — ⬜ NOT STARTED
 
