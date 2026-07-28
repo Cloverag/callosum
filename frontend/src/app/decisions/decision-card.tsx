@@ -97,8 +97,10 @@ export function DecisionCard({
               <div className="min-w-0">
                 <p className="text-sm text-foreground">{s.comment}</p>
                 <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-subtle-foreground">
-                  {/* person_name is free text in the backend until CP5 (#36) adds a
-                      board_member_id, so this is a recorded name and not a link. */}
+                  {/* The recorded name, always — `person_name` is what was minuted and
+                      is permanent audit data. `board_member_id` (CP5a) resolves it to
+                      a directory entry where one exists, but it is nullable forever,
+                      so the name is what renders and the link is the enhancement. */}
                   <span>{s.person_name}</span>
                   <Badge tone={STANCE_TONE[s.stance]}>{STANCE_LABEL[s.stance]}</Badge>
                 </p>
