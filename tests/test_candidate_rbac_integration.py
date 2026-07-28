@@ -94,8 +94,15 @@ def test_candidate_entities_enforce_postgres_and_neo4j_clearance(monkeypatch):
 
             # Full candidate route: pgvector must withhold the sensitivity-3 chunk for low.
             # candidate_entities returns (names, chunk_texts); the RBAC assertion is on names.
-            assert candidate_entities(conn, driver, f"candidate boundary {token}", low)[0] == [public_name]
-            assert candidate_entities(conn, driver, f"candidate boundary {token}", high)[0] == [public_name, restricted_name]
+            # Assert inclusion and exclusion rather than exact list equality, so pre-existing
+            # corpus data in shared development databases does not fail the RBAC test (#55).
+            low_candidates = candidate_entities(conn, driver, f"candidate boundary {token}", low)[0]
+            assert public_name in low_candidates
+            assert restricted_name not in low_candidates
+
+            high_candidates = candidate_entities(conn, driver, f"candidate boundary {token}", high)[0]
+            assert public_name in high_candidates
+            assert restricted_name in high_candidates
 
             # Defense in depth: the Neo4j helper must also reject a caller-supplied private ID.
             assert store.entity_names_for_chunks(
