@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, CalendarDays, Users, FileText, Gavel, Scale, Briefcase, ScrollText, Network, GitMerge, Settings, ChevronsUpDown } from "lucide-react";
+import { LayoutDashboard, CalendarDays, Users, FileText, Gavel, Scale, ClipboardCheck, Briefcase, ScrollText, Network, GitMerge, Settings, ChevronsUpDown } from "lucide-react";
 import { NavItem } from "./ui/nav-item";
 
 const nav = [
@@ -12,10 +12,12 @@ const nav = [
   // before Documents because a founder reaches for the decision far more often
   // than for the file it came in on.
   { href: "/decisions", label: "Decisions", icon: <Gavel /> },
-  // Resolutions follow Decisions directly: the conclusion, then the formal
-  // instrument recording it. They are separate objects (FR-EXEC-02) and the nav
-  // should not imply otherwise by burying one under the other.
+  // Decision -> Resolution -> Commitment is the FR-EXEC-02 chain: what was
+  // concluded, the formal instrument recording it, and the work it produced. They
+  // are three separate objects and the nav follows that order, because it is how a
+  // founder traces one to the next.
   { href: "/resolutions", label: "Resolutions", icon: <Scale /> },
+  { href: "/commitments", label: "Commitments", icon: <ClipboardCheck /> },
   // Board packs sit between Decisions and Documents: a pack is the bundle a
   // meeting was read into, which is a step closer to the decision than the loose
   // file is.
