@@ -21,7 +21,7 @@ requirements.
 | Track | Completed | Active | Remaining |
 |---|---:|---|---:|
 | Research engine | **14 / 14** accepted (`R0`–`R13`) | — research track CLOSED 2026-07-18, baseline frozen at `6ed5ed5` | 0 |
-| Meridian product | **2 / 13** accepted (`P0`, `P1`) | **P2 in progress** (durable product domain) | **11** (`P2`–`P12`) |
+| Meridian product | **3 / 13** accepted (`P0`, `P1`, `P2`) | **P3 next** (authenticated API + app shell) | **10** (`P3`–`P12`) |
 
 The counts must not be combined into one percentage: the research track validates the
 memory engine; the product track makes it a deployable board operating system. The CLI
@@ -45,7 +45,7 @@ domain module, and tests.
 | CP7 | `Commitment` / `CommitmentUpdate` | `0015_commitment` | ✅ merged (PR #57) |
 | CP8 | `AuditEvent` | `0016_audit_event` | ✅ merged (PR #61) |
 | CP9 | notification | — | ⏸️ **deferred to P8** — recorded exception, owner Devguru-codes, issue #62 |
-| CP10 | P2 exit gate (no migration) | — | ⬜ next |
+| CP10 | P2 exit gate (no migration) | — | ✅ **PASSED 2026-07-29** — [acceptance record](./docs/reviews/2026-07-29-p2-acceptance.md) |
 
 CP5 was split into **CP5a** (the `BoardMember` directory) and **CP5b** (wiring `membership`
 and scoping `principal`) once CP5a's security review showed that clearance was still being
@@ -317,7 +317,7 @@ and residency; evolve clearance-only retrieval to reviewed object-level policy.
 **Exit:** security approves threat/data-flow models and role matrix; unauthorized content is
 blocked in SQL, Cypher, quotes, chunks, logs, APIs, and UI; transcript policy is approved.
 
-## P2 — Durable product domain and migrations — 🟩 IN PROGRESS
+## P2 — Durable product domain and migrations — ✅ ACCEPTED
 
 Checkpoint-by-checkpoint status is tracked in the P2 table under
 [Current progress](#p2-checkpoint-status).
