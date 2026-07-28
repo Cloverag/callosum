@@ -16,7 +16,7 @@ security cases), updated docs/status, runnable verification commands, and a revi
 No checkpoint may weaken evidence verification, human approval, RBAC, provenance, or audit
 requirements.
 
-## Current progress — 2026-07-25
+## Current progress — 2026-07-28
 
 | Track | Completed | Active | Remaining |
 |---|---:|---|---:|
@@ -33,16 +33,38 @@ identity, integration layer, or pilot yet.
 P2 is being delivered one aggregate root per checkpoint, each with its own migration,
 domain module, and tests.
 
-| Checkpoint | Aggregate | Status |
-|---|---|---|
-| CP1 | `Meeting` | ✅ merged (PR #17) |
-| CP2 | `AgendaItem` | ✅ merged (PR #20) |
-| CP3 | `BoardPack` / minutes | ⚠️ **skipped out of order** — recorded exception, owner Devguru-codes, issue #23 |
-| CP4 | `Decision` / `DecisionStance` | 🟩 in review (PR #22) |
+| Checkpoint | Aggregate | Migration | Status |
+|---|---|---|---|
+| CP1 | `Meeting` | `0007_meeting` | ✅ merged (PR #17) |
+| CP2 | `AgendaItem` | `0008_agenda_item` | ✅ merged (PR #20) |
+| CP3 | `BoardPack` / minutes | `0010_board_pack` | ✅ merged (PR #33) — delivered out of order, exception closed with issue #23 |
+| CP4 | `Decision` / `DecisionStance` | `0009_decision` | ✅ merged (PR #22) |
+| CP5a | `BoardMember` directory | `0012_board_member` | ✅ merged (PR #42, issue #39) |
+| CP5b | membership wiring + `principal` scoping | `0013_principal_rls` | ✅ merged (PR #43, issue #40) |
+| CP6 | `Resolution` | next free slot | ⬜ not filed — to be scoped with the backend owner |
+| CP7 | `Commitment` | — | ⬜ planned |
+| CP8 | audit event | — | ⬜ planned |
+| CP9 | notification | — | ⬜ planned |
+| CP10 | P2 exit gate (no migration) | — | ⬜ planned |
 
-CP3 was skipped when CP4 took the `0009` migration slot; the chain is still linear and
-valid, and board pack becomes `0010`. Per the operating rule above, the exception is
-recorded here with an owner and a due checkpoint rather than left implicit.
+CP5 was split into **CP5a** (the `BoardMember` directory) and **CP5b** (wiring `membership`
+and scoping `principal`) once CP5a's security review showed that clearance was still being
+read from the legacy `principal.clearance` column. Detail for CP6–CP10 is in
+[docs/proposals/2026-07-27-p2-remaining-checkpoints.md](./docs/proposals/2026-07-27-p2-remaining-checkpoints.md).
+
+**CP3 exception — closed.** CP4 took the `0009` slot that CP3 had reserved, so CP3 shipped
+later as `0010`. The chain stayed linear and valid throughout; both checkpoints are merged
+and the recorded exception (issue #23) is closed.
+
+**Migration numbers have shifted since the CP5–CP9 proposal was written.** That document
+assigned `0011_board_member` through `0015_notification`. `0011` was taken by the P1
+control-plane RLS patch (PR #38, issue #32) and `0012`/`0013` by CP5a/CP5b, so the numbers in
+the proposal are one to two slots behind. Take the next free slot from
+`meridian/migrations/versions/`, not from the proposal.
+
+**Released:** migrations `0011`–`0013` are frozen in tag **`meridian-p1.0.5`** (2026-07-28).
+See [docs/reviews/2026-07-28-meridian-p1.0.5-freeze.md](./docs/reviews/2026-07-28-meridian-p1.0.5-freeze.md)
+for the verification record and the three limitations carried forward.
 
 ### Retrieval core is FROZEN (2026-07-17)
 
