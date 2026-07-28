@@ -16,7 +16,7 @@ Legend: ✅ done/frozen · 🟩 in progress · ⬜ not started
 - Hardening line shipped and re-frozen: `meridian-p1` → `p1.0.1` (conflict-scan tenant scope) → `p1.0.2` (Neo4j query gateway / defect class D-001) → `p1.0.3` (deterministic mechanism eval gate) → `p1.0.4` (workspace-scoped `entity_conflict` unique key) → **`p1.0.5`** (control-plane RLS, composite foreign keys, clearance resolved through `membership`). Published to origin.
 - `p1.0.5` also carries the CP5a/CP5b P2 checkpoints: the three migrations only make sense together, so the patch-line name now spans some P2 work.
 
-## Product P2 — Durable product domain — 🟩 PHASED (backend, Devguru)
+## Product P2 — Durable product domain — ✅ ACCEPTED (2026-07-29)
 
 Measure-first, one aggregate root per checkpoint (own migration → domain module → tests).
 
@@ -32,10 +32,10 @@ Measure-first, one aggregate root per checkpoint (own migration → domain modul
 | CP7 | `Commitment` / `CommitmentUpdate` | `0015_commitment` | ✅ merged (PR #57) |
 | CP8 | `AuditEvent` | `0016_audit_event` | ✅ merged (PR #61) |
 | CP9 | notification | — | ⏸️ **deferred to P8** — recorded exception, issue #62 |
-| CP10 | P2 exit gate (no migration) | — | ⬜ next |
+| CP10 | P2 exit gate (no migration) | — | ✅ **PASSED 2026-07-29** — [acceptance record](./docs/reviews/2026-07-29-p2-acceptance.md) |
 
 - **Nine aggregate roots merged.** Sixteen migrations apply cleanly from an empty volume; the chain is linear.
-- **P2 is one checkpoint from done.** CP10 is the exit gate and needs no migration.
+- **P2 is ACCEPTED.** CP10 passed on 2026-07-29: full-chain downgrade and return, a round trip proved lossless against a fresh build (628 schema facts, identical), and a restore from an empty volume. See the [acceptance record](./docs/reviews/2026-07-29-p2-acceptance.md).
 - **CP3 exception — closed.** CP4 took the `0009` slot CP3 had reserved, so CP3 shipped later as `0010`. Both are merged and issue #23 is closed.
 - **CP5 was split** into CP5a (directory) and CP5b (membership wiring) when CP5a's review found clearance still being read from the legacy `principal.clearance` column.
 - **Released:** `0011`–`0013` are frozen in tag **`meridian-p1.0.5`** (2026-07-28) — 176 passed, mechanism gate byte-identical. Three limitations carried forward; see the [freeze note](./docs/reviews/2026-07-28-meridian-p1.0.5-freeze.md).
