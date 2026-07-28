@@ -55,6 +55,48 @@ merge → freeze → tag → graphify → publish → postmortem
    (4) What should become a rule? (5) What should we never do again? Answers to (4) feed back into
    this checklist — this is where the process improves, release over release.
 
+## Standing rules from postmortems
+
+Step 6 says answers to "what should become a rule?" feed back into this checklist. Until now they
+had nowhere to land, so they didn't — p1.0.4's rules stayed in p1.0.4's postmortem. This is that
+place. Add to it when a postmortem produces a rule; keep each one short and link the release it
+came from.
+
+**Migrations and schema**
+
+- Keep Alembic revision ids **≤ 32 chars** (`alembic_version.version_num` is `varchar(32)`). It fails
+  loudly but late: the DDL runs, then the version-record update overflows and the whole migration
+  rolls back. — *p1.0.4*
+- **Never `DROP CONSTRAINT IF EXISTS <guessed-name>`.** Read the real name from `pg_constraint` first;
+  `IF EXISTS` on a wrong name is a silent no-op that leaves the old constraint in force. — *p1.0.4*
+- **Run the regression test immediately after applying a migration, on the same database.** It is the
+  only thing that distinguishes "applied" from "rolled back but DDL echoed". — *p1.0.4*
+- **Composite `(id, workspace_id)` foreign keys for new tenant-scoped relationships.** Postgres
+  validates foreign keys as the table owner, which bypasses RLS, so a single-column reference to a
+  tenant-scoped table is an unscoped reference. Also in `CONTRIBUTING.md`. — *p1.0.5*
+- **When adding any constraint, ask which role evaluates it.** If the answer is the table owner, RLS
+  is not involved and tenancy must be enforced in the constraint itself. — *p1.0.5*
+
+**Verification**
+
+- **Probe the data, don't just read the schema.** A table can be correctly declared, typed and
+  referenced, and empty. `SELECT count(*)` before relying on one in a policy. — *p1.0.5*
+- **Assert isolation through the connection that bypasses the policy.** A rejection observed through
+  the superuser connection proves the constraint is doing the work, not the policy. — *p1.0.5*
+- **Seed security fixtures in deliberate disagreement.** When a fix moves where a value is read from,
+  give the old and new sources *different* values — identical seeds pass against the bug. — *p1.0.5*
+- **Never trust a migration that printed its DDL as proof it applied.** Verify the resulting schema,
+  not the log line. — *p1.0.4*
+
+**Release hygiene**
+
+- **Never ship half of a two-part isolation fix as complete**, even when the half is green and closes
+  its issue. Release notes are read as guarantees. — *p1.0.5*
+- **Resolve a tag before citing it** (`git rev-list -n 1 <tag>`). Index rows and freeze notes should
+  carry a verified commit, not whatever was HEAD when the row was drafted. — *p1.0.5*
+- **Use `-F -` with a heredoc for commit messages containing backticks.** `-m` is shell-interpreted
+  and command substitution will quietly delete text. — *p1.0.5*
+
 ## Releases
 
 | Tag | Commit | Date | Notes | Postmortem |
@@ -64,4 +106,4 @@ merge → freeze → tag → graphify → publish → postmortem
 | `meridian-p1.0.2` | `4c375b7` | 2026-07-20 | [meridian-p1.0.2.md](meridian-p1.0.2.md) — hardening: Neo4j query gateway (P2-RFC-001) closes Defect Class D-001; CI ban-test enforces no raw session outside gateway/allowlist | [postmortem](meridian-p1-postmortem.md) |
 | `meridian-p1.0.3` | `ebf2849` | 2026-07-20 | [meridian-p1.0.3.md](meridian-p1.0.3.md) — infra: deterministic mechanism eval gate (`callosum eval-mechanism`) splits reproducible mechanism metrics from LLM-noisy answer metrics; candidate 22/22, traversal 21/21 (100%), RBAC 1/1, no cloud LLM | [postmortem](meridian-p1.0.3-postmortem.md) |
 | `meridian-p1.0.4` | `6b0d3a0` | 2026-07-20 | [meridian-p1.0.4.md](meridian-p1.0.4.md) — schema: migration 0006 scopes the `entity_conflict` unique key to workspace `(workspace_id, name_a, type_a, name_b, type_b)`, closing a latent cross-tenant collision; integration 10/10, no code change | [postmortem](meridian-p1.0.4-postmortem.md) |
-| `meridian-p1.0.5` | `710669d` | 2026-07-28 | [meridian-p1.0.5.md](meridian-p1.0.5.md) — tenancy: **0011** RLS on the control plane (`membership`, `workspace`) + runtime write grants revoked; **0012** composite FK `(id, workspace_id)` makes cross-workspace references impossible by construction (FK checks bypass RLS); **0013** clearance resolves through `membership`, `principal` scoped and writes revoked. Clean-volume verify: 13 migrations, 176 passed, mechanism gate 22/22 · 21/21 · RBAC 1/1 byte-identical | |
+| `meridian-p1.0.5` | `64f643b` | 2026-07-28 | [meridian-p1.0.5.md](meridian-p1.0.5.md) — tenancy: **0011** RLS on the control plane (`membership`, `workspace`) + runtime write grants revoked; **0012** composite FK `(id, workspace_id)` makes cross-workspace references impossible by construction (FK checks bypass RLS); **0013** clearance resolves through `membership`, `principal` scoped and writes revoked. Clean-volume verify: 13 migrations, 176 passed, mechanism gate 22/22 · 21/21 · RBAC 1/1 byte-identical | [postmortem](meridian-p1.0.5-postmortem.md) |
