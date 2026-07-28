@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, CalendarDays, Users, FileText, Gavel, Briefcase, Network, GitMerge, Settings, ChevronsUpDown } from "lucide-react";
+import { LayoutDashboard, CalendarDays, Users, FileText, Gavel, Briefcase, ScrollText, Network, GitMerge, Settings, ChevronsUpDown } from "lucide-react";
 import { NavItem } from "./ui/nav-item";
 
 const nav = [
@@ -16,6 +16,8 @@ const nav = [
   // meeting was read into, which is a step closer to the decision than the loose
   // file is.
   { href: "/packs", label: "Board packs", icon: <Briefcase /> },
+  // Minutes follow packs: the pre-read, then the record of what came of it.
+  { href: "/minutes", label: "Minutes", icon: <ScrollText /> },
   { href: "/documents", label: "Documents", icon: <FileText /> },
   { href: "/memory", label: "Institutional Memory", icon: <Network /> },
   { href: "/entity-conflicts", label: "Review queue", icon: <GitMerge /> },
