@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, CalendarDays, Users, FileText, Gavel, Network, GitMerge, Settings, ChevronsUpDown } from "lucide-react";
+import { LayoutDashboard, CalendarDays, Users, FileText, Gavel, Briefcase, Network, GitMerge, Settings, ChevronsUpDown } from "lucide-react";
 import { NavItem } from "./ui/nav-item";
 
 const nav = [
@@ -12,6 +12,10 @@ const nav = [
   // before Documents because a founder reaches for the decision far more often
   // than for the file it came in on.
   { href: "/decisions", label: "Decisions", icon: <Gavel /> },
+  // Board packs sit between Decisions and Documents: a pack is the bundle a
+  // meeting was read into, which is a step closer to the decision than the loose
+  // file is.
+  { href: "/packs", label: "Board packs", icon: <Briefcase /> },
   { href: "/documents", label: "Documents", icon: <FileText /> },
   { href: "/memory", label: "Institutional Memory", icon: <Network /> },
   { href: "/entity-conflicts", label: "Review queue", icon: <GitMerge /> },
