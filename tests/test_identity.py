@@ -22,7 +22,10 @@ import psycopg
 from callosum import store
 from callosum.config import settings
 from callosum.identity import (
+    IdentityNotProvisioned,
     PrincipalNotFound,
+    resolve_identity,
+    resolve_principal_by_subject,
     resolve_principal,
     resolve_principal_by_id,
     resolve_principal_id,
@@ -300,4 +303,175 @@ def test_by_id_requires_an_explicit_workspace():
     import inspect
 
     sig = inspect.signature(resolve_principal_by_id)
+    assert sig.parameters["workspace_id"].default is inspect.Parameter.empty
+
+
+# ---------------------------------------------------------------------------
+# resolve_identity / resolve_principal_by_subject — CP-A/A2 (ADR-010, ADR-011)
+#
+# Authentication is two halves. `resolve_identity` maps an OIDC (issuer, subject)
+# onto a principal and takes NO workspace, because login happens before one is
+# chosen. `resolve_principal_by_id` applies the membership rule once it is. Keeping
+# them separate is what makes identity global and authorization per-tenant.
+# ---------------------------------------------------------------------------
+
+PROVIDER = "https://idp.example/"
+
+
+def _identity(principal_id: str, subject: str, provider: str = PROVIDER) -> None:
+    _admin(
+        "INSERT INTO principal_identity (principal_id, provider, subject) VALUES (%s, %s, %s)",
+        (principal_id, provider, subject),
+    )
+
+
+def test_resolve_identity_maps_a_subject_to_a_principal():
+    ws = _workspace()
+    pid = _person("Subject Holder")
+    _member(pid, ws, clearance=2)
+    subject = f"sub-{uuid.uuid4()}"
+    _identity(pid, subject)
+    try:
+        with store.pg(ws) as conn:
+            assert str(resolve_identity(conn, PROVIDER, subject)) == pid
+    finally:
+        _cleanup([pid], [ws])
+
+
+def test_resolve_identity_takes_no_workspace():
+    """Login happens before a workspace is selected.
+
+    A workspace parameter here would have nothing to match against — and
+    `principal_identity` has no tenant column precisely so it cannot acquire one.
+    """
+    import inspect
+
+    assert "workspace_id" not in inspect.signature(resolve_identity).parameters
+
+
+def test_an_unprovisioned_subject_is_rejected_not_created():
+    """ADR-011: provisioning is an administrative act.
+
+    The identity provider will happily authenticate a stranger; that must not be
+    enough to create a principal.
+    """
+    ws = _workspace()
+    try:
+        with store.pg(ws) as conn:
+            before = conn.execute("SELECT count(*) AS n FROM principal_identity").fetchone()["n"]
+            with pytest.raises(IdentityNotProvisioned):
+                resolve_identity(conn, PROVIDER, f"stranger-{uuid.uuid4()}")
+            after = conn.execute("SELECT count(*) AS n FROM principal_identity").fetchone()["n"]
+        assert before == after, "a failed login must not provision anything"
+    finally:
+        _cleanup([], [ws])
+
+
+def test_IdentityNotProvisioned_is_still_caught_as_PrincipalNotFound():
+    """Subclassing matters: a caller that does not care about the distinction must
+    not accidentally let this one through."""
+    assert issubclass(IdentityNotProvisioned, PrincipalNotFound)
+
+    ws = _workspace()
+    try:
+        with store.pg(ws) as conn:
+            with pytest.raises(PrincipalNotFound):
+                resolve_identity(conn, PROVIDER, f"stranger-{uuid.uuid4()}")
+    finally:
+        _cleanup([], [ws])
+
+
+def test_the_subject_is_not_echoed_in_the_error():
+    # It is the caller's own identifier so this is not a leak, but exception messages
+    # end up in logs and an external identifier should not be scattered through them.
+    ws = _workspace()
+    subject = f"secret-subject-{uuid.uuid4()}"
+    try:
+        with store.pg(ws) as conn:
+            with pytest.raises(IdentityNotProvisioned) as caught:
+                resolve_identity(conn, PROVIDER, subject)
+        assert subject not in str(caught.value)
+    finally:
+        _cleanup([], [ws])
+
+
+@pytest.mark.parametrize("provider,subject", [("", "s"), ("   ", "s"), (PROVIDER, ""), (PROVIDER, "  ")])
+def test_empty_credentials_are_refused_without_a_query(provider, subject):
+    ws = _workspace()
+    try:
+        with store.pg(ws) as conn:
+            with pytest.raises(IdentityNotProvisioned):
+                resolve_identity(conn, provider, subject)
+    finally:
+        _cleanup([], [ws])
+
+
+def test_matching_is_exact_and_case_sensitive():
+    """Subjects are opaque and issuers compare verbatim.
+
+    Normalising either would risk collapsing two distinct identities into one — the
+    reverse of the fuzzy-name defect that made `resolve_principal` unusable for auth.
+    """
+    ws = _workspace()
+    pid = _person("Exact Subject")
+    _member(pid, ws, clearance=2)
+    subject = f"Sub-MixedCase-{uuid.uuid4()}"
+    _identity(pid, subject)
+    try:
+        with store.pg(ws) as conn:
+            assert str(resolve_identity(conn, PROVIDER, subject)) == pid
+            for wrong in (subject.lower(), subject.upper(), f" {subject}"):
+                with pytest.raises(IdentityNotProvisioned):
+                    resolve_identity(conn, PROVIDER, wrong)
+            # Right subject, wrong issuer.
+            with pytest.raises(IdentityNotProvisioned):
+                resolve_identity(conn, "https://other-idp.example/", subject)
+    finally:
+        _cleanup([pid], [ws])
+
+
+def test_by_subject_composes_both_halves():
+    ws = _workspace()
+    pid = _person("Composed Director", legacy_clearance=4)
+    _member(pid, ws, clearance=1)
+    subject = f"sub-{uuid.uuid4()}"
+    _identity(pid, subject)
+    try:
+        with store.pg(ws) as conn:
+            p = resolve_principal_by_subject(conn, PROVIDER, subject, workspace_id=ws)
+            # Clearance still comes from the membership, not the legacy column — the
+            # composition must not have found a shortcut around the JOIN.
+            assert p.clearance == 1
+            assert str(p.id) == pid
+            assert p.workspace_id == ws
+    finally:
+        _cleanup([pid], [ws])
+
+
+def test_by_subject_fails_closed_when_the_identity_has_no_membership_here():
+    """Provisioned, authenticated, and still not admitted to this workspace.
+
+    The two refusals are different on purpose: the first is about the account, the
+    second about this tenant. Neither is an oracle — reaching either required proving
+    control of the subject.
+    """
+    ws_a, ws_b = _workspace(), _workspace()
+    pid = _person("Member Of B Only")
+    _member(pid, ws_b, clearance=3)
+    subject = f"sub-{uuid.uuid4()}"
+    _identity(pid, subject)
+    try:
+        with store.pg(ws_a) as conn:
+            with pytest.raises(PrincipalNotFound):
+                resolve_principal_by_subject(conn, PROVIDER, subject, workspace_id=ws_a)
+        with store.pg(ws_b) as conn:
+            assert resolve_principal_by_subject(conn, PROVIDER, subject, workspace_id=ws_b).clearance == 3
+    finally:
+        _cleanup([pid], [ws_a, ws_b])
+
+
+def test_by_subject_requires_an_explicit_workspace():
+    import inspect
+
+    sig = inspect.signature(resolve_principal_by_subject)
     assert sig.parameters["workspace_id"].default is inspect.Parameter.empty
