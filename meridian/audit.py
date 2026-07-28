@@ -29,6 +29,16 @@ class AuditValidationError(ValueError):
     """Raised when an invalid aggregate type, action, UUID, or payload is supplied."""
 
 
+class ActorNotInWorkspace(AuditValidationError):
+    """The actor holds no active membership in the workspace being written to.
+
+    Deliberately conflates "no such principal" with "not a member here", the same way
+    `identity.PrincipalNotFound` does: telling the two apart would confirm whether a
+    principal id is real to a caller who cannot read the directory, which is a
+    membership oracle.
+    """
+
+
 # Recognized aggregate root types in Meridian P2
 AGGREGATE_TYPES = frozenset(
     {
@@ -139,6 +149,37 @@ def record_audit_event(
         ws_uuid = uuid.UUID(str(workspace_id)) if not isinstance(workspace_id, uuid.UUID) else workspace_id
     except (ValueError, TypeError, AttributeError) as exc:
         raise AuditValidationError(f"Invalid workspace_id: '{workspace_id}'") from exc
+
+    # The workspace half of the actor reference, which the foreign key cannot carry.
+    #
+    # `actor_principal_id REFERENCES principal(id)` is validated as the table owner,
+    # which bypasses RLS — so it proves the principal exists but not that they belong
+    # here. Reproduced before this check existed: an audit row in workspace A
+    # successfully named a principal whose only membership was in workspace B, which
+    # would have attributed an action to someone who was never in that workspace, in a
+    # table that cannot be corrected afterwards.
+    #
+    # The composite-FK fix used by 0012/0014/0015 is unavailable: `principal` has no
+    # `workspace_id` column. So this falls back to the RLS-scoped existence check that
+    # `add_pack_item` uses — a real defence, by convention rather than construction.
+    #
+    # The JOIN is what enforces it: `membership` is RLS-scoped to the caller's
+    # workspace, so a principal outside it simply produces no row.
+    if actor_uuid is not None:
+        member = conn.execute(
+            """
+            SELECT 1
+              FROM principal p
+              JOIN membership m ON m.principal_id = p.id
+             WHERE p.id = %s
+               AND m.workspace_id = %s
+               AND m.active
+             LIMIT 1
+            """,
+            (actor_uuid, str(ws_uuid)),
+        ).fetchone()
+        if member is None:
+            raise ActorNotInWorkspace(str(actor_principal_id))
 
     payload_json = json.dumps(payload or {})
 

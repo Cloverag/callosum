@@ -27,6 +27,7 @@ from meridian.audit import (
     ACTIONS,
     AGGREGATE_TYPES,
     AuditEvent,
+    ActorNotInWorkspace,
     AuditValidationError,
     get_audit_event,
     list_audit_events,
@@ -56,6 +57,16 @@ def test_record_and_get_audit_event():
     _admin(
         "INSERT INTO principal (id, name, email, role, clearance) VALUES (%s, %s, %s, 'founder', 4)",
         (p_id, f"Actor-{p_id.hex[:6]}", f"actor-{p_id.hex[:6]}@example.com"),
+    )
+    # An actor must hold an active membership in the workspace being written to.
+    # A principal row alone is not an actor anywhere — that is what CP5b established
+    # and what `record_audit_event` now enforces.
+    _admin(
+        """
+        INSERT INTO membership (principal_id, workspace_id, role, clearance, active)
+        VALUES (%s, %s, 'founder', 4, true)
+        """,
+        (p_id, ws),
     )
 
     try:
@@ -214,6 +225,16 @@ def test_list_audit_events_filtering_and_pagination():
         "INSERT INTO principal (id, name, email, role, clearance) VALUES (%s, %s, %s, 'founder', 4)",
         (p_id, f"Actor-{p_id.hex[:6]}", f"actor-{p_id.hex[:6]}@example.com"),
     )
+    # An actor must hold an active membership in the workspace being written to.
+    # A principal row alone is not an actor anywhere — that is what CP5b established
+    # and what `record_audit_event` now enforces.
+    _admin(
+        """
+        INSERT INTO membership (principal_id, workspace_id, role, clearance, active)
+        VALUES (%s, %s, 'founder', 4, true)
+        """,
+        (p_id, ws),
+    )
 
     try:
         with store.pg(workspace_id=str(ws)) as conn:
@@ -288,3 +309,209 @@ def test_audit_validation_errors():
 
     with pytest.raises(AuditValidationError, match="offset cannot be negative"):
         list_audit_events(offset=-1)
+
+
+# ---------------------------------------------------------------------------
+# Review findings (PR #61) — regression coverage
+#
+# Three defects found by probing the running schema rather than reading it:
+# a cross-workspace actor reference that was accepted, unconstrained enum
+# columns, and a workspace cascade that emptied the trail. Each is pinned here.
+# ---------------------------------------------------------------------------
+
+def _workspace(label: str) -> uuid.UUID:
+    ws = uuid.uuid4()
+    _admin(
+        "INSERT INTO workspace (id, name, external_id) VALUES (%s, %s, %s)",
+        (ws, f"{label}-{ws.hex[:6]}", f"ext-{ws.hex[:6]}"),
+    )
+    return ws
+
+
+def _principal_in(ws: uuid.UUID, name: str) -> uuid.UUID:
+    pid = uuid.uuid4()
+    _admin(
+        "INSERT INTO principal (id, name, role, clearance) VALUES (%s, %s, 'director', 2)",
+        (pid, name),
+    )
+    _admin(
+        """
+        INSERT INTO membership (principal_id, workspace_id, role, clearance, active)
+        VALUES (%s, %s, 'director', 2, true)
+        """,
+        (pid, ws),
+    )
+    return pid
+
+
+def _purge(*workspaces: uuid.UUID) -> None:
+    for ws in workspaces:
+        _admin("DELETE FROM audit_event WHERE workspace_id = %s", (ws,))
+        _admin("DELETE FROM membership WHERE workspace_id = %s", (ws,))
+        _admin("DELETE FROM workspace WHERE id = %s", (ws,))
+
+
+def test_actor_from_another_workspace_is_refused():
+    """The finding that motivated the membership check.
+
+    `actor_principal_id REFERENCES principal(id)` is validated as the table owner,
+    which bypasses RLS, so the foreign key proves the principal exists but not that
+    they belong here. Before the check in `record_audit_event()`, this insert
+    succeeded — attributing an action to someone who was never in the workspace, in a
+    table that cannot be corrected afterwards.
+    """
+    ws_a, ws_b = _workspace("actor-A"), _workspace("actor-B")
+    try:
+        outsider = _principal_in(ws_b, "Only In B")
+
+        with store.pg(str(ws_a)) as conn:
+            with pytest.raises(ActorNotInWorkspace):
+                record_audit_event(
+                    conn,
+                    aggregate_type="meeting",
+                    aggregate_id=uuid.uuid4(),
+                    action="created",
+                    actor_principal_id=outsider,
+                    workspace_id=ws_a,
+                )
+    finally:
+        _admin("DELETE FROM membership WHERE workspace_id = %s", (ws_b,))
+        _purge(ws_a, ws_b)
+
+
+def test_a_member_of_this_workspace_is_accepted():
+    """The other half — the check must not refuse legitimate actors."""
+    ws = _workspace("actor-ok")
+    try:
+        insider = _principal_in(ws, "Member Here")
+        with store.pg(str(ws)) as conn:
+            event = record_audit_event(
+                conn,
+                aggregate_type="meeting",
+                aggregate_id=uuid.uuid4(),
+                action="created",
+                actor_principal_id=insider,
+                workspace_id=ws,
+            )
+            assert str(event.actor_principal_id) == str(insider)
+    finally:
+        _purge(ws)
+
+
+def test_an_unknown_actor_is_refused_identically_to_an_outsider():
+    """No membership oracle: absent and not-a-member give the same error."""
+    ws = _workspace("actor-ghost")
+    try:
+        with store.pg(str(ws)) as conn:
+            with pytest.raises(ActorNotInWorkspace):
+                record_audit_event(
+                    conn,
+                    aggregate_type="meeting",
+                    aggregate_id=uuid.uuid4(),
+                    action="created",
+                    actor_principal_id=uuid.uuid4(),
+                    workspace_id=ws,
+                )
+    finally:
+        _purge(ws)
+
+
+def test_an_actorless_event_is_still_allowed():
+    """System-generated events have no principal behind them."""
+    ws = _workspace("actor-none")
+    try:
+        with store.pg(str(ws)) as conn:
+            event = record_audit_event(
+                conn,
+                aggregate_type="meeting",
+                aggregate_id=uuid.uuid4(),
+                action="created",
+                workspace_id=ws,
+            )
+            assert event.actor_principal_id is None
+    finally:
+        _purge(ws)
+
+
+def test_aggregate_type_and_action_are_constrained_by_the_DATABASE():
+    """Asserted through the SUPERUSER connection, deliberately.
+
+    The module validates both against its frozensets, but that only protects callers
+    who go through it. This table is append-only with UPDATE revoked, so a row written
+    with a typo'd type is invisible to the query meant to find it AND can never be
+    corrected. Same reasoning as the FR-EXEC-03 CHECK in `0015_commitment`.
+    """
+    ws = _workspace("check")
+    try:
+        with psycopg.connect(settings().postgres_dsn) as conn:
+            for column, value in (
+                ("aggregate_type", "not_a_real_aggregate"),
+                ("action", "teleported"),
+            ):
+                agg_type = value if column == "aggregate_type" else "meeting"
+                action = value if column == "action" else "created"
+                with pytest.raises(psycopg.errors.CheckViolation):
+                    conn.execute(
+                        """
+                        INSERT INTO audit_event
+                            (workspace_id, aggregate_type, aggregate_id, action)
+                        VALUES (%s, %s, %s, %s)
+                        """,
+                        (ws, agg_type, uuid.uuid4(), action),
+                    )
+                conn.rollback()
+    finally:
+        _purge(ws)
+
+
+def test_the_sql_check_and_the_python_frozensets_agree():
+    """A drift between the two should fail loudly rather than rot.
+
+    The CHECK constraint and `AGGREGATE_TYPES`/`ACTIONS` are maintained in different
+    files. Reading the constraint back from the catalogue is what keeps them honest.
+    """
+    with psycopg.connect(settings().postgres_dsn, row_factory=dict_row) as conn:
+        rows = conn.execute(
+            """
+            SELECT pg_get_constraintdef(oid) AS def
+              FROM pg_constraint
+             WHERE conrelid = 'audit_event'::regclass AND contype = 'c'
+            """
+        ).fetchall()
+    definitions = " ".join(r["def"] for r in rows)
+
+    for value in AGGREGATE_TYPES:
+        assert f"'{value}'" in definitions, f"aggregate_type {value!r} missing from the CHECK"
+    for value in ACTIONS:
+        assert f"'{value}'" in definitions, f"action {value!r} missing from the CHECK"
+
+
+def test_deleting_a_workspace_cannot_silently_erase_its_audit_trail():
+    """Was ON DELETE CASCADE: 4 audit rows became 0 on a workspace delete.
+
+    An audit log that a workspace deletion empties is the opposite of an audit log.
+    RESTRICT forces whoever writes tenant offboarding to make retention explicit.
+    """
+    ws = _workspace("cascade")
+    try:
+        with store.pg(str(ws)) as conn:
+            record_audit_event(
+                conn,
+                aggregate_type="meeting",
+                aggregate_id=uuid.uuid4(),
+                action="created",
+                workspace_id=ws,
+            )
+
+        with psycopg.connect(settings().postgres_dsn) as conn:
+            with pytest.raises(psycopg.errors.ForeignKeyViolation):
+                conn.execute("DELETE FROM workspace WHERE id = %s", (ws,))
+            conn.rollback()
+
+        with psycopg.connect(settings().postgres_dsn, row_factory=dict_row) as conn:
+            remaining = conn.execute(
+                "SELECT count(*) AS n FROM audit_event WHERE workspace_id = %s", (ws,)
+            ).fetchone()["n"]
+        assert remaining == 1, "the trail must survive an attempted workspace delete"
+    finally:
+        _purge(ws)
