@@ -1,13 +1,17 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, CalendarDays, Users, FileText, Network, GitMerge, Settings, ChevronsUpDown } from "lucide-react";
+import { LayoutDashboard, CalendarDays, Users, FileText, Gavel, Network, GitMerge, Settings, ChevronsUpDown } from "lucide-react";
 import { NavItem } from "./ui/nav-item";
 
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: <LayoutDashboard /> },
   { href: "/calendar", label: "Calendar", icon: <CalendarDays /> },
   { href: "/meetings", label: "Meetings", icon: <Users /> },
+  // Decisions sits after Meetings because that is where they come from, and
+  // before Documents because a founder reaches for the decision far more often
+  // than for the file it came in on.
+  { href: "/decisions", label: "Decisions", icon: <Gavel /> },
   { href: "/documents", label: "Documents", icon: <FileText /> },
   { href: "/memory", label: "Institutional Memory", icon: <Network /> },
   { href: "/entity-conflicts", label: "Review queue", icon: <GitMerge /> },

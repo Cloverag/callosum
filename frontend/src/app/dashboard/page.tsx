@@ -13,6 +13,7 @@ import {
 } from "@/lib/meetings";
 import { apiClient, type EntityConflict } from "@/lib/api";
 import { insightsApi, type DashboardInsights } from "@/lib/insights";
+import { decisionsApi, type Decision } from "@/lib/decisions";
 import { addDays, startOfDay, startOfWeek } from "@/lib/calendar";
 import { DailyBrief } from "./daily-brief";
 import { MeetingHero } from "./meeting-hero";
@@ -28,11 +29,15 @@ export default function DashboardPage() {
   const [meetings, setMeetings] = useState<Meeting[] | null>(null);
   const [conflicts, setConflicts] = useState<EntityConflict[] | null>(null);
   const [insights, setInsights] = useState<DashboardInsights | null>(null);
+  const [decisions, setDecisions] = useState<Decision[] | null>(null);
 
   useEffect(() => {
     meetingsApi.list().then(setMeetings);
     apiClient.getPendingConflicts().then(setConflicts);
     insightsApi.get().then(setInsights);
+    // Newest five. The card links through to /decisions for the rest rather than
+    // growing without bound on the dashboard.
+    decisionsApi.list().then((d) => setDecisions(d.slice(0, 5)));
   }, []);
 
   const upcoming = useMemo(() => {
@@ -120,7 +125,7 @@ export default function DashboardPage() {
           <GraphQualityPanel quality={insights?.quality ?? null} />
           <MemoryGrowth growth={insights?.memoryGrowth ?? null} />
           <div className="grid gap-8 lg:grid-cols-2">
-            <RecentDecisions decisions={insights?.decisions ?? null} />
+            <RecentDecisions decisions={decisions} />
             <ApprovedFacts facts={insights?.approvedFacts ?? null} />
           </div>
         </div>

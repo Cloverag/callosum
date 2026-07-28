@@ -5,7 +5,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Sparkles, PanelRightClose, ArrowUp, BadgeCheck, Lock, FileText, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { assistantApi, type AssistantTurn } from "@/lib/assistant";
-import { insightsApi, type Decision } from "@/lib/insights";
+import { decisionsApi, type Decision } from "@/lib/decisions";
 
 // Quick shortcuts map to questions the approved memory can actually answer —
 // the rail never offers a prompt it would only abstain on.
@@ -55,7 +55,10 @@ export function AssistantRail() {
   }, []);
 
   useEffect(() => {
-    insightsApi.get().then((d) => setDecisions(d.decisions.filter((x) => x.status === "approved").slice(0, 3)));
+    // Approved only: the rail surfaces settled positions, not live motions. The
+    // filter runs server-side in the real API, so it is passed as an argument
+    // here rather than applied after the fetch.
+    decisionsApi.list({ status: "approved" }).then((d) => setDecisions(d.slice(0, 3)));
   }, []);
 
   useEffect(() => {
@@ -152,7 +155,16 @@ export function AssistantRail() {
                     className="rounded-[12px] border border-border bg-surface-raised px-3 py-2 shadow-card"
                   >
                     <p className="text-[13px] font-medium leading-snug text-foreground">{d.title}</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">{d.meeting}</p>
+                    {/* The old mock carried a `meeting` display string. The real
+                        contract has `meeting_id`, a reference — resolving it would
+                        mean fetching meetings into the rail, and printing the raw
+                        id would be worse than useless. Stance count says something
+                        true and needs no join. */}
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {d.stances.length === 0
+                        ? "No stances recorded"
+                        : `${d.stances.length} ${d.stances.length === 1 ? "stance" : "stances"} on record`}
+                    </p>
                   </li>
                 ))}
               </ul>
