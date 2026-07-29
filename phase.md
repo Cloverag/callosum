@@ -54,6 +54,10 @@ Measure-first, one aggregate root per checkpoint (own migration → domain modul
 - **Settled 2026-07-28 — the product frontend is Next.js `frontend/`.** The Vite glassmorphism prototype at `frontendglass/meridian-glass/` is a visual reference only: it does not get wired to the P3 API and no further work goes into it. It stays in the tree for now; removing it is a separate deliberate commit. See [memory.md](./memory.md).
 - **Next:** `/commitments` against the merged CP7 contract; then resolving `decision_stance` to the board directory (`decisions.ts` still says `board_member_id` is "coming in CP5" — CP5a shipped it), and the responsive/mobile AI rail.
 
-## Product P3 — Web API layer — ⬜ NOT STARTED
+## Product P3 — Authenticated API — 🟩 IN PROGRESS
 
-- The frozen core is CLI/Python; the frontend runs entirely on mocks. A real API (FastAPI, stack already installed) is the P3 gate that replaces the mock `lib/*` layer.
+- **Auth is real.** OIDC against Keycloak (compose service + realm import), an httpOnly signed-cookie session, and workspace selection re-validated against `membership` on every request. The session holds an identity and a choice — never a clearance, role or permission, so revoking a membership takes effect on the *next request* rather than at session expiry.
+- **`workspace_id` and `clearance` never come from a request.** Three layers hold that: `meridian/tenancy.py` raises rather than defaulting, `deps.current_principal` is the only path to a `Principal`, and a test walks the OpenAPI schema and fails the build if any endpoint declares either (ADR-013).
+- **Six of seven mock modules now talk to the real API**: resolutions, board members, agenda, meetings, packs, minutes. `decisions` remains.
+- **Four mocks have no backend and are untouched** (CP-E): `documents`, `insights`, `graph`, `assistant`.
+- **Test counts:** 460 backend (gated, real Postgres) · 159 frontend.
