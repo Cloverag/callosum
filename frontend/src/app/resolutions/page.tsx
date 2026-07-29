@@ -20,7 +20,7 @@ import { ResolutionCard } from "./resolution-card";
 /**
  * Resolutions — the formal instruments the board passed, and how it voted.
  *
- * The directory is fetched with `include_inactive: true`, which looks wrong and is
+ * The directory is fetched with `active: "all"`, which looks wrong and is
  * not: a director who has since left still cast the votes on record. Fetching only
  * active members would make historic votes render as unresolvable, which reads as
  * data loss rather than as a departure.
@@ -44,7 +44,7 @@ export default function ResolutionsPage() {
       .list()
       .then(setResolutions)
       .catch((err: unknown) => setError(err instanceof ApiError ? err : new ApiError(0, "network", "Could not reach the server.")));
-    boardMembersApi.list({ include_inactive: true }).then(setMembers).catch(() => setMembers([]));
+    boardMembersApi.list({ active: "all" }).then(setMembers).catch(() => setMembers([]));
   }, []);
 
   // Counts come from the unfiltered set, so a chip never reports zero for a status
