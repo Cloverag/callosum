@@ -55,14 +55,18 @@ export const MEETING_STATUS_DOT: Record<MeetingStatus, string> = {
 
 export const MEETING_STATUSES = Object.keys(MEETING_STATUS_LABEL) as MeetingStatus[];
 
-export type AgendaItem = {
-  id: string;
-  title: string;
-  order: number;
-  timeboxMins: number;
-  presenter?: string;
-};
-
+/**
+ * Mirrors `meridian/meetings.py`. **Three fields the mock carried are gone**, because
+ * the domain has never had them: `objectives`, `sensitivity`, and `agenda`.
+ *
+ * `agenda` was the consequential one — agenda items are their own aggregate (CP2),
+ * and embedding them here let two surfaces render an agenda with nothing to fetch it
+ * from. They now use `lib/agenda.ts`.
+ *
+ * `sensitivity` is not merely missing, it is wrong in principle: clearance is a
+ * property of a membership, not of a meeting. A "Clearance Level N" stat on a meeting
+ * asserted something this system does not model.
+ */
 export type Meeting = {
   id: string;
   title: string;
@@ -70,9 +74,6 @@ export type Meeting = {
   start: string; // ISO datetime
   end: string; // ISO datetime
   location?: string;
-  objectives?: string;
-  sensitivity: number; // 1..5 clearance ladder
-  agenda: AgendaItem[];
 };
 
 // In-memory mock store, dated around the current demo month (July 2026).
@@ -84,13 +85,6 @@ const mockMeetings: Meeting[] = [
     start: "2026-07-09T10:00:00",
     end: "2026-07-09T11:30:00",
     location: "Zoom",
-    objectives: "Q2 review, pricing model, hiring plan.",
-    sensitivity: 2,
-    agenda: [
-      { id: "a1", title: "Q2 metrics review", order: 1, timeboxMins: 20, presenter: "Raj Malhotra" },
-      { id: "a2", title: "Pricing model discussion", order: 2, timeboxMins: 25, presenter: "Priya Nair" },
-      { id: "a3", title: "Hiring plan sign-off", order: 3, timeboxMins: 15 },
-    ],
   },
   {
     id: "m-prod",
@@ -99,8 +93,6 @@ const mockMeetings: Meeting[] = [
     start: "2026-07-15T11:00:00",
     end: "2026-07-15T12:00:00",
     location: "HQ — Room A",
-    sensitivity: 1,
-    agenda: [],
   },
   {
     id: "m-q3",
@@ -109,13 +101,6 @@ const mockMeetings: Meeting[] = [
     start: "2026-07-21T09:00:00",
     end: "2026-07-21T11:00:00",
     location: "Zoom",
-    objectives: "Q3 board pack, Series B terms, runway.",
-    sensitivity: 3,
-    agenda: [
-      { id: "b1", title: "CEO update", order: 1, timeboxMins: 15, presenter: "Raj Malhotra" },
-      { id: "b2", title: "Financials & runway", order: 2, timeboxMins: 20, presenter: "Priya Nair" },
-      { id: "b3", title: "Series B terms", order: 3, timeboxMins: 30 },
-    ],
   },
   {
     id: "m-comp",
@@ -124,8 +109,6 @@ const mockMeetings: Meeting[] = [
     start: "2026-07-21T14:00:00",
     end: "2026-07-21T15:00:00",
     location: "Google Meet",
-    sensitivity: 4,
-    agenda: [],
   },
   {
     id: "m-seq",
@@ -134,8 +117,6 @@ const mockMeetings: Meeting[] = [
     start: "2026-07-23T10:00:00",
     end: "2026-07-23T10:45:00",
     location: "Zoom",
-    sensitivity: 3,
-    agenda: [],
   },
   {
     id: "m-terms",
@@ -143,8 +124,6 @@ const mockMeetings: Meeting[] = [
     status: "draft",
     start: "2026-07-28T16:00:00",
     end: "2026-07-28T17:00:00",
-    sensitivity: 4,
-    agenda: [],
   },
   {
     id: "m-aug",
@@ -153,15 +132,13 @@ const mockMeetings: Meeting[] = [
     start: "2026-08-04T10:00:00",
     end: "2026-08-04T11:00:00",
     location: "Zoom",
-    sensitivity: 2,
-    agenda: [],
   },
 ];
 
 const clone = (m: Meeting): Meeting => structuredClone(m);
 const delay = (ms = 400) => new Promise((r) => setTimeout(r, ms));
 
-export type MeetingInput = Omit<Meeting, "id" | "agenda"> & { agenda?: AgendaItem[] };
+export type MeetingInput = Omit<Meeting, "id">;
 
 /** Mocked Meridian meetings API. Simulates network latency; sorted by start time. */
 export const meetingsApi = {
@@ -181,7 +158,7 @@ export const meetingsApi = {
 
   async create(input: MeetingInput): Promise<Meeting> {
     await delay();
-    const meeting: Meeting = { id: `m-${crypto.randomUUID().slice(0, 8)}`, agenda: [], ...input };
+    const meeting: Meeting = { id: `m-${crypto.randomUUID().slice(0, 8)}`, ...input };
     mockMeetings.push(meeting);
     return clone(meeting);
   },

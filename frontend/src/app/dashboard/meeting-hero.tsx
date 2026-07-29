@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarClock, MapPin, ShieldCheck, ListChecks, ArrowRight } from "lucide-react";
+import { CalendarClock, MapPin, ArrowRight } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -70,8 +70,6 @@ export function MeetingHero({ meeting, loading }: { meeting: Meeting | null; loa
   }
 
   const start = new Date(meeting.start);
-  const total = meeting.agenda.length;
-  const withOwner = meeting.agenda.filter((a) => a.presenter).length;
 
   return (
     <Card variant="elevated" className="flex min-h-[16rem] flex-col border-border-strong p-7">
@@ -94,9 +92,12 @@ export function MeetingHero({ meeting, loading }: { meeting: Meeting | null; loa
       </div>
 
       {/* Quick stats */}
-      <dl className="mt-4 grid grid-cols-3 gap-3">
-        <Stat icon={<ListChecks />} label="Agenda" value={total === 0 ? "—" : `${withOwner}/${total} owned`} />
-        <Stat icon={<ShieldCheck />} label="Clearance" value={`Level ${meeting.sensitivity}`} />
+      {/* Agenda readiness and "Clearance Level N" used to sit here. Both came from
+          fields the domain has never had: agenda is a separate aggregate, and a
+          meeting carries no clearance — that is a property of a membership. A stat
+          asserting something the system does not model is the same defect as a
+          number nobody measured, so they are gone rather than approximated. */}
+      <dl className="mt-4 grid grid-cols-1 gap-3">
         <Stat icon={<MapPin />} label="Location" value={meeting.location ?? "—"} />
       </dl>
 
