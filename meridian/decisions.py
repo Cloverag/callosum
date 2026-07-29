@@ -401,16 +401,19 @@ def record_stance(
         # Emit audit event if audit domain is available
         try:
             from meridian import audit
+            payload = {
+                "person_name": person_name.strip(),
+                "new_stance": stance,
+            }
+            if old_row:
+                payload["old_stance"] = old_row["stance"]
+
             audit.record_audit_event(
                 conn,
                 aggregate_type="decision",
                 aggregate_id=dec_uuid,
                 action="updated" if old_row else "created",
-                payload={
-                    "person_name": person_name.strip(),
-                    "old_stance": old_row["stance"] if old_row else None,
-                    "new_stance": stance,
-                },
+                payload=payload,
                 workspace_id=workspace_id,
             )
         except Exception as exc:

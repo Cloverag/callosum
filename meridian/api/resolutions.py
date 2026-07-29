@@ -18,6 +18,8 @@ decide what you are allowed to read": `workspace_id` does, these do not.
 becomes 422, without this module restating either.
 """
 
+import uuid
+
 from fastapi import APIRouter
 
 from meridian import resolutions as domain
@@ -29,7 +31,7 @@ router = APIRouter(prefix="/api/resolutions", tags=["resolutions"])
 @router.get("")
 def list_resolutions(
     principal: CurrentPrincipal,
-    decision_id: str | None = None,
+    decision_id: uuid.UUID | None = None,
     status: str | None = None,
 ) -> list[domain.Resolution]:
     """Resolutions in the caller's workspace, `version_no DESC, created_at DESC`.
@@ -41,17 +43,17 @@ def list_resolutions(
     """
     return domain.list_resolutions(
         workspace_id=principal.workspace_id,
-        decision_id=decision_id,
+        decision_id=str(decision_id) if decision_id else None,
         status=status,
     )
 
 
 @router.get("/{resolution_id}")
-def get_resolution(resolution_id: str, principal: CurrentPrincipal) -> domain.Resolution:
+def get_resolution(resolution_id: uuid.UUID, principal: CurrentPrincipal) -> domain.Resolution:
     """One resolution with its votes.
 
     A resolution in another workspace raises `ResolutionNotFound` — not because this
     function checks, but because the RLS predicate means the row is not there to find.
     404 and "exists but not yours" are the same answer, which is the intent.
     """
-    return domain.get_resolution(resolution_id, workspace_id=principal.workspace_id)
+    return domain.get_resolution(str(resolution_id), workspace_id=principal.workspace_id)
