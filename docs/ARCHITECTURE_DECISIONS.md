@@ -193,3 +193,10 @@ any real flow exists would be designing against imagined screens.
 rather than assumed. That is the point at which composition should be evidence-driven,
 in keeping with the standing rule that structure follows measurement.
 **Status:** Accepted (P3, owner-approved 2026-07-29). Not yet built — CP-B onward.
+
+## ADR-015 — Minutes are workspace-scoped by design (Option 1)
+**Decision:** `minutes` records are scoped by `workspace_id` (Postgres RLS) and carry no `sensitivity` column or `clearance` parameter.
+**Alternatives:** Add coarse `sensitivity` level to `minutes`; derive clearance from meeting or board pack items.
+**Why:** Minutes document formal board conclusions in high-level prose. A single `sensitivity` level for an entire minutes body would create a coarse classification trap — hiding routine resolutions (e.g. approving bank signatories) from an investor-clearance reader just because one paragraph mentions a sensitive topic. Sensitive raw source materials remain strictly clearance-filtered in `board_pack_item`.
+**Status:** Accepted (Option 1, resolved in issue #49).
+

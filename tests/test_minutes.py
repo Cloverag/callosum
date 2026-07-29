@@ -232,3 +232,39 @@ def test_minutes_validation_errors():
             minutes.finalise_minutes(finalised.id, expected_version=2, workspace_id=ws)
     finally:
         _cleanup(ws)
+
+
+def test_minutes_clearance_model_is_workspace_scoped_by_design():
+    """ADR-015 (Issue #49): `minutes` records are workspace-scoped via RLS.
+
+    They carry no `sensitivity` column and take no `clearance` argument.
+    """
+    ws = uuid.uuid4()
+    m_id = uuid.uuid4()
+    _admin("INSERT INTO workspace (id, name) VALUES (%s, 'Minutes ADR015')", (ws,))
+    _admin(
+        "INSERT INTO meeting (id, workspace_id, title, status) VALUES (%s, %s, 'Board Meeting ADR015', 'in_progress')",
+        (m_id, ws),
+    )
+
+    try:
+        # Create minutes without passing clearance
+        min_rec = minutes.create_minutes(
+            m_id,
+            body="Approved expansion plans and budget allocation.",
+            workspace_id=str(ws),
+        )
+        assert min_rec.workspace_id == str(ws)
+        assert not hasattr(min_rec, "sensitivity")
+        assert not hasattr(min_rec, "clearance")
+
+        # Fetch minutes without passing clearance
+        fetched = minutes.get_minutes(min_rec.id, workspace_id=str(ws))
+        assert fetched is not None
+        assert fetched.id == min_rec.id
+    finally:
+        _cleanup(ws)
+
+
+
+
