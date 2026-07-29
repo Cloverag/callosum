@@ -24,6 +24,8 @@ into one (ADR-012).
 stops. Clearance comes from a membership, per request, once a workspace exists.
 """
 
+import asyncio
+import time
 from typing import Any
 
 from authlib.integrations.starlette_client import OAuth, OAuthError
@@ -199,6 +201,35 @@ class WorkspaceSelection(BaseModel):
     workspace_id: str
 
 
+#: Floor that both outcomes of a workspace selection are padded up to, in seconds.
+#: Chosen to sit well above a local membership round trip without being perceptible.
+_SELECTION_FLOOR_SECONDS = 0.05
+
+
+async def _pad_to_floor(started: float) -> None:
+    """Hold a workspace selection open until `_SELECTION_FLOOR_SECONDS` have passed.
+
+    The uniform 403 keeps the *content* of a refusal from naming which workspaces
+    exist. It does not cover how long the refusal took: "not a member" can return
+    before the row lookup that a successful selection completes, and a caller timing
+    the difference gets the answer the message withholds.
+
+    **Applied to both outcomes, deliberately.** Padding only the failure path makes
+    failures uniformly slower than successes, which is a clearer signal than the one
+    it set out to hide.
+
+    **This is a floor, not constant time, and the distinction is the limitation.** It
+    hides a difference only while both paths finish inside the floor. It would not
+    survive a workspace whose membership check is genuinely slow, and it does nothing
+    about timing further up the stack. `await` rather than `time.sleep` because this
+    endpoint is async and a blocking sleep would stall every other request on the
+    event loop — turning a privacy measure into a denial-of-service lever.
+    """
+    remaining = _SELECTION_FLOOR_SECONDS - (time.monotonic() - started)
+    if remaining > 0:
+        await asyncio.sleep(remaining)
+
+
 @router.post("/workspace")
 async def select_workspace(request: Request, selection: WorkspaceSelection):
     """Chooses a workspace for this session, after verifying membership (ADR-012).
@@ -219,6 +250,7 @@ async def select_workspace(request: Request, selection: WorkspaceSelection):
     outliving the membership behind it.
     """
     current = deps.current_session(request)
+    started = time.monotonic()
 
     try:
         principal = deps.verify_membership(current.principal_id, selection.workspace_id)
@@ -231,11 +263,13 @@ async def select_workspace(request: Request, selection: WorkspaceSelection):
         # Uniform refusal. "Not a member", "membership revoked" and "no such
         # workspace" are one answer — otherwise this endpoint becomes a probe for
         # which workspaces exist.
+        await _pad_to_floor(started)
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             detail={"code": deps.FORBIDDEN, "detail": "Not available to you."},
         ) from exc
 
+    await _pad_to_floor(started)
     sess.select_workspace(request.session, selection.workspace_id)
 
     # The clearance is reported from the resolution that just happened, not stored.
