@@ -20,6 +20,7 @@ from datetime import datetime
 
 from callosum import store
 from callosum.store import DEFAULT_WORKSPACE_ID
+from meridian import audit
 from meridian.meetings import MeetingNotFound
 
 PROPOSED = "proposed"
@@ -370,6 +371,14 @@ def record_stance(
 
         _assert_meeting_active(conn, dec["meeting_id"])
 
+        # Read the prior stance before the upsert overwrites it. The audit event is
+        # only worth writing if it records what changed, and after `ON CONFLICT DO
+        # UPDATE` the old value is gone.
+        previous = conn.execute(
+            "SELECT stance FROM decision_stance WHERE decision_id = %s AND person_name = %s",
+            (dec_uuid, person_name.strip()),
+        ).fetchone()
+
         row = conn.execute(
             """
             INSERT INTO decision_stance
@@ -389,6 +398,29 @@ def record_stance(
                 workspace_id,
             ),
         ).fetchone()
+
+        # Inside the same transaction and deliberately unguarded. `record_audit_event`
+        # documents that it MUST run in the mutation's transaction so the two commit or
+        # roll back together; wrapping it in `except Exception: pass` would keep the
+        # stance and silently drop its audit record, which is the one outcome an
+        # append-only trail exists to prevent.
+        #
+        # `action="voted"` rather than "created"/"updated": `aggregate_type` is
+        # "decision" for the decision *and* its stances, so "created" would not
+        # distinguish a stance being recorded from the decision itself being raised.
+        # Whether it was a first stance or a change is carried by `old_stance`.
+        audit.record_audit_event(
+            conn,
+            aggregate_type="decision",
+            aggregate_id=dec_uuid,
+            action="voted",
+            payload={
+                "person_name": person_name.strip(),
+                "old_stance": previous["stance"] if previous else None,
+                "new_stance": stance,
+            },
+            workspace_id=workspace_id,
+        )
 
     return _row_to_stance(row)
 
