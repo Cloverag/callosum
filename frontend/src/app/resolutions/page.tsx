@@ -14,6 +14,7 @@ import {
   type ResolutionStatus,
 } from "@/lib/resolutions";
 import { boardMembersApi, type BoardMember } from "@/lib/board-members";
+import { ApiError } from "@/lib/http";
 import { ResolutionCard } from "./resolution-card";
 
 /**
@@ -28,10 +29,22 @@ export default function ResolutionsPage() {
   const [resolutions, setResolutions] = useState<Resolution[] | null>(null);
   const [members, setMembers] = useState<BoardMember[]>([]);
   const [active, setActive] = useState<Set<ResolutionStatus>>(new Set());
+  const [error, setError] = useState<ApiError | null>(null);
 
   useEffect(() => {
-    resolutionsApi.list().then(setResolutions);
-    boardMembersApi.list({ include_inactive: true }).then(setMembers);
+    // A real request can fail; the mock this replaced never could. Without a catch
+    // the page would sit on its loading skeleton forever and log an unhandled
+    // rejection, which reads as "still loading" rather than "something went wrong".
+    //
+    // Deliberately NOT `.catch(() => setResolutions([]))`. That renders "no
+    // resolutions match these filters" — a statement about the data — when the truth
+    // is that we do not know what the data is. Showing an empty state for a failed
+    // request is the same class of error as printing an unmeasured number.
+    resolutionsApi
+      .list()
+      .then(setResolutions)
+      .catch((err: unknown) => setError(err instanceof ApiError ? err : new ApiError(0, "network", "Could not reach the server.")));
+    boardMembersApi.list({ include_inactive: true }).then(setMembers).catch(() => setMembers([]));
   }, []);
 
   // Counts come from the unfiltered set, so a chip never reports zero for a status
@@ -104,7 +117,18 @@ export default function ResolutionsPage() {
       </div>
 
       <div className="mt-6 space-y-4">
-        {visible === null ? (
+        {error ? (
+          <Card className="p-10 text-center">
+            <p className="text-sm text-foreground">Resolutions could not be loaded.</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {error.needsWorkspace
+                ? "Select a workspace to continue."
+                : error.isUnauthenticated
+                  ? "Your session has ended. Sign in again."
+                  : error.message}
+            </p>
+          </Card>
+        ) : visible === null ? (
           Array.from({ length: 3 }).map((_, i) => (
             <Card key={i} className="p-6">
               <div className="h-4 w-2/5 rounded bg-surface-sunken" />
