@@ -22,6 +22,7 @@ the domain, and this endpoint returns what it produced.
 """
 
 import uuid
+from typing import Literal
 
 from fastapi import APIRouter
 
@@ -30,12 +31,14 @@ from meridian.api.deps import CurrentPrincipal
 
 router = APIRouter(prefix="/api/packs", tags=["packs"])
 
+PackStatus = Literal["draft", "published", "superseded"]
+
 
 @router.get("")
 def list_packs(
     meeting_id: uuid.UUID,
     principal: CurrentPrincipal,
-    status: str | None = None,
+    status: PackStatus | None = None,
 ) -> list[domain.BoardPack]:
     """Board packs for a meeting, `version_no DESC, created_at DESC`.
 
