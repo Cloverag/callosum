@@ -398,6 +398,16 @@ def upsert_chunk_node(driver: Driver, *, chunk_id: uuid.UUID, document_id: uuid.
         )
 
 
+def ensure_chunk_node(driver: Driver, chunk_id: str | uuid.UUID, workspace_id: str = DEFAULT_WORKSPACE_ID) -> None:
+    """Ensure a (:Chunk) node exists in Neo4j for provenance anchoring."""
+    with driver.session() as session:
+        session.run(
+            "MERGE (c:Chunk {id: $id, workspace_id: $workspace_id})",
+            id=str(chunk_id),
+            workspace_id=str(workspace_id),
+        )
+
+
 def apply_entity(driver: Driver, payload: dict[str, Any]) -> None:
     """Commit an approved entity, and wire it to the chunk that mentions it.
 
