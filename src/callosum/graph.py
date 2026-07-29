@@ -82,7 +82,7 @@ class GraphGateway:
             result = session.run(
                 """
                 MATCH (a:Entity {name: $na, type: $ta, workspace_id: $ws})
-                      -[:ALIAS_OF]->
+                      -[:ALIAS_OF]-
                       (b:Entity {name: $nb, type: $tb, workspace_id: $ws})
                 RETURN count(*) AS n
                 """,

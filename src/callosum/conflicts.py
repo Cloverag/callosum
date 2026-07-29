@@ -249,8 +249,9 @@ def approve_conflict(
     ).fetchone()
     change_id = change_row["id"]
 
-    # Ensure the (:Chunk) node exists in Neo4j via store gateway helper
-    store.ensure_chunk_node(driver, chunk_id, str(row["workspace_id"]))
+    # Only anchor to (:Chunk) in Neo4j if a real source chunk exists in Postgres
+    if row["chunk_id_a"]:
+        store.ensure_chunk_node(driver, chunk_id, str(row["workspace_id"]))
 
     # Immediately approve — this is a human decision, not an LLM proposal.
     store.approve(conn, driver, change_id, reviewer_id)
