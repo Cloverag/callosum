@@ -35,6 +35,7 @@ FROZEN_ALLOWLIST = {
     ("store.py", "ensure_constraints"),
     ("store.py", "entity_names_for_chunks"),
     ("store.py", "upsert_chunk_node"),
+    ("store.py", "ensure_chunk_node"),
     ("store.py", "apply_entity"),
     ("store.py", "apply_relationship"),
     ("retrieve.py", "graph_search"),
