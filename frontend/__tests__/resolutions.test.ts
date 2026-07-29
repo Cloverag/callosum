@@ -1,3 +1,12 @@
+/**
+ * @jest-environment node
+ *
+ * Node rather than jsdom, deliberately. This file renders nothing — it exercises the
+ * API client — and the Node environment provides the real `Response` and `fetch`
+ * globals that the Fetch API is specified against. jsdom shadows them with nothing,
+ * which would leave the stub asserting against a hand-written shim rather than
+ * against the objects the browser will actually hand the client.
+ */
 import {
   RESOLUTION_TRANSITIONS,
   COUNTED_VOTES,
@@ -9,6 +18,63 @@ import {
   type Resolution,
 } from "../src/lib/resolutions";
 import { boardMembersApi, initialsOf, nameOf } from "../src/lib/board-members";
+import { ApiError } from "../src/lib/http";
+import { RESOLUTION_FIXTURES } from "../test-support/resolutions-fixture";
+
+/**
+ * `fetch` is stubbed rather than a backend being started.
+ *
+ * These are client tests: they check that `resolutionsApi` builds the right request,
+ * preserves the server's ordering, and turns a 404 into `null`. Whether the endpoint
+ * returns the right rows is `tests/test_resolutions_api.py`'s job, against a real
+ * Postgres — asking this suite to prove it again would make it slow, non-deterministic
+ * and dependent on a running server for no coverage gained.
+ *
+ * The fixtures are the data the in-memory mock used to hold, so every contract
+ * assertion below is unchanged from when it ran against that mock.
+ */
+
+type StubbedCall = { url: string; init?: RequestInit };
+
+let calls: StubbedCall[] = [];
+
+/** Serves the fixtures the way the real API does, including filters and 404s. */
+function stubFetch(payload: Resolution[] = RESOLUTION_FIXTURES) {
+  calls = [];
+  global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    calls.push({ url, init });
+
+    const single = url.match(/\/api\/resolutions\/([^?]+)$/);
+    if (single) {
+      const found = payload.find((r) => r.id === decodeURIComponent(single[1]));
+      return found
+        ? new Response(JSON.stringify(found), { status: 200 })
+        : new Response(JSON.stringify({ error: { code: "not_found", detail: "gone" } }), { status: 404 });
+    }
+
+    // The server orders by version_no DESC, created_at DESC and applies the filters.
+    const params = new URL(url, "http://localhost").searchParams;
+    let rows = [...payload];
+    const decision = params.get("decision_id");
+    const status = params.get("status");
+    if (decision) rows = rows.filter((r) => r.decision_id === decision);
+    if (status) rows = rows.filter((r) => r.status === status);
+    rows.sort((a, b) => b.version_no - a.version_no || b.created_at.localeCompare(a.created_at));
+    return new Response(JSON.stringify(rows), { status: 200 });
+  }) as unknown as typeof fetch;
+}
+
+/** Makes every request fail with the API's error envelope. */
+function stubFailure(status: number, code: string, detail = "nope") {
+  calls = [];
+  global.fetch = jest.fn(async () =>
+    new Response(JSON.stringify({ error: { code, detail } }), { status }),
+  ) as unknown as typeof fetch;
+}
+
+beforeEach(() => stubFetch());
+afterEach(() => jest.restoreAllMocks());
 
 /**
  * The resolutions surface has one job it can get catastrophically wrong: presenting
@@ -215,5 +281,127 @@ describe("board directory contract", () => {
     // A non-executive director who never signs in is still recordable and votable.
     const members = await boardMembersApi.list();
     expect(members.some((m) => m.principal_id === null)).toBe(true);
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// Client behaviour (CP-B/B3)
+//
+// What the mock could never be wrong about, and the real client can: the request it
+// builds, the credentials it sends, and what it does with a non-2xx response.
+// ---------------------------------------------------------------------------
+
+describe("the client builds the right request", () => {
+  it("calls the same-origin API path", async () => {
+    await resolutionsApi.list();
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toBe("/api/resolutions");
+  });
+
+  it("sends the session cookie", async () => {
+    // The session is an httpOnly cookie (ADR-009). A request that omitted it would
+    // read as logged-out rather than as misconfigured, which is a confusing bug.
+    await resolutionsApi.list();
+    expect(calls[0].init?.credentials).toBe("same-origin");
+  });
+
+  it("passes filters as query parameters", async () => {
+    await resolutionsApi.list({ decision_id: "d-price-adopt", status: "adopted" });
+    expect(calls[0].url).toContain("decision_id=d-price-adopt");
+    expect(calls[0].url).toContain("status=adopted");
+  });
+
+  it("omits absent filters rather than sending empty ones", async () => {
+    // `status=` would ask the API to match on the empty string, which is a different
+    // request from "no status filter".
+    await resolutionsApi.list({ decision_id: "d-seq" });
+    expect(calls[0].url).toBe("/api/resolutions?decision_id=d-seq");
+  });
+
+  it("has no way to send a workspace_id", async () => {
+    // ADR-013. The API derives it from the session and the OpenAPI guard fails the
+    // build if an endpoint ever accepts one, so the client offers no option to pass
+    // a value that has nowhere legitimate to go.
+    await resolutionsApi.list({ decision_id: "d-seq", status: "draft" });
+    expect(calls[0].url).not.toContain("workspace");
+  });
+
+  it("encodes an id that would otherwise break the path", async () => {
+    await resolutionsApi.get("res/../../etc");
+    expect(calls[0].url).toBe("/api/resolutions/res%2F..%2F..%2Fetc");
+  });
+});
+
+describe("the client preserves the server's answer", () => {
+  it("does not re-sort what the API returned", async () => {
+    // The server orders by version_no DESC, created_at DESC. A second ordering here
+    // is a second thing that can disagree with the first.
+    const payload = [...RESOLUTION_FIXTURES].reverse();
+    global.fetch = jest.fn(async () =>
+      new Response(JSON.stringify(payload), { status: 200 }),
+    ) as unknown as typeof fetch;
+
+    const got = await resolutionsApi.list();
+    expect(got.map((r) => r.id)).toEqual(payload.map((r) => r.id));
+  });
+});
+
+describe("the client surfaces API errors", () => {
+  it("returns null for a missing resolution rather than throwing", async () => {
+    // Preserves the mock's contract, so the surfaces that already render an empty
+    // state keep working unchanged.
+    expect(await resolutionsApi.get("res-does-not-exist")).toBeNull();
+  });
+
+  it("throws rather than returning null when access is refused", async () => {
+    // Being refused is not the same as it not existing. Collapsing them would hide a
+    // permissions problem behind an empty state.
+    stubFailure(403, "forbidden", "Not available to you.");
+    await expect(resolutionsApi.get("res-seriesb")).rejects.toBeInstanceOf(ApiError);
+  });
+
+  it("carries the taxonomy code so callers can branch without parsing prose", async () => {
+    stubFailure(409, "stale_resource", "expected version 3, current 4");
+    await expect(resolutionsApi.list()).rejects.toMatchObject({
+      status: 409,
+      code: "stale_resource",
+      message: "expected version 3, current 4",
+    });
+  });
+
+  it("distinguishes a stale write from a bad request", async () => {
+    stubFailure(409, "stale_resource");
+    const stale = await resolutionsApi.list().catch((e) => e);
+    expect(stale.isStale).toBe(true);
+
+    stubFailure(422, "invalid");
+    const invalid = await resolutionsApi.list().catch((e) => e);
+    expect(invalid.isStale).toBe(false);
+  });
+
+  it("flags an unauthenticated session and an unchosen workspace separately", async () => {
+    stubFailure(401, "not_authenticated");
+    const anon = await resolutionsApi.list().catch((e) => e);
+    expect(anon.isUnauthenticated).toBe(true);
+    expect(anon.needsWorkspace).toBe(false);
+
+    stubFailure(409, "workspace_not_selected");
+    const unchosen = await resolutionsApi.list().catch((e) => e);
+    // 409 here means "pick a workspace", not "log in again" — a client that
+    // re-authenticated on this would loop.
+    expect(unchosen.needsWorkspace).toBe(true);
+    expect(unchosen.isUnauthenticated).toBe(false);
+  });
+
+  it("still raises an ApiError when the body is not the taxonomy envelope", async () => {
+    // A proxy error page or a gateway timeout. A caller handling errors should not
+    // also have to handle the error handler failing.
+    global.fetch = jest.fn(async () =>
+      new Response("<html>502 Bad Gateway</html>", { status: 502 }),
+    ) as unknown as typeof fetch;
+    const err = await resolutionsApi.list().catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.status).toBe(502);
   });
 });
