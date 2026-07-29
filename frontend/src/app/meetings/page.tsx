@@ -5,16 +5,24 @@ import { Users } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { meetingsApi, MEETING_STATUS_LABEL, MEETING_STATUS_TONE, type Meeting } from "@/lib/meetings";
+import {
+  meetingsApi,
+  scheduledOnly,
+  MEETING_STATUS_LABEL,
+  MEETING_STATUS_TONE,
+  type Meeting,
+} from "@/lib/meetings";
 import { formatDayFull, formatTime, startOfDay } from "@/lib/calendar";
 
 function Row({ m }: { m: Meeting }) {
   return (
     <div className="flex items-center gap-4 px-5 py-3">
       <div className="w-44 shrink-0">
-        <div className="text-sm font-medium text-foreground">{formatDayFull(new Date(m.start))}</div>
+        <div className="text-sm font-medium text-foreground">{m.scheduled_start ? formatDayFull(new Date(m.scheduled_start)) : "Not scheduled"}</div>
         <div className="text-xs tabular-nums text-muted-foreground">
-          {formatTime(m.start)} – {formatTime(m.end)}
+          {m.scheduled_start && m.scheduled_end
+            ? `${formatTime(m.scheduled_start)} – ${formatTime(m.scheduled_end)}`
+            : "—"}
         </div>
       </div>
       <div className="min-w-0 flex-1">
@@ -58,7 +66,9 @@ export default function MeetingsPage() {
     const now = startOfDay(new Date());
     const up: Meeting[] = [];
     const pa: Meeting[] = [];
-    for (const m of meetings ?? []) (new Date(m.start) >= now ? up : pa).push(m);
+    // Undated meetings are neither upcoming nor past — they are unscheduled, and
+    // sorting them into either bucket would assert a date the record does not have.
+    for (const m of scheduledOnly(meetings ?? [])) (new Date(m.scheduled_start) >= now ? up : pa).push(m);
     return { upcoming: up, past: pa.reverse() };
   }, [meetings]);
 

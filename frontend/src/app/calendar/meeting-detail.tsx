@@ -53,7 +53,13 @@ export function MeetingDetail({
         meeting ? (
           <span className="flex items-center gap-2">
             <Badge tone={MEETING_STATUS_TONE[meeting.status]}>{MEETING_STATUS_LABEL[meeting.status]}</Badge>
-            <span>{formatDayFull(new Date(meeting.start))}</span>
+            {/* A draft has no window until it is scheduled, so there is no date
+                to show — and inventing one would be worse than saying so. */}
+            <span>
+              {meeting.scheduled_start
+                ? formatDayFull(new Date(meeting.scheduled_start))
+                : "Not scheduled"}
+            </span>
           </span>
         ) : undefined
       }
@@ -79,7 +85,9 @@ export function MeetingDetail({
               Time
             </dt>
             <dd className="text-foreground">
-              {formatTime(meeting.start)} – {formatTime(meeting.end)}
+              {meeting.scheduled_start && meeting.scheduled_end
+                ? `${formatTime(meeting.scheduled_start)} – ${formatTime(meeting.scheduled_end)}`
+                : "Not scheduled"}
             </dd>
             {meeting.location && (
               <>

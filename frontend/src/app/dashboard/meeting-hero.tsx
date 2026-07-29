@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDayFull, formatTime, startOfDay } from "@/lib/calendar";
-import { MEETING_STATUS_LABEL, MEETING_STATUS_TONE, type Meeting } from "@/lib/meetings";
+import { MEETING_STATUS_LABEL, MEETING_STATUS_TONE, isScheduled, type Meeting } from "@/lib/meetings";
 
 /** "Today" / "Tomorrow" / "in 3 days" — the operator's first read on urgency. */
 function relativeDay(start: Date): string {
@@ -54,7 +54,9 @@ export function MeetingHero({ meeting, loading }: { meeting: Meeting | null; loa
     );
   }
 
-  if (!meeting) {
+  // An unscheduled meeting has no date to headline, so it is treated like no
+  // upcoming meeting rather than rendered with a fabricated one.
+  if (!meeting || !isScheduled(meeting)) {
     return (
       <Card variant="elevated" className="flex min-h-[16rem] flex-col items-center justify-center border-border-strong p-7 text-center">
         <CalendarClock className="size-6 text-muted-foreground" aria-hidden />
@@ -69,7 +71,7 @@ export function MeetingHero({ meeting, loading }: { meeting: Meeting | null; loa
     );
   }
 
-  const start = new Date(meeting.start);
+  const start = new Date(meeting.scheduled_start);
 
   return (
     <Card variant="elevated" className="flex min-h-[16rem] flex-col border-border-strong p-7">
@@ -87,7 +89,7 @@ export function MeetingHero({ meeting, loading }: { meeting: Meeting | null; loa
       <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <span className="text-lg font-medium text-foreground">{relativeDay(start)}</span>
         <span className="text-sm tabular-nums text-muted-foreground">
-          {formatDayFull(start)} · {formatTime(meeting.start)} – {formatTime(meeting.end)}
+          {formatDayFull(start)} · {formatTime(meeting.scheduled_start)} – {formatTime(meeting.scheduled_end)}
         </span>
       </div>
 

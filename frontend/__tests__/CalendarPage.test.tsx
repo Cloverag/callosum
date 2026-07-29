@@ -47,10 +47,10 @@ const agendaMock = agendaApi.list as jest.Mock;
 /** Wednesday, mid-month, mid-week — no boundary to hide an off-by-one behind. */
 const TODAY = new Date(2026, 6, 15, 9, 0, 0);
 
-function meeting(overrides: Partial<Meeting> & Pick<Meeting, 'id' | 'title' | 'start'>): Meeting {
+function meeting(overrides: Partial<Meeting> & Pick<Meeting, 'id' | 'title' | 'scheduled_start'>): Meeting {
   return {
     status: 'scheduled',
-    end: overrides.start,
+    scheduled_end: overrides.scheduled_start,
     ...overrides,
   } as Meeting;
 }
@@ -60,32 +60,37 @@ const MEETINGS: Meeting[] = [
     id: 'm-board',
     title: 'Board Meeting #14',
     status: 'completed',
-    start: '2026-07-09T10:00:00',
-    end: '2026-07-09T11:30:00',
+    scheduled_start: '2026-07-09T10:00:00',
+    scheduled_end: '2026-07-09T11:30:00',
     location: 'Boardroom',
+    workspace_id: 'w',
+    version: 1,
+    created_by: null,
+    created_at: '2026-07-01T09:00:00Z',
+    updated_at: '2026-07-01T09:00:00Z',
   }),
   meeting({
     id: 'm-q3',
     title: 'Q3 Board Meeting',
     status: 'in_progress',
-    start: '2026-07-15T09:00:00',
-    end: '2026-07-15T12:00:00',
+    scheduled_start: '2026-07-15T09:00:00',
+    scheduled_end: '2026-07-15T12:00:00',
     location: 'Zoom',
   }),
   meeting({
     id: 'm-comp',
     title: 'Comp Committee Sync',
     status: 'scheduled',
-    start: '2026-07-15T14:00:00',
-    end: '2026-07-15T15:00:00',
+    scheduled_start: '2026-07-15T14:00:00',
+    scheduled_end: '2026-07-15T15:00:00',
   }),
   meeting({
     // Deliberately in August: it must never appear while July is on screen.
     id: 'm-august',
     title: 'August Planning',
     status: 'draft',
-    start: '2026-08-05T10:00:00',
-    end: '2026-08-05T11:00:00',
+    scheduled_start: '2026-08-05T10:00:00',
+    scheduled_end: '2026-08-05T11:00:00',
   }),
 ];
 
