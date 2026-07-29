@@ -35,6 +35,30 @@ services:
       timeout: 5s
       retries: 10
 
+  # Identity provider for the P3 authenticated API (ADR-009). Development only:
+  # `start-dev` runs with an in-memory H2 database and no TLS, so nothing here
+  # survives a restart and nothing here belongs in front of real users.
+  #
+  # The realm, client and a test user are imported from keycloak/realm-dev.json so
+  # `docker compose up` gives a working IdP rather than a console to click through.
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    container_name: callosum-keycloak
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "8080:8080"   # Keycloak admin + realm -> http://localhost:8080
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import:ro
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200 OK'"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
 volumes:
   pgdata:
   neo4jdata:
