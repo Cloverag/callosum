@@ -249,13 +249,8 @@ def approve_conflict(
     ).fetchone()
     change_id = change_row["id"]
 
-    # Ensure the (:Chunk) node exists in Neo4j so apply_relationship matches the provenance anchor
-    with driver.session() as session:
-        session.run(
-            "MERGE (c:Chunk {id: $chunk_id, workspace_id: $workspace_id})",
-            chunk_id=chunk_id,
-            workspace_id=str(row["workspace_id"]),
-        )
+    # Ensure the (:Chunk) node exists in Neo4j via store gateway helper
+    store.ensure_chunk_node(driver, chunk_id, str(row["workspace_id"]))
 
     # Immediately approve — this is a human decision, not an LLM proposal.
     store.approve(conn, driver, change_id, reviewer_id)
