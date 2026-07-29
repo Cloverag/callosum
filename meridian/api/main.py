@@ -15,7 +15,8 @@ from starlette.middleware.sessions import SessionMiddleware
 
 # The proof of separation: Meridian depends ON Callosum, as an ordinary import.
 import callosum
-from meridian.api import auth
+from meridian.api import auth, errors
+from meridian.api import resolutions as resolutions_api
 from meridian.api.config import api_settings
 
 app = FastAPI(
@@ -56,6 +57,12 @@ if _settings.oidc_configured():
     app.state.oauth = auth.build_oauth(_settings)
 
 app.include_router(auth.router)
+app.include_router(resolutions_api.router)
+
+# Domain exceptions map to HTTP centrally (P3 §5.3). Registered once here rather than
+# caught in each route, so a new endpoint inherits the right statuses — a 409 for a
+# stale write, a 404 for a row RLS hid — without restating any of them.
+errors.install_exception_handlers(app)
 
 
 @app.get("/health")
