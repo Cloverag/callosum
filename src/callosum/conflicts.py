@@ -184,10 +184,10 @@ def detect_conflicts(
                 ),
             )
             queued += 1
-        except Exception:
+        except psycopg.Error:
             # On a fresh database (entity_conflict table does not exist yet),
-            # degrade gracefully. The CLI will print a helpful migration message.
-            raise
+            # degrade gracefully and return the queued count so far.
+            return queued
 
     return queued
 

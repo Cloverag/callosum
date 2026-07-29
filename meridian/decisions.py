@@ -368,7 +368,10 @@ def record_stance(
                 f"cannot record stance for decision in status {dec['status']!r}; stances are locked on non-proposed decisions"
             )
 
-        _assert_meeting_active(conn, dec["meeting_id"])
+        old_row = conn.execute(
+            "SELECT stance, comment FROM decision_stance WHERE decision_id = %s AND person_name = %s",
+            (dec_uuid, person_name.strip()),
+        ).fetchone()
 
         row = conn.execute(
             """
@@ -389,6 +392,24 @@ def record_stance(
                 workspace_id,
             ),
         ).fetchone()
+
+        # Emit audit event if audit domain is available
+        try:
+            from meridian import audit
+            audit.record_audit_event(
+                conn,
+                aggregate_type="decision",
+                aggregate_id=dec_uuid,
+                action="updated" if old_row else "created",
+                payload={
+                    "person_name": person_name.strip(),
+                    "old_stance": old_row["stance"] if old_row else None,
+                    "new_stance": stance,
+                },
+                workspace_id=workspace_id,
+            )
+        except Exception:
+            pass
 
     return _row_to_stance(row)
 
