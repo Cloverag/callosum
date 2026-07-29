@@ -1,31 +1,47 @@
 import type { BadgeTone } from "@/components/ui/badge";
 
-// Meeting lifecycle from PRD FR-PLAN-01: draft -> scheduled -> in-progress ->
-// review -> completed -> archived.
+/**
+ * `meridian/meetings.py:31-35`. **These are the only five states the domain has.**
+ *
+ * This type previously declared `review` and `archived` — taken from the PRD's prose
+ * lifecycle — and omitted `cancelled`, which the domain does have. Neither phantom
+ * status was reachable: `transition_status` would reject both, so a meeting could
+ * never arrive in one, and the labels and tones for them were styling for a state
+ * that could not occur.
+ *
+ * The missing `cancelled` was the sharper half. Board packs lock on
+ * `{in_progress, completed, cancelled}` and minutes on `{draft, scheduled, cancelled}`;
+ * anything deriving a lock rule from this type would have omitted it and concluded a
+ * cancelled meeting's pack was still editable. `packs.ts` and `minutes.ts` avoided
+ * that by declaring their own lock sets against the backend rather than binding to
+ * this type — a workaround that is no longer needed, though their tests still pin the
+ * values independently, which is the safer place for that assertion to live.
+ *
+ * Closes #47.
+ */
 export type MeetingStatus =
   | "draft"
   | "scheduled"
   | "in_progress"
-  | "review"
   | "completed"
-  | "archived";
+  | "cancelled";
 
 export const MEETING_STATUS_LABEL: Record<MeetingStatus, string> = {
   draft: "Draft",
   scheduled: "Scheduled",
   in_progress: "In progress",
-  review: "Review",
   completed: "Completed",
-  archived: "Archived",
+  cancelled: "Cancelled",
 };
 
 export const MEETING_STATUS_TONE: Record<MeetingStatus, BadgeTone> = {
   draft: "neutral",
   scheduled: "info",
   in_progress: "warning",
-  review: "accent",
   completed: "success",
-  archived: "neutral",
+  // Neutral rather than danger: a cancelled meeting is a closed record, not a
+  // failure, and colouring it as an error would misreport a routine outcome.
+  cancelled: "neutral",
 };
 
 // Tailwind bg-* token classes for the small status dot in calendar cells.
@@ -33,9 +49,8 @@ export const MEETING_STATUS_DOT: Record<MeetingStatus, string> = {
   draft: "bg-muted-foreground",
   scheduled: "bg-info",
   in_progress: "bg-warning",
-  review: "bg-accent",
   completed: "bg-success",
-  archived: "bg-subtle-foreground",
+  cancelled: "bg-subtle-foreground",
 };
 
 export const MEETING_STATUSES = Object.keys(MEETING_STATUS_LABEL) as MeetingStatus[];
