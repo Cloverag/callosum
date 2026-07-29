@@ -28,14 +28,11 @@ from meridian.api.deps import CurrentPrincipal
 
 router = APIRouter(prefix="/api/resolutions", tags=["resolutions"])
 
-ResolutionStatus = Literal["draft", "adopted", "rejected", "superseded"]
-
-
 @router.get("")
 def list_resolutions(
     principal: CurrentPrincipal,
     decision_id: uuid.UUID | None = None,
-    status: ResolutionStatus | None = None,
+    status: str | None = None,
 ) -> list[domain.Resolution]:
     """Resolutions in the caller's workspace, `version_no DESC, created_at DESC`.
 

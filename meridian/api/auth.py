@@ -179,14 +179,12 @@ async def me(request: Request):
     if current is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Not authenticated.")
 
-    res = {
+    return {
         "principal_id": current.principal_id,
         "provider": current.provider,
+        "workspace_id": current.workspace_id,
         "workspace_selected": current.workspace_id is not None,
     }
-    if current.workspace_id:
-        res["workspace_id"] = current.workspace_id
-    return res
 
 
 class WorkspaceSelection(BaseModel):
