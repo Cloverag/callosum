@@ -179,12 +179,14 @@ async def me(request: Request):
     if current is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Not authenticated.")
 
-    return {
+    res = {
         "principal_id": current.principal_id,
         "provider": current.provider,
-        "workspace_id": current.workspace_id,
         "workspace_selected": current.workspace_id is not None,
     }
+    if current.workspace_id:
+        res["workspace_id"] = current.workspace_id
+    return res
 
 
 class WorkspaceSelection(BaseModel):
@@ -218,6 +220,9 @@ async def select_workspace(request: Request, selection: WorkspaceSelection):
     *selection*, and the per-request check stops an authorized selection from
     outliving the membership behind it.
     """
+    import time
+    start_time = time.monotonic()
+
     current = deps.current_session(request)
 
     try:
@@ -228,6 +233,10 @@ async def select_workspace(request: Request, selection: WorkspaceSelection):
             detail={"code": "invalid", "detail": str(exc)},
         ) from exc
     except PrincipalNotFound as exc:
+        # Normalize execution time to mitigate timing-based workspace enumeration probes
+        elapsed = time.monotonic() - start_time
+        if elapsed < 0.05:
+            time.sleep(0.05 - elapsed)
         # Uniform refusal. "Not a member", "membership revoked" and "no such
         # workspace" are one answer — otherwise this endpoint becomes a probe for
         # which workspaces exist.
