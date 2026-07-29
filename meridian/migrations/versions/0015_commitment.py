@@ -150,6 +150,11 @@ def upgrade() -> None:
 
             CONSTRAINT commitment_update_note_not_empty CHECK (length(trim(note)) > 0),
 
+            CONSTRAINT commitment_update_commitment_id_fk
+                FOREIGN KEY (commitment_id)
+                REFERENCES commitment (id)
+                ON DELETE CASCADE,
+
             CONSTRAINT commitment_update_commitment_fk
                 FOREIGN KEY (commitment_id, workspace_id)
                 REFERENCES commitment (id, workspace_id)

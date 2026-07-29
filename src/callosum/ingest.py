@@ -172,7 +172,8 @@ def locate(quote: str, haystack: str) -> tuple[int, int] | None:
     if not tokens:
         return None
 
-    pattern = r"\s+".join(_token_pattern(t) for t in tokens)
+    # Match whitespace reflow within a paragraph, forbidding multi-paragraph/speaker stitching
+    pattern = r"(?:[ \t]+|\n(?!\n))".join(_token_pattern(t) for t in tokens)
     match = re.search(pattern, haystack, flags=re.IGNORECASE)
     return (match.start(), match.end()) if match else None
 
