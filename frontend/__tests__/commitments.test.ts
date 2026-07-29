@@ -9,7 +9,11 @@ import {
   todayLocal,
   type Commitment,
 } from "../src/lib/commitments";
-import { boardMembersApi, nameOf } from "../src/lib/board-members";
+import { nameOf } from "../src/lib/board-members";
+// The directory is a live API client as of CP-C. These tests only need a member
+// list to resolve ids against — that is a cross-module contract assertion, not a
+// client test — so they read the fixture directly rather than stubbing fetch.
+import { BOARD_MEMBER_FIXTURES } from "../test-support/board-members-fixture";
 
 /**
  * Two properties of this contract are easy to get wrong, and both are tested hardest:
@@ -202,10 +206,8 @@ describe("provenance", () => {
   });
 
   it("resolves every owner through the board directory", async () => {
-    const [all, members] = await Promise.all([
-      commitmentsApi.list(),
-      boardMembersApi.list({ include_inactive: true }),
-    ]);
+    const all = await commitmentsApi.list();
+    const members = BOARD_MEMBER_FIXTURES;
     for (const c of all) {
       expect(nameOf(c.owner_board_member_id, members)).not.toBeNull();
     }

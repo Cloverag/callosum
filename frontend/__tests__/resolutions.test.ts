@@ -20,6 +20,7 @@ import {
 import { boardMembersApi, initialsOf, nameOf } from "../src/lib/board-members";
 import { ApiError } from "../src/lib/http";
 import { RESOLUTION_FIXTURES } from "../test-support/resolutions-fixture";
+import { BOARD_MEMBER_FIXTURES } from "../test-support/board-members-fixture";
 
 /**
  * `fetch` is stubbed rather than a backend being started.
@@ -44,6 +45,18 @@ function stubFetch(payload: Resolution[] = RESOLUTION_FIXTURES) {
   global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     calls.push({ url, init });
+
+    // The directory is a real client as of CP-C, so these tests stub it too. `active`
+    // is honoured because the "inactive members still resolve" assertion depends on
+    // the caller asking for all of them.
+    if (url.startsWith("/api/board-members")) {
+      const wanted = new URL(url, "http://localhost").searchParams.get("active");
+      const rows =
+        wanted === "all"
+          ? BOARD_MEMBER_FIXTURES
+          : BOARD_MEMBER_FIXTURES.filter((m) => m.active === (wanted !== "false"));
+      return new Response(JSON.stringify(rows), { status: 200 });
+    }
 
     const single = url.match(/\/api\/resolutions\/([^?]+)$/);
     if (single) {
@@ -237,7 +250,7 @@ describe("voters resolve through the board directory", () => {
     // board_member_id is a real foreign key as of CP5a, unlike
     // decision_stance.person_name which is free text. If a seeded vote cannot be
     // resolved, the two mocks have drifted apart.
-    const members = await boardMembersApi.list({ include_inactive: true });
+    const members = await boardMembersApi.list({ active: "all" });
     const all = await resolutionsApi.list();
     for (const r of all) {
       for (const v of r.votes) {
@@ -254,10 +267,24 @@ describe("voters resolve through the board directory", () => {
   });
 
   it("includes inactive members, because they still cast historic votes", async () => {
+    // `active: "all"` replaces the mock's `include_inactive: true` — a parameter the
+    // domain never had. `list_members` takes a tri-state, and the two-valued flag
+    // silently dropped the departed-only case.
     const active = await boardMembersApi.list();
-    const withInactive = await boardMembersApi.list({ include_inactive: true });
-    expect(withInactive.length).toBeGreaterThan(active.length);
+    const everyone = await boardMembersApi.list({ active: "all" });
+    expect(everyone.length).toBeGreaterThan(active.length);
     expect(active.every((m) => m.active)).toBe(true);
+  });
+
+  it("can ask for departed members only — the case the old flag could not express", async () => {
+    const departed = await boardMembersApi.list({ active: false });
+    expect(departed.length).toBeGreaterThan(0);
+    expect(departed.every((m) => !m.active)).toBe(true);
+  });
+
+  it("defaults to active only, matching the domain default", async () => {
+    await boardMembersApi.list();
+    expect(calls.at(-1)!.url).toBe("/api/board-members?active=true");
   });
 
   it("derives initials from the first and last word", () => {
