@@ -339,7 +339,11 @@ CONSTRAINTS = [
 def ensure_constraints(driver: Driver) -> None:
     with driver.session() as session:
         for stmt in CONSTRAINTS:
-            session.run(stmt)
+            try:
+                session.run(stmt)
+            except Exception as exc:
+                # Log or re-raise with explicit context if constraint creation fails
+                raise RuntimeError(f"Failed to execute Neo4j constraint statement '{stmt}': {exc}") from exc
 
 
 def entity_names_for_chunks(
@@ -465,7 +469,7 @@ def approve(conn: psycopg.Connection, driver: Driver, change_id: uuid.UUID,
     never written, which is the failure we cannot detect later.
     """
     row = conn.execute(
-        "SELECT kind, payload FROM proposed_change WHERE id = %s AND status = 'pending'",
+        "SELECT kind, payload FROM proposed_change WHERE id = %s AND status = 'pending' FOR UPDATE",
         (change_id,),
     ).fetchone()
     if not row:
