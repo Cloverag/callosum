@@ -16,7 +16,11 @@ from starlette.middleware.sessions import SessionMiddleware
 # The proof of separation: Meridian depends ON Callosum, as an ordinary import.
 import callosum
 from meridian.api import auth, errors
+from meridian.api import agenda as agenda_api
 from meridian.api import board_members as board_members_api
+from meridian.api import meetings as meetings_api
+from meridian.api import minutes as minutes_api
+from meridian.api import packs as packs_api
 from meridian.api import resolutions as resolutions_api
 from meridian.api.config import api_settings
 
@@ -60,6 +64,10 @@ if _settings.oidc_configured():
 app.include_router(auth.router)
 app.include_router(resolutions_api.router)
 app.include_router(board_members_api.router)
+app.include_router(agenda_api.router)
+app.include_router(meetings_api.router)
+app.include_router(packs_api.router)
+app.include_router(minutes_api.router)
 
 # Domain exceptions map to HTTP centrally (P3 §5.3). Registered once here rather than
 # caught in each route, so a new endpoint inherits the right statuses — a 409 for a

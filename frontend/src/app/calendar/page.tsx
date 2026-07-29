@@ -21,6 +21,8 @@ import {
   weekDays,
 } from "@/lib/calendar";
 import {
+  scheduledOnly,
+  type ScheduledMeeting,
   meetingsApi,
   MEETING_STATUSES,
   MEETING_STATUS_DOT,
@@ -87,9 +89,14 @@ export default function CalendarPage() {
   }, [meetings, query, statuses]);
 
   const byDay = useMemo(() => {
-    const map = new Map<string, Meeting[]>();
-    for (const m of filtered) {
-      const k = dayKey(new Date(m.start));
+    // Only meetings with a window can be placed on a calendar. A `draft` has none
+    // until it is scheduled, and `scheduledOnly` narrows the type so the compiler —
+    // rather than a runtime Invalid Date — is what stops anyone reading the field
+    // without checking. Undated meetings still appear on the Meetings list, where
+    // they belong; they simply have no cell to sit in here.
+    const map = new Map<string, ScheduledMeeting[]>();
+    for (const m of scheduledOnly(filtered)) {
+      const k = dayKey(new Date(m.scheduled_start));
       const list = map.get(k);
       if (list) list.push(m);
       else map.set(k, [m]);

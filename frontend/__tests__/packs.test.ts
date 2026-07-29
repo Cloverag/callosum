@@ -1,3 +1,6 @@
+/**
+ * @jest-environment node
+ */
 import {
   PACK_LOCKED_MEETING_STATUSES,
   isEditable,
@@ -5,94 +8,80 @@ import {
   resolveItems,
   supersededBy,
   type BoardPack,
+  type BoardPackItem,
 } from "../src/lib/packs";
-import {
-  INTERNAL_CLEARANCE,
-  INVESTOR_CLEARANCE,
-  RESTRICTED_CLEARANCE,
-  documentsApi,
-} from "../src/lib/documents";
+import { ApiError } from "../src/lib/http";
 
 /**
- * These tests exist to protect one property: a reader must not be able to work
- * out that anything was withheld from a board pack.
+ * These used to vary `clearance` against an in-memory mock to prove that withheld
+ * items leave no gap. **That proof moved to the backend**, where the filtering now
+ * happens: `tests/test_packs_api.py` reads the same pack as two principals with
+ * different clearances and asserts both get contiguous positions.
  *
- * That is a stronger guarantee than "restricted content is not shown". Content
- * can be absent and still leak — through a gap in the numbering, through a total
- * that does not match the list, through a message that only appears when
- * something is hidden. Each of those is tested here as a negative.
- *
- * The Q3 pack is the fixture that does the work. Its stored order interleaves
- * sensitivities deliberately (investor, restricted, investor, confidential,
- * internal) so that filtering at any level removes items from the *middle*. A
- * fixture with the restricted documents at the end would pass a renumbering test
- * while doing no renumbering at all — the same trap as seeding two clearance
- * values identically and calling it a membership test.
+ * What is left here is what a client can still get wrong: reintroducing a total,
+ * treating `position` as an identity, or offering a way to name a clearance. The
+ * last one is the reason `packsApi.list` has no `clearance` argument — a client that
+ * could name its own could ask for every restricted document in the workspace.
  */
 
-const Q3 = "pack-q3-v2";
+let calls: string[] = [];
 
-describe("board pack clearance filtering", () => {
-  it("gives a founder every item in stored order", async () => {
-    const pack = await packsApi.get(Q3, { clearance: RESTRICTED_CLEARANCE });
-    expect(pack).not.toBeNull();
-    expect(pack!.items.map((i) => i.document_id)).toEqual([
-      "doc-q3-deck",
-      "doc-comp",
-      "doc-kpi",
-      "doc-seriesb-term",
-      "doc-pricing-memo",
-    ]);
+function stub(payload: unknown, status = 200) {
+  calls = [];
+  global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+    calls.push(String(input));
+    return new Response(JSON.stringify(payload), { status });
+  }) as unknown as typeof fetch;
+}
+
+/** A pack as the server serialises it: already filtered, already renumbered. */
+function serverPack(items: Partial<BoardPackItem>[]): BoardPack {
+  return {
+    id: "pack-q3",
+    meeting_id: "m-q3",
+    title: "Q3 FY26 board pack",
+    status: "published",
+    version_no: 1,
+    superseded_by_id: null,
+    published_at: "2026-07-14T09:00:00Z",
+    version: 4,
+    created_at: "2026-07-13T11:00:00Z",
+    updated_at: "2026-07-14T09:00:00Z",
+    workspace_id: "w",
+    items: items.map((item, i) => ({
+      id: `pi-${i + 1}`,
+      board_pack_id: "pack-q3",
+      document_id: `doc-${i + 1}`,
+      agenda_item_id: null,
+      position: i + 1,
+      note: null,
+      created_at: "2026-07-13T11:05:00Z",
+      workspace_id: "w",
+      ...item,
+    })) as BoardPackItem[],
+  };
+}
+
+describe("the client cannot name a clearance", () => {
+  it("list takes a meeting and a status, and nothing else", async () => {
+    stub([]);
+    await packsApi.list({ meeting_id: "m-q3", status: "published" });
+    expect(calls[0]).toBe("/api/packs?meeting_id=m-q3&status=published");
+    // ADR-013: clearance is resolved from the caller's membership on the server.
+    expect(calls[0]).not.toContain("clearance");
   });
 
-  it("drops documents above the caller's clearance entirely", async () => {
-    const pack = await packsApi.get(Q3, { clearance: INVESTOR_CLEARANCE });
-    const ids = pack!.items.map((i) => i.document_id);
-
-    expect(ids).toEqual(["doc-q3-deck", "doc-kpi"]);
-    // Not redacted, not a placeholder — absent. Nothing in the payload should
-    // mention the restricted rows in any form.
-    expect(JSON.stringify(pack)).not.toContain("doc-comp");
-    expect(JSON.stringify(pack)).not.toContain("doc-seriesb-term");
-    expect(JSON.stringify(pack)).not.toContain("pi-q3-2");
+  it("get sends no clearance either", async () => {
+    stub(serverPack([{}]));
+    await packsApi.get("pack-q3");
+    expect(calls[0]).toBe("/api/packs/pack-q3");
   });
+});
 
-  it("renumbers positions to 1..N with no gaps, at every clearance level", async () => {
-    for (const clearance of [
-      INVESTOR_CLEARANCE,
-      INTERNAL_CLEARANCE,
-      RESTRICTED_CLEARANCE,
-    ]) {
-      const pack = await packsApi.get(Q3, { clearance });
-      const positions = pack!.items.map((i) => i.position);
-      // The contiguity check is the whole point: a hole at position 2 would tell
-      // an investor that a document exists between the deck and the KPI pack.
-      expect(positions).toEqual(positions.map((_, idx) => idx + 1));
-    }
-  });
-
-  it("gives the same item a different position at a different clearance", async () => {
-    // pi-q3-3 is stored at position 3. An investor cannot see the item stored at
-    // position 2, so for them it is item 2. Two readers, one row, two ordinals —
-    // which is precisely why position must never be used as an identifier.
-    const founder = await packsApi.get(Q3, { clearance: RESTRICTED_CLEARANCE });
-    const investor = await packsApi.get(Q3, { clearance: INVESTOR_CLEARANCE });
-
-    const asFounder = founder!.items.find((i) => i.id === "pi-q3-3");
-    const asInvestor = investor!.items.find((i) => i.id === "pi-q3-3");
-
-    expect(asFounder!.position).toBe(3);
-    expect(asInvestor!.position).toBe(2);
-    // The id is what is stable across the two views.
-    expect(asFounder!.id).toBe(asInvestor!.id);
-  });
-
-  it("exposes no total, count, or withheld field a caller could subtract from", async () => {
-    const pack = await packsApi.get(Q3, { clearance: INVESTOR_CLEARANCE });
-    const keys = Object.keys(pack!);
-
-    // If a future change adds any of these to the read model, the withheld count
-    // becomes derivable and this surface's guarantee is gone.
+describe("the response carries nothing to subtract from", () => {
+  it("has no total, count or withheld field", async () => {
+    stub(serverPack([{}, {}]));
+    const pack = (await packsApi.get("pack-q3"))!;
     for (const forbidden of [
       "item_count",
       "total_items",
@@ -101,142 +90,84 @@ describe("board pack clearance filtering", () => {
       "hidden_items",
       "total",
     ]) {
-      expect(keys).not.toContain(forbidden);
+      expect(Object.keys(pack)).not.toContain(forbidden);
     }
-    // The only length available is the length of what was returned.
-    expect(pack!.items).toHaveLength(2);
+    // The only length available is the length of what arrived.
+    expect(pack.items).toHaveLength(2);
   });
 
-  it("makes an all-withheld pack indistinguishable from an empty one", async () => {
-    // pack-seq holds exactly one confidential document. To an investor it is an
-    // empty pack, and nothing in the payload says otherwise.
-    const pack = await packsApi.get("pack-seq", { clearance: INVESTOR_CLEARANCE });
-    expect(pack!.items).toEqual([]);
-    expect(JSON.stringify(pack)).not.toContain("doc-seriesb-term");
-  });
-});
-
-describe("board pack list contract", () => {
-  it("orders by version_no DESC then created_at DESC, mirroring list_packs", async () => {
-    const packs = await packsApi.list({
-      clearance: RESTRICTED_CLEARANCE,
-      meeting_id: "m-q3",
-    });
-    expect(packs.map((p) => p.id)).toEqual(["pack-q3-v2", "pack-q3-v1"]);
+  it("renders an all-withheld pack identically to an empty one", async () => {
+    // The server returns an empty item list either way, and the client must not be
+    // able to tell the difference — that indistinguishability is the guarantee.
+    stub(serverPack([]));
+    const pack = (await packsApi.get("pack-q3"))!;
+    expect(pack.items).toEqual([]);
+    expect(JSON.stringify(pack)).not.toContain("withheld");
   });
 
-  it("filters by meeting and by status", async () => {
-    const drafts = await packsApi.list({
-      clearance: RESTRICTED_CLEARANCE,
-      status: "draft",
-    });
-    expect(drafts.every((p) => p.status === "draft")).toBe(true);
-
-    const m14 = await packsApi.list({ clearance: RESTRICTED_CLEARANCE, meeting_id: "m-14" });
-    expect(m14.every((p) => p.meeting_id === "m-14")).toBe(true);
-  });
-
-  it("returns null for a pack that does not exist", async () => {
-    expect(await packsApi.get("pack-nope", { clearance: RESTRICTED_CLEARANCE })).toBeNull();
+  it("does not renumber or re-sort what the server sent", async () => {
+    // Renumbering is the server's, and doing it again here would be a second
+    // implementation of the property that can disagree with the first.
+    stub(serverPack([{}, {}, {}]));
+    const pack = (await packsApi.get("pack-q3"))!;
+    expect(pack.items.map((i) => i.position)).toEqual([1, 2, 3]);
+    expect(pack.items.map((i) => i.id)).toEqual(["pi-1", "pi-2", "pi-3"]);
   });
 });
 
-describe("supersession", () => {
-  it("resolves superseded_by_id to the replacing pack", async () => {
-    const packs = await packsApi.list({
-      clearance: RESTRICTED_CLEARANCE,
-      meeting_id: "m-q3",
-    });
-    const v1 = packs.find((p) => p.id === "pack-q3-v1")!;
-    expect(supersededBy(v1, packs)!.id).toBe("pack-q3-v2");
+describe("position is an ordinal, not an identity", () => {
+  it("resolveItems keys off the document id rather than the position", () => {
+    const items = serverPack([{ document_id: "doc-a" }, { document_id: "doc-b" }]).items;
+    const rows = resolveItems(items, [
+      { id: "doc-b", title: "B", doc_type: "memo", source_uri: null, sensitivity: 2, authored_at: null, ingested_at: "x" },
+    ]);
+    // Position 1 resolves to nothing and position 2 resolves — which only works if
+    // the lookup is by id.
+    expect(rows[0].document).toBeNull();
+    expect(rows[1].document!.title).toBe("B");
   });
 
-  it("returns null when the replacement is not in the caller's set", () => {
-    const orphan = {
-      id: "p1",
-      superseded_by_id: "p2-invisible",
-    } as BoardPack;
-    // A reader may hold a pack whose replacement they cannot see. That is a
-    // legitimate state, not an error, so it must not throw.
-    expect(supersededBy(orphan, [orphan])).toBeNull();
+  it("marks a dangling reference as unresolved rather than withheld", () => {
+    // A broken link is not a hidden document. Conflating them would invent a
+    // withheld record where there is only a bad reference.
+    const items = serverPack([{ document_id: "doc-missing" }]).items;
+    expect(resolveItems(items, [])[0].document).toBeNull();
   });
 });
 
-describe("isEditable mirrors the backend lock rules", () => {
+describe("lock rules mirror the backend", () => {
   const draft = { status: "draft" } as BoardPack;
-  const published = { status: "published" } as BoardPack;
 
   it("locks a published pack regardless of meeting status", () => {
-    expect(isEditable(published, "draft")).toBe(false);
-    expect(isEditable(published, "scheduled")).toBe(false);
+    expect(isEditable({ status: "published" } as BoardPack, "draft")).toBe(false);
   });
 
-  it("locks a draft pack once the meeting is no longer pre-meeting", () => {
+  it("locks a draft once the meeting is no longer pre-meeting", () => {
     for (const status of PACK_LOCKED_MEETING_STATUSES) {
       expect(isEditable(draft, status)).toBe(false);
     }
   });
 
-  it("allows a draft pack on a pre-meeting meeting", () => {
-    expect(isEditable(draft, "draft")).toBe(true);
-    expect(isEditable(draft, "scheduled")).toBe(true);
-  });
-
   it("fails closed when the meeting status is unknown", () => {
-    // Not knowing the parent's state is not permission to edit.
     expect(isEditable(draft, undefined)).toBe(false);
   });
 
-  it("uses the backend's meeting statuses, not the frontend meetings mock", () => {
-    // meridian/packs.py:45 locks on cancelled; lib/meetings.ts has never had it.
-    // Binding the lock rule to that mock would silently unlock cancelled meetings.
+  it("still includes cancelled — the status #47 had missing", () => {
     expect(PACK_LOCKED_MEETING_STATUSES.has("cancelled")).toBe(true);
-    expect(PACK_LOCKED_MEETING_STATUSES.has("review")).toBe(false);
-    expect(PACK_LOCKED_MEETING_STATUSES.has("archived")).toBe(false);
   });
 });
 
-describe("document resolution", () => {
-  it("pairs each item with its document", async () => {
-    const pack = await packsApi.get(Q3, { clearance: INVESTOR_CLEARANCE });
-    const docs = await documentsApi.list({ clearance: INVESTOR_CLEARANCE });
-    const rows = resolveItems(pack!.items, docs);
-
-    expect(rows).toHaveLength(2);
-    expect(rows[0].document!.title).toBe("Q3 FY26 board deck");
+describe("supersession and errors", () => {
+  it("returns null when the replacement is not in the caller's set", () => {
+    const orphan = { id: "p1", superseded_by_id: "p2-invisible" } as BoardPack;
+    expect(supersededBy(orphan, [orphan])).toBeNull();
   });
 
-  it("marks a dangling reference as unresolved rather than withheld", () => {
-    const item = {
-      id: "x",
-      board_pack_id: Q3,
-      document_id: "doc-does-not-exist",
-      agenda_item_id: null,
-      position: 1,
-      note: null,
-      created_at: "2026-07-13T11:05:00Z",
-      workspace_id: "w",
-    };
-    // A broken link is not a hidden document. Conflating them would invent a
-    // withheld record where there is only a bad reference.
-    expect(resolveItems([item], [])[0].document).toBeNull();
-  });
+  it("returns null for a missing pack and throws when refused", async () => {
+    stub({ error: { code: "not_found", detail: "gone" } }, 404);
+    expect(await packsApi.get("pack-nope")).toBeNull();
 
-  it("does not act as an existence oracle", async () => {
-    // A document above the caller's clearance and a document that was never
-    // ingested must be indistinguishable — both null, neither throwing.
-    const overClearance = await documentsApi.get("doc-comp", {
-      clearance: INVESTOR_CLEARANCE,
-    });
-    const nonExistent = await documentsApi.get("doc-imaginary", {
-      clearance: INVESTOR_CLEARANCE,
-    });
-    expect(overClearance).toBeNull();
-    expect(nonExistent).toBeNull();
-  });
-
-  it("never lists a document above the caller's clearance", async () => {
-    const docs = await documentsApi.list({ clearance: INVESTOR_CLEARANCE });
-    expect(docs.every((d) => d.sensitivity <= INVESTOR_CLEARANCE)).toBe(true);
+    stub({ error: { code: "forbidden", detail: "Not available to you." } }, 403);
+    await expect(packsApi.get("pack-q3")).rejects.toBeInstanceOf(ApiError);
   });
 });

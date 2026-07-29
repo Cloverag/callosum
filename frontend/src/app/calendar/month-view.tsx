@@ -1,7 +1,7 @@
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { WEEKDAYS, monthGrid, isSameMonth, isToday, dayKey, formatDayFull } from "@/lib/calendar";
-import type { Meeting } from "@/lib/meetings";
+import type { ScheduledMeeting } from "@/lib/meetings";
 import { MeetingChip } from "./meeting-chip";
 import { useDayGridKeys } from "./use-day-keys";
 
@@ -14,9 +14,9 @@ export function MonthView({
   onActivate,
 }: {
   cursor: Date;
-  byDay: Map<string, Meeting[]>;
+  byDay: Map<string, ScheduledMeeting[]>;
   active: Date;
-  onSelect: (m: Meeting) => void;
+  onSelect: (m: ScheduledMeeting) => void;
   onNavigate: (next: Date) => void;
   onActivate: (day: Date) => void;
 }) {

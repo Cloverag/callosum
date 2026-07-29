@@ -21,7 +21,7 @@ requirements.
 | Track | Completed | Active | Remaining |
 |---|---:|---|---:|
 | Research engine | **14 / 14** accepted (`R0`–`R13`) | — research track CLOSED 2026-07-18, baseline frozen at `6ed5ed5` | 0 |
-| Meridian product | **3 / 13** accepted (`P0`, `P1`, `P2`) | **P3 next** (authenticated API + app shell) | **10** (`P3`–`P12`) |
+| Meridian product | **3 / 13** accepted (`P0`, `P1`, `P2`) | **P3 in progress** — CP-A + CP-B done, CP-C 6/7 | **10** (`P3`–`P12`) |
 
 The counts must not be combined into one percentage: the research track validates the
 memory engine; the product track makes it a deployable board operating system. The CLI
@@ -331,7 +331,36 @@ publication/version semantics, ownership, and retries.
 **Exit:** migration/recovery plan is tested; invalid transitions and cross-workspace access
 are rejected; superseded/published records preserve immutable history.
 
-## P3 — Authenticated API and accessible application shell
+## P3 — Authenticated API and accessible application shell — 🟩 IN PROGRESS
+
+### Checkpoint status (2026-07-29)
+
+Design in [docs/proposals/2026-07-29-p3-implementation-roadmap.md](./docs/proposals/2026-07-29-p3-implementation-roadmap.md);
+decisions in ADR-009 – ADR-014.
+
+| CP | Scope | Status |
+|---|---|---|
+| §5 | work needing no decision | ✅ tenancy guard · id lookup · error taxonomy · `decisions.ts` fix · `/commitments` |
+| CP-A | identity + session | ✅ `principal_identity` · subject resolution · OIDC/Keycloak · workspace selection · OpenAPI guard |
+| CP-B | first vertical slice | ✅ `/api/resolutions` + real client, mock deleted |
+| CP-C | remaining mechanical reads | 🟩 **6 / 7** — `board_members` `agenda` `meetings` `packs` `minutes` done; **`decisions` remains** |
+| CP-D | writes + 409 concurrency | ⬜ |
+| CP-E | the four orphan mocks | ⬜ `documents` `insights` `graph` `assistant` |
+| CP-F | states, rate limits, observability | ⬜ |
+| CP-G | accessibility | ⬜ |
+| CP-H | P3 exit gate | ⬜ |
+
+**Every mock swap so far has found a contract defect** — five swaps, five defects:
+nothing enforced the TS↔Python correspondence at all; `include_inactive` was invented
+*and* lossy; three phantom `Meeting` fields (`agenda`, `objectives`, `sensitivity`);
+a nullable scheduling window declared as required; and `clearance` accepted as a
+*client* argument on packs. Each is now pinned by a cross-language test that reads the
+TypeScript and compares it to the Python.
+
+**Open decisions:** D7 (who may read the audit trail) gates only the `audit` endpoint.
+The CP-E orphans need a call each — `graph` and `assistant` recommended for deferral to
+P6, `insights` for a tile-by-tile derive-or-delete audit.
+
 
 **Goal:** Provide a secure founder-facing interface over approved core functions.
 

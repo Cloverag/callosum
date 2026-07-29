@@ -1,4 +1,5 @@
 import type { BadgeTone } from "@/components/ui/badge";
+import { apiGet, apiGetOrNull } from "@/lib/http";
 
 /**
  * Meeting minutes — the record of what a meeting actually resolved.
@@ -136,129 +137,28 @@ export function current(all: Minutes[], meetingId: string): Minutes | null {
   return forMeeting.reduce((best, m) => (m.version_no > best.version_no ? m : best));
 }
 
-// --- Mock store ------------------------------------------------------------
-
-const WS = "00000000-0000-0000-0000-000000000001";
+// --- API client ------------------------------------------------------------
 
 /**
- * Demo minutes for the fictional Meridian board.
+ * Meridian minutes API. Live as of CP-C; the in-memory mock is gone.
  *
- * Scenario data, in the same category as the meetings, decisions and packs mocks
- * — a fictional company's paperwork, not a claim about anything Callosum
- * measured. The set is shaped to exercise every state the domain reaches: a
- * finalised record, a supersession pair, and a live draft.
+ * **`meeting_id` is required and the `status` filter is gone**, because
+ * `list_minutes` requires one and has never had the other. The mock made the meeting
+ * optional and invented a status filter — the same defect as inventing a field:
+ * offering a capability the backend cannot honour. Status is still filtered on this
+ * surface, in the browser, over minutes already returned; that is presentation rather
+ * than a query, and it is not a security filter of any kind.
  *
- * Bodies are deliberately plain prose. `minutes.body` is unstructured TEXT with
- * no schema behind it, so rendering anything richer than paragraphs would be
- * inventing a format the backend has never promised.
- */
-const mockMinutes: Minutes[] = [
-  {
-    id: "min-m14-v1",
-    meeting_id: "m-14",
-    body: [
-      "The board reviewed the FY27 runway scenarios and adopted the middle case as the planning assumption.",
-      "",
-      "A six-person engineering hire was approved against the FY27 plan. A proposal to open a second office in Berlin was rejected on runway grounds; the board asked for it to be revisited only after the Series B closes.",
-      "",
-      "Pricing Model B was discussed at length and rejected for FY27. Marcus Webb's dissent was recorded.",
-    ].join("\n"),
-    status: "final",
-    version_no: 1,
-    superseded_by_id: null,
-    finalised_at: "2026-07-09T17:30:00Z",
-    version: 3,
-    created_at: "2026-07-09T15:05:00Z",
-    updated_at: "2026-07-09T17:30:00Z",
-    workspace_id: WS,
-  },
-  {
-    id: "min-q3-v1",
-    meeting_id: "m-q3",
-    body: [
-      "The board reviewed the Q3 FY26 results against the KPI pack.",
-      "",
-      "The FY27 forecast revision was deferred pending the Q4 audit numbers; Priya Nair will bring a revised forecast to the next cycle.",
-      "",
-      "Series B final terms remain open. The preference stack is to be modelled before a vote is taken.",
-    ].join("\n"),
-    status: "final",
-    version_no: 1,
-    superseded_by_id: "min-q3-v2",
-    finalised_at: "2026-07-21T16:00:00Z",
-    version: 4,
-    created_at: "2026-07-21T14:10:00Z",
-    updated_at: "2026-07-22T10:15:00Z",
-    workspace_id: WS,
-  },
-  {
-    id: "min-q3-v2",
-    meeting_id: "m-q3",
-    body: [
-      "The board reviewed the Q3 FY26 results against the KPI pack.",
-      "",
-      "The FY27 forecast revision was deferred pending the Q4 audit numbers; Priya Nair will bring a revised forecast to the next cycle.",
-      "",
-      "Series B final terms remain open. The preference stack is to be modelled before a vote is taken.",
-      "",
-      "Correction, recorded 22 July: the decision to adopt usage-based pricing was taken at this session and was omitted from the first record. Raj Malhotra confirmed the reversal of the FY27 position; Priya Nair asked that the migration plan be minuted.",
-    ].join("\n"),
-    status: "draft",
-    version_no: 2,
-    superseded_by_id: null,
-    finalised_at: null,
-    version: 2,
-    created_at: "2026-07-22T10:15:00Z",
-    updated_at: "2026-07-22T10:40:00Z",
-    workspace_id: WS,
-  },
-  {
-    id: "min-seq-v1",
-    meeting_id: "m-seq",
-    body: [
-      "Sequoia confirmed they will lead the Series B at the proposed valuation.",
-      "",
-      "Terms are not yet final. The board took no vote on liquidation preference or board composition at this session.",
-    ].join("\n"),
-    status: "draft",
-    version_no: 1,
-    superseded_by_id: null,
-    finalised_at: null,
-    version: 1,
-    created_at: "2026-07-19T11:30:00Z",
-    updated_at: "2026-07-19T11:30:00Z",
-    workspace_id: WS,
-  },
-];
-
-const clone = (m: Minutes): Minutes => structuredClone(m);
-const delay = (ms = 400) => new Promise((r) => setTimeout(r, ms));
-
-/**
- * Mocked Meridian minutes API.
- *
- * Method names and arguments follow `meridian/minutes.py` so the P3 swap is
- * mechanical. There is no `clearance` argument, because the Python has none.
- *
- * Ordering matches `list_minutes`: `version_no DESC, created_at DESC`.
+ * Still no `clearance` argument, because the domain has none. See the note at the top
+ * of this file and issue #49.
  */
 export const minutesApi = {
-  async list(opts?: { meeting_id?: string; status?: MinutesStatus }): Promise<Minutes[]> {
-    await delay();
-    return mockMinutes
-      .filter((m) => (opts?.meeting_id ? m.meeting_id === opts.meeting_id : true))
-      .filter((m) => (opts?.status ? m.status === opts.status : true))
-      .slice()
-      .sort(
-        (a, b) =>
-          b.version_no - a.version_no || b.created_at.localeCompare(a.created_at),
-      )
-      .map(clone);
+  /** Every version for a meeting, newest first — the correction trail included. */
+  async list(opts: { meeting_id: string }): Promise<Minutes[]> {
+    return apiGet<Minutes[]>("/minutes", { meeting_id: opts.meeting_id });
   },
 
   async get(id: string): Promise<Minutes | null> {
-    await delay(200);
-    const m = mockMinutes.find((x) => x.id === id);
-    return m ? clone(m) : null;
+    return apiGetOrNull<Minutes>(`/minutes/${encodeURIComponent(id)}`);
   },
 };

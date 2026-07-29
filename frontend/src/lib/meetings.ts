@@ -1,4 +1,5 @@
 import type { BadgeTone } from "@/components/ui/badge";
+import { apiGet, apiGetOrNull } from "@/lib/http";
 
 /**
  * `meridian/meetings.py:31-35`. **These are the only five states the domain has.**
@@ -55,142 +56,81 @@ export const MEETING_STATUS_DOT: Record<MeetingStatus, string> = {
 
 export const MEETING_STATUSES = Object.keys(MEETING_STATUS_LABEL) as MeetingStatus[];
 
-export type AgendaItem = {
-  id: string;
-  title: string;
-  order: number;
-  timeboxMins: number;
-  presenter?: string;
-};
-
+/**
+ * Mirrors `meridian/meetings.py`. **Three fields the mock carried are gone**, because
+ * the domain has never had them: `objectives`, `sensitivity`, and `agenda`.
+ *
+ * `agenda` was the consequential one — agenda items are their own aggregate (CP2),
+ * and embedding them here let two surfaces render an agenda with nothing to fetch it
+ * from. They now use `lib/agenda.ts`.
+ *
+ * `sensitivity` is not merely missing, it is wrong in principle: clearance is a
+ * property of a membership, not of a meeting. A "Clearance Level N" stat on a meeting
+ * asserted something this system does not model.
+ */
 export type Meeting = {
   id: string;
   title: string;
   status: MeetingStatus;
-  start: string; // ISO datetime
-  end: string; // ISO datetime
-  location?: string;
-  objectives?: string;
-  sensitivity: number; // 1..5 clearance ladder
-  agenda: AgendaItem[];
+  /**
+   * ISO, or **null** — a `draft` meeting has no window until it is scheduled.
+   * The mock declared these as required `start`/`end`; the domain calls them
+   * `scheduled_start`/`scheduled_end` and allows both to be absent, so anything
+   * doing `new Date(m.start)` on a draft was building an Invalid Date.
+   */
+  scheduled_start: string | null;
+  scheduled_end: string | null;
+  location: string | null;
+  workspace_id: string;
+  /** Optimistic-concurrency counter. */
+  version: number;
+  created_by: string | null;
+  created_at: string; // ISO
+  updated_at: string; // ISO
 };
 
 // In-memory mock store, dated around the current demo month (July 2026).
-const mockMeetings: Meeting[] = [
-  {
-    id: "m-14",
-    title: "Board Meeting #14",
-    status: "completed",
-    start: "2026-07-09T10:00:00",
-    end: "2026-07-09T11:30:00",
-    location: "Zoom",
-    objectives: "Q2 review, pricing model, hiring plan.",
-    sensitivity: 2,
-    agenda: [
-      { id: "a1", title: "Q2 metrics review", order: 1, timeboxMins: 20, presenter: "Raj Malhotra" },
-      { id: "a2", title: "Pricing model discussion", order: 2, timeboxMins: 25, presenter: "Priya Nair" },
-      { id: "a3", title: "Hiring plan sign-off", order: 3, timeboxMins: 15 },
-    ],
-  },
-  {
-    id: "m-prod",
-    title: "Product Review",
-    status: "completed",
-    start: "2026-07-15T11:00:00",
-    end: "2026-07-15T12:00:00",
-    location: "HQ — Room A",
-    sensitivity: 1,
-    agenda: [],
-  },
-  {
-    id: "m-q3",
-    title: "Q3 Board Meeting",
-    status: "in_progress",
-    start: "2026-07-21T09:00:00",
-    end: "2026-07-21T11:00:00",
-    location: "Zoom",
-    objectives: "Q3 board pack, Series B terms, runway.",
-    sensitivity: 3,
-    agenda: [
-      { id: "b1", title: "CEO update", order: 1, timeboxMins: 15, presenter: "Raj Malhotra" },
-      { id: "b2", title: "Financials & runway", order: 2, timeboxMins: 20, presenter: "Priya Nair" },
-      { id: "b3", title: "Series B terms", order: 3, timeboxMins: 30 },
-    ],
-  },
-  {
-    id: "m-comp",
-    title: "Comp Committee Sync",
-    status: "scheduled",
-    start: "2026-07-21T14:00:00",
-    end: "2026-07-21T15:00:00",
-    location: "Google Meet",
-    sensitivity: 4,
-    agenda: [],
-  },
-  {
-    id: "m-seq",
-    title: "Investor Update — Sequoia",
-    status: "scheduled",
-    start: "2026-07-23T10:00:00",
-    end: "2026-07-23T10:45:00",
-    location: "Zoom",
-    sensitivity: 3,
-    agenda: [],
-  },
-  {
-    id: "m-terms",
-    title: "Series B Terms Review",
-    status: "draft",
-    start: "2026-07-28T16:00:00",
-    end: "2026-07-28T17:00:00",
-    sensitivity: 4,
-    agenda: [],
-  },
-  {
-    id: "m-aug",
-    title: "Monthly Board Sync",
-    status: "scheduled",
-    start: "2026-08-04T10:00:00",
-    end: "2026-08-04T11:00:00",
-    location: "Zoom",
-    sensitivity: 2,
-    agenda: [],
-  },
-];
 
-const clone = (m: Meeting): Meeting => structuredClone(m);
-const delay = (ms = 400) => new Promise((r) => setTimeout(r, ms));
+// --- Derived helpers -------------------------------------------------------
 
-export type MeetingInput = Omit<Meeting, "id" | "agenda"> & { agenda?: AgendaItem[] };
+/** A meeting with a concrete window — the only kind a calendar can place. */
+export type ScheduledMeeting = Meeting & {
+  scheduled_start: string;
+  scheduled_end: string;
+};
 
-/** Mocked Meridian meetings API. Simulates network latency; sorted by start time. */
+/**
+ * Narrows to meetings that have a window.
+ *
+ * A `draft` has none, and the calendar cannot render a date it does not have. This is
+ * a type guard rather than a filter helper so the compiler stops anyone reading
+ * `scheduled_start` without asking first — which is exactly what the old required
+ * `start` field let them do.
+ */
+export function isScheduled(m: Meeting): m is ScheduledMeeting {
+  return m.scheduled_start !== null && m.scheduled_end !== null;
+}
+
+/** Only the meetings a calendar can place, in the server's order. */
+export function scheduledOnly(meetings: Meeting[]): ScheduledMeeting[] {
+  return meetings.filter(isScheduled);
+}
+
+// --- API client ------------------------------------------------------------
+
+/**
+ * Meridian meetings API. Live as of CP-C; the in-memory mock is gone.
+ *
+ * `list` returns undated drafts too. Hiding them here would make the meetings list
+ * disagree with the database to suit the calendar — the calendar narrows with
+ * `scheduledOnly()` instead, at the point where the constraint actually applies.
+ */
 export const meetingsApi = {
-  async list(): Promise<Meeting[]> {
-    await delay();
-    return mockMeetings
-      .slice()
-      .sort((a, b) => a.start.localeCompare(b.start))
-      .map(clone);
+  async list(opts?: { status?: MeetingStatus }): Promise<Meeting[]> {
+    return apiGet<Meeting[]>("/meetings", { status: opts?.status });
   },
 
   async get(id: string): Promise<Meeting | null> {
-    await delay(200);
-    const m = mockMeetings.find((x) => x.id === id);
-    return m ? clone(m) : null;
-  },
-
-  async create(input: MeetingInput): Promise<Meeting> {
-    await delay();
-    const meeting: Meeting = { id: `m-${crypto.randomUUID().slice(0, 8)}`, agenda: [], ...input };
-    mockMeetings.push(meeting);
-    return clone(meeting);
-  },
-
-  async update(id: string, patch: Partial<MeetingInput>): Promise<Meeting> {
-    await delay();
-    const m = mockMeetings.find((x) => x.id === id);
-    if (!m) throw new Error("Meeting not found");
-    Object.assign(m, patch);
-    return clone(m);
+    return apiGetOrNull<Meeting>(`/meetings/${encodeURIComponent(id)}`);
   },
 };

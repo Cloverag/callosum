@@ -10,6 +10,7 @@ import {
   MEETING_STATUS_DOT,
   MEETING_STATUS_LABEL,
   type Meeting,
+  scheduledOnly,
 } from "@/lib/meetings";
 import { apiClient, type EntityConflict } from "@/lib/api";
 import { insightsApi, type DashboardInsights } from "@/lib/insights";
@@ -42,7 +43,8 @@ export default function DashboardPage() {
 
   const upcoming = useMemo(() => {
     const now = startOfDay(new Date());
-    return (meetings ?? []).filter((m) => new Date(m.start) >= now);
+    // Unscheduled meetings have no date to compare, so they are not 'upcoming'.
+    return scheduledOnly(meetings ?? []).filter((m) => new Date(m.scheduled_start) >= now);
   }, [meetings]);
 
   const nextMeeting = upcoming[0] ?? null;
@@ -71,8 +73,8 @@ export default function DashboardPage() {
     if (!meetings || !conflicts || !insights) return null;
     const weekStart = startOfWeek(new Date());
     const weekEnd = addDays(weekStart, 7);
-    const thisWeek = meetings.filter((m) => {
-      const start = new Date(m.start);
+    const thisWeek = scheduledOnly(meetings).filter((m) => {
+      const start = new Date(m.scheduled_start);
       return start >= weekStart && start < weekEnd;
     }).length;
 
