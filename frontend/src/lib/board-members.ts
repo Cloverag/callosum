@@ -1,4 +1,5 @@
 import type { BadgeTone } from "@/components/ui/badge";
+import { apiGet, apiGetOrNull } from "@/lib/http";
 
 /**
  * The board directory — who participates, in what capacity.
@@ -96,129 +97,39 @@ export function initialsOf(fullName: string): string {
   return (first + last).toUpperCase();
 }
 
-// --- Mock store ------------------------------------------------------------
-
-const WS = "00000000-0000-0000-0000-000000000001";
+// --- API client ------------------------------------------------------------
 
 /**
- * The fictional Meridian board.
+ * Meridian board-directory API.
  *
- * Names match the directors quoted in `decisions.ts` and `minutes.ts` so the three
- * surfaces describe one company rather than three. The mix is deliberate: a
- * non-voting observer, an adviser with no login, and a deactivated member, because
- * each of those is a state the domain allows and a surface has to handle.
- */
-const mockMembers: BoardMember[] = [
-  {
-    id: "bm-raj",
-    workspace_id: WS,
-    principal_id: "p-raj",
-    full_name: "Raj Malhotra",
-    organization: "Meridian",
-    role: "executive",
-    contact_email: "raj@meridian.example",
-    voting: "voting",
-    active: true,
-    version: 1,
-    created_at: "2026-01-12T09:00:00Z",
-    updated_at: "2026-01-12T09:00:00Z",
-  },
-  {
-    id: "bm-priya",
-    workspace_id: WS,
-    principal_id: "p-priya",
-    full_name: "Priya Nair",
-    organization: "Meridian",
-    role: "executive",
-    contact_email: "priya@meridian.example",
-    voting: "voting",
-    active: true,
-    version: 1,
-    created_at: "2026-01-12T09:00:00Z",
-    updated_at: "2026-01-12T09:00:00Z",
-  },
-  {
-    id: "bm-marcus",
-    workspace_id: WS,
-    principal_id: null,
-    full_name: "Marcus Webb",
-    organization: "Arbor Capital",
-    role: "director",
-    contact_email: "m.webb@arbor.example",
-    voting: "voting",
-    active: true,
-    version: 1,
-    created_at: "2026-01-14T09:00:00Z",
-    updated_at: "2026-01-14T09:00:00Z",
-  },
-  {
-    id: "bm-elena",
-    workspace_id: WS,
-    principal_id: null,
-    full_name: "Elena Fischer",
-    organization: "Northlight Ventures",
-    role: "director",
-    contact_email: "elena@northlight.example",
-    voting: "voting",
-    active: true,
-    version: 1,
-    created_at: "2026-02-02T09:00:00Z",
-    updated_at: "2026-02-02T09:00:00Z",
-  },
-  {
-    id: "bm-tobi",
-    workspace_id: WS,
-    principal_id: null,
-    full_name: "Tobi Adeyemi",
-    organization: "Arbor Capital",
-    role: "observer",
-    contact_email: null,
-    voting: "non_voting",
-    active: true,
-    version: 1,
-    created_at: "2026-03-09T09:00:00Z",
-    updated_at: "2026-03-09T09:00:00Z",
-  },
-  {
-    id: "bm-hannah",
-    workspace_id: WS,
-    principal_id: null,
-    full_name: "Hannah Vogel",
-    organization: "Vogel & Co",
-    role: "adviser",
-    contact_email: null,
-    voting: "non_voting",
-    active: false,
-    version: 2,
-    created_at: "2026-01-20T09:00:00Z",
-    updated_at: "2026-06-30T09:00:00Z",
-  },
-];
-
-const clone = (m: BoardMember): BoardMember => structuredClone(m);
-const delay = (ms = 300) => new Promise((r) => setTimeout(r, ms));
-
-/**
- * Mocked Meridian board-directory API.
+ * Live as of CP-C; the in-memory mock this replaced is gone.
  *
- * Method names follow `meridian/board_members.py`. `list_members` returns active
- * members by default — the domain rule is deactivate-never-delete, so an inactive
- * director is history rather than a deletion, and surfacing them by default would
- * put departed people in every picker.
+ * **`active` is a tri-state, and this is a contract correction.** The mock exposed
+ * `include_inactive?: boolean`, which `meridian/board_members.py` has never had — the
+ * domain takes `active: bool | None = True`, meaning active-only by default, `false`
+ * for departed members only, and "all" for everyone. The two-valued flag silently
+ * dropped the inactive-only case, and inventing a parameter the backend cannot honour
+ * is the same defect as inventing a status it cannot produce.
+ *
+ * `role` was missing from the mock entirely and is a filter the domain supports.
  */
 export const boardMembersApi = {
-  async list(opts?: { include_inactive?: boolean }): Promise<BoardMember[]> {
-    await delay();
-    return mockMembers
-      .filter((m) => (opts?.include_inactive ? true : m.active))
-      .slice()
-      .sort((a, b) => a.full_name.localeCompare(b.full_name))
-      .map(clone);
+  async list(opts?: {
+    /** `true` (default) active only · `false` departed only · `"all"` everyone. */
+    active?: boolean | "all";
+    role?: BoardRole;
+  }): Promise<BoardMember[]> {
+    const active = opts?.active ?? true;
+    return apiGet<BoardMember[]>("/board-members", {
+      active: active === "all" ? "all" : String(active),
+      role: opts?.role,
+    });
   },
 
   async get(id: string): Promise<BoardMember | null> {
-    await delay(150);
-    const m = mockMembers.find((x) => x.id === id);
-    return m ? clone(m) : null;
+    // `null` for a missing member, preserving the mock's contract. Note the domain
+    // returns INACTIVE members here on purpose: historical votes resolve through this
+    // lookup, and a departed director must not become unresolvable.
+    return apiGetOrNull<BoardMember>(`/board-members/${encodeURIComponent(id)}`);
   },
 };
