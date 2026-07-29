@@ -11,6 +11,7 @@ the wire spells the third state out as `all`. Collapsing it to a two-valued
 inactive-only case.
 """
 
+import uuid
 from typing import Literal
 
 from fastapi import APIRouter
@@ -45,11 +46,11 @@ def list_members(
 
 
 @router.get("/{member_id}")
-def get_member(member_id: str, principal: CurrentPrincipal) -> domain.BoardMember:
+def get_member(member_id: uuid.UUID, principal: CurrentPrincipal) -> domain.BoardMember:
     """One member, active or not.
 
     Deliberately returns inactive members, mirroring the domain: historical stances
     and votes resolve through this, and a departed director must not become
     unresolvable.
     """
-    return domain.get_member(member_id, workspace_id=principal.workspace_id)
+    return domain.get_member(str(member_id), workspace_id=principal.workspace_id)

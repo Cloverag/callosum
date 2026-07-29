@@ -148,6 +148,9 @@ def classify(exc: BaseException) -> ApiError:
     # Scoped by module rather than by name, because `RuntimeError` also ends in
     # `Error` and must NOT be laundered into a 4xx — an unexpected failure is a 500,
     # and only exceptions this package defines get the benefit of the doubt.
+    if isinstance(exc, ValueError) and "UUID" in str(exc):
+        return ApiError(int(HTTPStatus.UNPROCESSABLE_ENTITY), INVALID, f"Invalid UUID format: {exc}")
+
     if _is_domain_exception(exc):
         return ApiError(int(HTTPStatus.UNPROCESSABLE_ENTITY), INVALID, str(exc))
 

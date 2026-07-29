@@ -8,6 +8,8 @@ from — so swapping meetings first would have meant deleting an agenda list wit
 replacement.
 """
 
+import uuid
+
 from fastapi import APIRouter
 
 from meridian import meetings as domain
@@ -29,5 +31,5 @@ def list_meetings(principal: CurrentPrincipal, status: str | None = None) -> lis
 
 
 @router.get("/{meeting_id}")
-def get_meeting(meeting_id: str, principal: CurrentPrincipal) -> domain.Meeting:
-    return domain.get_meeting(meeting_id, workspace_id=principal.workspace_id)
+def get_meeting(meeting_id: uuid.UUID, principal: CurrentPrincipal) -> domain.Meeting:
+    return domain.get_meeting(str(meeting_id), workspace_id=principal.workspace_id)

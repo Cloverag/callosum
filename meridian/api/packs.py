@@ -21,6 +21,8 @@ Nothing here re-implements either. `_fetch_items_for_packs` does the filtering i
 the domain, and this endpoint returns what it produced.
 """
 
+import uuid
+
 from fastapi import APIRouter
 
 from meridian import packs as domain
@@ -31,7 +33,7 @@ router = APIRouter(prefix="/api/packs", tags=["packs"])
 
 @router.get("")
 def list_packs(
-    meeting_id: str,
+    meeting_id: uuid.UUID,
     principal: CurrentPrincipal,
     status: str | None = None,
 ) -> list[domain.BoardPack]:
@@ -41,7 +43,7 @@ def list_packs(
     workspace-wide list of every pack is not a question any surface asks.
     """
     return domain.list_packs(
-        meeting_id,
+        str(meeting_id),
         workspace_id=principal.workspace_id,
         status=status,
         clearance=principal.clearance,
@@ -49,9 +51,9 @@ def list_packs(
 
 
 @router.get("/{pack_id}")
-def get_pack(pack_id: str, principal: CurrentPrincipal) -> domain.BoardPack:
+def get_pack(pack_id: uuid.UUID, principal: CurrentPrincipal) -> domain.BoardPack:
     return domain.get_pack(
-        pack_id,
+        str(pack_id),
         workspace_id=principal.workspace_id,
         clearance=principal.clearance,
     )
