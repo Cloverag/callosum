@@ -10,6 +10,10 @@ Design contract:
   - Finalised minutes are immutable. Modifying finalised minutes requires creating a new version
     via `supersede_minutes`, which increments `version_no` and links `superseded_by_id`.
   - Every mutation is guarded by optimistic concurrency (`version = version + 1`).
+  - Clearance & Scoping (ADR-015, Issue #49): `minutes` records are workspace-scoped via
+    Postgres Row-Level Security (`workspace_id`). Minutes document high-level formal board
+    conclusions in prose and carry no `sensitivity` column or `clearance` filter argument.
+    Confidential raw source materials remain strictly clearance-filtered in `board_pack_item`.
 """
 
 import uuid
