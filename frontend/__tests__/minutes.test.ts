@@ -1,3 +1,6 @@
+/**
+ * @jest-environment node
+ */
 import {
   MINUTES_LOCKED_MEETING_STATUSES,
   current,
@@ -7,6 +10,7 @@ import {
   type Minutes,
 } from "../src/lib/minutes";
 import { PACK_LOCKED_MEETING_STATUSES } from "../src/lib/packs";
+import { MINUTES_FIXTURES } from "../test-support/minutes-fixture";
 
 /**
  * Minutes have a smaller contract than board packs — no clearance, no items —
@@ -17,20 +21,65 @@ import { PACK_LOCKED_MEETING_STATUSES } from "../src/lib/packs";
  * one. A reader skimming both modules could reasonably assume they share a rule;
  * they do not, and a copied lock set would let minutes be written for a meeting
  * that has not happened.
+ *
+ * `fetch` is stubbed as of CP-C: whether the endpoint returns the right rows is
+ * `tests/test_minutes_api.py`'s job against a real Postgres.
  */
+
+let calls: string[] = [];
+
+function stub(payload: unknown = MINUTES_FIXTURES, status = 200) {
+  calls = [];
+  global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    calls.push(url);
+    const single = url.match(/\/api\/minutes\/([^?]+)$/);
+    if (single) {
+      const found = MINUTES_FIXTURES.find((m) => m.id === decodeURIComponent(single[1]));
+      return found
+        ? new Response(JSON.stringify(found), { status: 200 })
+        : new Response(JSON.stringify({ error: { code: "not_found", detail: "gone" } }), { status: 404 });
+    }
+    // The server scopes by meeting; the stub does too, so the ordering assertion
+    // below is about ordering rather than about which rows came back.
+    const wanted = new URL(url, "http://localhost").searchParams.get("meeting_id");
+    const rows = Array.isArray(payload) && wanted
+      ? (payload as typeof MINUTES_FIXTURES)
+          .filter((m) => m.meeting_id === wanted)
+          // The server orders version_no DESC, created_at DESC.
+          .sort((a, b) => b.version_no - a.version_no || b.created_at.localeCompare(a.created_at))
+      : payload;
+    return new Response(JSON.stringify(rows), { status });
+  }) as unknown as typeof fetch;
+}
+
+const MEETING = { meeting_id: "m-q3" };
+
+beforeEach(() => stub());
+afterEach(() => jest.restoreAllMocks());
 
 describe("minutes list contract", () => {
   it("orders by version_no DESC then created_at DESC, mirroring list_minutes", async () => {
-    const records = await minutesApi.list({ meeting_id: "m-q3" });
+    const records = await minutesApi.list(MEETING);
     expect(records.map((m) => m.id)).toEqual(["min-q3-v2", "min-q3-v1"]);
   });
 
-  it("filters by meeting and by status", async () => {
-    const drafts = await minutesApi.list({ status: "draft" });
-    expect(drafts.every((m) => m.status === "draft")).toBe(true);
+  it("scopes the request to a meeting and offers no status filter", async () => {
+    // `list_minutes` requires a meeting and has never had a status filter. The mock
+    // made the first optional and invented the second; offering a capability the
+    // backend cannot honour is the same defect as inventing a field.
+    await minutesApi.list(MEETING);
+    expect(calls[0]).toBe("/api/minutes?meeting_id=m-q3");
+    expect(calls[0]).not.toContain("status");
+    expect(calls[0]).not.toContain("clearance");
+  });
 
-    const m14 = await minutesApi.list({ meeting_id: "m-14" });
-    expect(m14.every((m) => m.meeting_id === "m-14")).toBe(true);
+  it("returns every version, not just the one that stands", async () => {
+    // The correction trail is the point of this surface; a list showing only the
+    // current record would hide exactly what a board needs to reconstruct.
+    const records = await minutesApi.list(MEETING);
+    expect(records.length).toBeGreaterThan(1);
+    expect(records.some((m) => m.superseded_by_id !== null)).toBe(true);
   });
 
   it("returns null for a record that does not exist", async () => {
@@ -41,7 +90,7 @@ describe("minutes list contract", () => {
     // Minutes are workspace-scoped only: the table has no sensitivity column and
     // no function in the module accepts a clearance. A clearance parameter here
     // would imply a filter the backend does not apply.
-    const records = await minutesApi.list();
+    const records = await minutesApi.list(MEETING);
     expect(records.length).toBeGreaterThan(0);
     // Nothing in the read model describes an access level.
     for (const key of ["clearance", "sensitivity", "withheld"]) {
@@ -52,7 +101,7 @@ describe("minutes list contract", () => {
 
 describe("which record stands", () => {
   it("returns the highest un-superseded version for a meeting", async () => {
-    const all = await minutesApi.list();
+    const all = MINUTES_FIXTURES;
     // m-q3 holds a finalised v1 that was corrected by a draft v2. The draft is
     // what stands, even though it is not final — a correction in progress is
     // still the most current account.
@@ -60,25 +109,25 @@ describe("which record stands", () => {
   });
 
   it("ignores superseded records even when they are the only final ones", async () => {
-    const all = await minutesApi.list();
+    const all = MINUTES_FIXTURES;
     expect(current(all, "m-q3")!.status).toBe("draft");
     expect(current(all, "m-q3")!.superseded_by_id).toBeNull();
   });
 
   it("returns the single record when a meeting has only one", async () => {
-    const all = await minutesApi.list();
+    const all = MINUTES_FIXTURES;
     expect(current(all, "m-14")!.id).toBe("min-m14-v1");
   });
 
   it("returns null for a meeting with no minutes", async () => {
-    const all = await minutesApi.list();
+    const all = MINUTES_FIXTURES;
     expect(current(all, "m-never-happened")).toBeNull();
   });
 });
 
 describe("supersession", () => {
   it("resolves superseded_by_id to the correcting record", async () => {
-    const all = await minutesApi.list();
+    const all = MINUTES_FIXTURES;
     const v1 = all.find((m) => m.id === "min-q3-v1")!;
     expect(supersededBy(v1, all)!.id).toBe("min-q3-v2");
   });
