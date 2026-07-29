@@ -10,6 +10,8 @@ being a mock.
 1:1 with `meridian/agenda.py`, minus `workspace_id` (ADR-013).
 """
 
+import uuid
+
 from fastapi import APIRouter
 
 from meridian import agenda as domain
@@ -19,16 +21,16 @@ router = APIRouter(prefix="/api/agenda", tags=["agenda"])
 
 
 @router.get("")
-def list_agenda_items(meeting_id: str, principal: CurrentPrincipal) -> list[domain.AgendaItem]:
+def list_agenda_items(meeting_id: uuid.UUID, principal: CurrentPrincipal) -> list[domain.AgendaItem]:
     """A meeting's agenda, ordered by `position ASC`.
 
     `meeting_id` is required rather than optional: an agenda item only means anything
     against the meeting it belongs to, and a workspace-wide list of every item across
     every meeting is not a question any surface asks.
     """
-    return domain.list_agenda_items(meeting_id, workspace_id=principal.workspace_id)
+    return domain.list_agenda_items(str(meeting_id), workspace_id=principal.workspace_id)
 
 
 @router.get("/{agenda_item_id}")
-def get_agenda_item(agenda_item_id: str, principal: CurrentPrincipal) -> domain.AgendaItem:
-    return domain.get_agenda_item(agenda_item_id, workspace_id=principal.workspace_id)
+def get_agenda_item(agenda_item_id: uuid.UUID, principal: CurrentPrincipal) -> domain.AgendaItem:
+    return domain.get_agenda_item(str(agenda_item_id), workspace_id=principal.workspace_id)
