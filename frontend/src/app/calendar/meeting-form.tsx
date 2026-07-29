@@ -47,8 +47,6 @@ export function MeetingForm({
   const [end, setEnd] = React.useState("10:00");
   const [location, setLocation] = React.useState("");
   const [status, setStatus] = React.useState<MeetingStatus>("draft");
-  const [sensitivity, setSensitivity] = React.useState(2);
-  const [objectives, setObjectives] = React.useState("");
   const [saving, setSaving] = React.useState(false);
 
   React.useEffect(() => {
@@ -60,8 +58,6 @@ export function MeetingForm({
       setEnd(toTimeInput(editing.end));
       setLocation(editing.location ?? "");
       setStatus(editing.status);
-      setSensitivity(editing.sensitivity);
-      setObjectives(editing.objectives ?? "");
     } else {
       setTitle("");
       setDate(dayKey(defaultDate ?? new Date()));
@@ -69,8 +65,6 @@ export function MeetingForm({
       setEnd("10:00");
       setLocation("");
       setStatus("draft");
-      setSensitivity(2);
-      setObjectives("");
     }
   }, [open, editing, defaultDate]);
 
@@ -83,8 +77,6 @@ export function MeetingForm({
       start: `${date}T${start}:00`,
       end: `${date}T${end}:00`,
       location: location.trim() || undefined,
-      objectives: objectives.trim() || undefined,
-      sensitivity,
     };
     try {
       if (editing) await meetingsApi.update(editing.id, payload);
@@ -172,36 +164,6 @@ export function MeetingForm({
               ))}
             </select>
           </div>
-          <div className="space-y-1.5">
-            <label htmlFor="mtg-clr" className="text-sm font-medium text-foreground">
-              Clearance
-            </label>
-            <select
-              id="mtg-clr"
-              value={sensitivity}
-              onChange={(e) => setSensitivity(Number(e.target.value))}
-              className={field}
-            >
-              {[1, 2, 3, 4, 5].map((n) => (
-                <option key={n} value={n}>
-                  Level {n}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div className="space-y-1.5">
-          <label htmlFor="mtg-obj" className="text-sm font-medium text-foreground">
-            Objectives <span className="text-muted-foreground">(optional)</span>
-          </label>
-          <textarea
-            id="mtg-obj"
-            value={objectives}
-            onChange={(e) => setObjectives(e.target.value)}
-            rows={3}
-            className="w-full resize-none rounded-md border border-border bg-surface-raised px-3 py-2 text-sm text-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus"
-          />
         </div>
       </form>
     </Dialog>
