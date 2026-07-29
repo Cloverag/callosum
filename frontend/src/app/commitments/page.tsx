@@ -27,7 +27,7 @@ import { CommitmentCard } from "./commitment-card";
  * caller makes a report irreproducible, and every card on this page must agree about
  * what day it is.
  *
- * The directory is fetched with `include_inactive: true` — a departed director may
+ * The directory is fetched with `active: "all"` — a departed director may
  * still own historic work, and filtering them out would render those commitments as
  * ownerless rather than as inherited.
  */
@@ -42,7 +42,7 @@ export default function CommitmentsPage() {
 
   useEffect(() => {
     commitmentsApi.list().then(setCommitments);
-    boardMembersApi.list({ include_inactive: true }).then(setMembers);
+    boardMembersApi.list({ active: "all" }).then(setMembers);
   }, []);
 
   // Counts describe the data, not the current view, so a chip never reports zero for

@@ -1,5 +1,9 @@
 import { decisionsApi, stanceBreakdown, supersededBy, type Decision } from "../src/lib/decisions";
-import { boardMembersApi, nameOf } from "../src/lib/board-members";
+import { nameOf } from "../src/lib/board-members";
+// The directory is a live API client as of CP-C. These tests only need a member
+// list to resolve ids against — that is a cross-module contract assertion, not a
+// client test — so they read the fixture directly rather than stubbing fetch.
+import { BOARD_MEMBER_FIXTURES } from "../test-support/board-members-fixture";
 
 /**
  * `decision_stance.board_member_id` shipped in CP5a (`0012_board_member`) as a
@@ -14,10 +18,8 @@ import { boardMembersApi, nameOf } from "../src/lib/board-members";
 
 describe("stances resolve to the directory, optionally", () => {
   it("resolves a stance whose recorded name is in the directory", async () => {
-    const [decisions, members] = await Promise.all([
-      decisionsApi.list(),
-      boardMembersApi.list({ include_inactive: true }),
-    ]);
+    const decisions = await decisionsApi.list();
+    const members = BOARD_MEMBER_FIXTURES;
     const resolved = decisions
       .flatMap((d) => d.stances)
       .filter((s) => s.board_member_id !== null);
