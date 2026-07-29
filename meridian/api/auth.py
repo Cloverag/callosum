@@ -29,11 +29,14 @@ from typing import Any
 from authlib.integrations.starlette_client import OAuth, OAuthError
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import JSONResponse, RedirectResponse
+from pydantic import BaseModel
 
 from callosum import store
-from callosum.identity import IdentityNotProvisioned, resolve_identity
+from callosum.identity import IdentityNotProvisioned, PrincipalNotFound, resolve_identity
+from meridian.api import deps
 from meridian.api import session as sess
 from meridian.api.config import ApiSettings, api_settings
+from meridian.tenancy import WorkspaceRequired
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -181,4 +184,82 @@ async def me(request: Request):
         "provider": current.provider,
         "workspace_id": current.workspace_id,
         "workspace_selected": current.workspace_id is not None,
+    }
+
+
+class WorkspaceSelection(BaseModel):
+    """The workspace a caller is choosing to act in.
+
+    A body rather than a path or query parameter, deliberately. ADR-013 forbids
+    `workspace_id` as an input to any *resource* endpoint — this is the one place a
+    workspace is named by the client, and it is named in order to be **verified**,
+    not to be trusted. Every endpoint downstream takes it from the session.
+    """
+
+    workspace_id: str
+
+
+@router.post("/workspace")
+async def select_workspace(request: Request, selection: WorkspaceSelection):
+    """Chooses a workspace for this session, after verifying membership (ADR-012).
+
+    Selection is separate from identity resolution on purpose: a principal may hold
+    several memberships, and being guessed into one of them is how a founder ends up
+    reading the wrong board's papers. Login establishes who you are; this establishes
+    where you are acting.
+
+    **Verification, not enumeration.** `membership` and `workspace` are both
+    RLS-scoped to `app.workspace_id`, so the runtime role can never list the
+    workspaces a principal belongs to — it can only be asked about one at a time.
+    That is a P1 property and this endpoint works with it rather than around it.
+
+    Membership is checked through the same `resolve_principal_by_id()` every request
+    uses. Nothing is cached as a result: the check here stops an unauthorized
+    *selection*, and the per-request check stops an authorized selection from
+    outliving the membership behind it.
+    """
+    current = deps.current_session(request)
+
+    try:
+        principal = deps.verify_membership(current.principal_id, selection.workspace_id)
+    except WorkspaceRequired as exc:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "invalid", "detail": str(exc)},
+        ) from exc
+    except PrincipalNotFound as exc:
+        # Uniform refusal. "Not a member", "membership revoked" and "no such
+        # workspace" are one answer — otherwise this endpoint becomes a probe for
+        # which workspaces exist.
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            detail={"code": deps.FORBIDDEN, "detail": "Not available to you."},
+        ) from exc
+
+    sess.select_workspace(request.session, selection.workspace_id)
+
+    # The clearance is reported from the resolution that just happened, not stored.
+    # Telling the caller what they can see is useful; remembering it is not.
+    return {
+        "workspace_id": principal.workspace_id,
+        "clearance": principal.clearance,
+        "role": principal.role,
+    }
+
+
+@router.get("/context")
+async def context(principal: deps.CurrentPrincipal):
+    """The caller's live authorization context, re-derived for this request.
+
+    Every field here comes from the database on this call. The session contributed
+    only a `principal_id` and a workspace choice; clearance and role were resolved
+    from the current membership, which is why revoking one takes effect here
+    immediately rather than at session expiry.
+    """
+    return {
+        "principal_id": str(principal.id),
+        "name": principal.name,
+        "role": principal.role,
+        "clearance": principal.clearance,
+        "workspace_id": principal.workspace_id,
     }

@@ -230,3 +230,267 @@ class TestSessionModule:
         session = {sess.PRINCIPAL_ID: "p", sess.PROVIDER: "i", sess.SUBJECT: "s", "something_else": 1}
         sess.clear(session)
         assert session == {}
+
+
+# ---------------------------------------------------------------------------
+# A4 — workspace selection and per-request authorization (ADR-012)
+#
+# The session carries an identity and a choice. Everything else is re-derived on
+# every request, which is what makes revocation immediate.
+# ---------------------------------------------------------------------------
+
+def _workspace(label: str) -> str:
+    ws = str(uuid.uuid4())
+    _admin(
+        "INSERT INTO workspace (id, name, external_id) VALUES (%s, %s, %s)",
+        (ws, f"{label}-{ws[:6]}", ws),
+    )
+    return ws
+
+
+def _membership(principal_id: str, workspace_id: str, clearance: int, *, active: bool = True) -> None:
+    _admin(
+        "INSERT INTO membership (principal_id, workspace_id, role, clearance, active)"
+        " VALUES (%s, %s, 'director', %s, %s)",
+        (principal_id, workspace_id, clearance, active),
+    )
+
+
+def _revoke(principal_id: str, workspace_id: str) -> None:
+    _admin(
+        "UPDATE membership SET active = false WHERE principal_id = %s AND workspace_id = %s",
+        (principal_id, workspace_id),
+    )
+
+
+def _drop_workspaces(*workspace_ids: str) -> None:
+    for ws in workspace_ids:
+        _admin("DELETE FROM membership WHERE workspace_id = %s", (ws,))
+        _admin("DELETE FROM workspace WHERE id = %s", (ws,))
+
+
+def _logged_in(subject: str, claims_issuer: str = ISSUER):
+    """A TestClient with an established session."""
+    client = TestClient(_app({"sub": subject, "iss": claims_issuer}), follow_redirects=False)
+    assert client.get("/auth/callback").status_code == 303
+    return client
+
+
+class TestWorkspaceSelection:
+    def test_selecting_a_workspace_you_belong_to_succeeds(self):
+        subject = f"sub-{uuid.uuid4()}"
+        pid = _provisioned_principal(subject)
+        ws = _workspace("sel")
+        _membership(pid, ws, clearance=3)
+        try:
+            client = _logged_in(subject)
+            response = client.post("/auth/workspace", json={"workspace_id": ws})
+            assert response.status_code == 200
+            assert response.json()["workspace_id"] == ws
+            # Reported from the resolution that just happened, not stored.
+            assert response.json()["clearance"] == 3
+
+            assert client.get("/auth/me").json()["workspace_id"] == ws
+        finally:
+            _drop_workspaces(ws)
+            _cleanup(pid)
+
+    def test_a_workspace_you_are_not_a_member_of_is_rejected(self):
+        subject = f"sub-{uuid.uuid4()}"
+        pid = _provisioned_principal(subject)
+        mine, theirs = _workspace("mine"), _workspace("theirs")
+        _membership(pid, mine, clearance=2)
+        try:
+            client = _logged_in(subject)
+            response = client.post("/auth/workspace", json={"workspace_id": theirs})
+            assert response.status_code == 403
+            # And nothing was selected as a side effect of trying.
+            assert client.get("/auth/me").json()["workspace_id"] is None
+        finally:
+            _drop_workspaces(mine, theirs)
+            _cleanup(pid)
+
+    def test_a_nonexistent_workspace_is_refused_the_same_way(self):
+        """Uniform refusal, otherwise this endpoint is a probe for which workspaces
+        exist."""
+        subject = f"sub-{uuid.uuid4()}"
+        pid = _provisioned_principal(subject)
+        try:
+            client = _logged_in(subject)
+            r = client.post("/auth/workspace", json={"workspace_id": str(uuid.uuid4())})
+            assert r.status_code == 403
+            assert r.json()["detail"]["detail"] == "Not available to you."
+        finally:
+            _cleanup(pid)
+
+    def test_changing_workspace_changes_the_active_authorization(self):
+        """The case a cached clearance gets wrong.
+
+        The same principal holds clearance 1 in one workspace and 4 in the other.
+        Anything remembered from the first selection would be a lie in the second.
+        """
+        subject = f"sub-{uuid.uuid4()}"
+        pid = _provisioned_principal(subject)
+        low, high = _workspace("low"), _workspace("high")
+        _membership(pid, low, clearance=1)
+        _membership(pid, high, clearance=4)
+        try:
+            client = _logged_in(subject)
+
+            client.post("/auth/workspace", json={"workspace_id": low})
+            assert client.get("/auth/context").json()["clearance"] == 1
+
+            client.post("/auth/workspace", json={"workspace_id": high})
+            ctx = client.get("/auth/context").json()
+            assert ctx["clearance"] == 4
+            assert ctx["workspace_id"] == high
+        finally:
+            _drop_workspaces(low, high)
+            _cleanup(pid)
+
+    def test_selection_requires_authentication(self):
+        client = TestClient(_app(None), follow_redirects=False)
+        assert client.post("/auth/workspace", json={"workspace_id": str(uuid.uuid4())}).status_code == 401
+
+    def test_a_malformed_workspace_id_is_refused(self):
+        subject = f"sub-{uuid.uuid4()}"
+        pid = _provisioned_principal(subject)
+        try:
+            client = _logged_in(subject)
+            # Would otherwise reach store.pg() and silently become the Default
+            # Workspace — the fail-open default meridian/tenancy.py exists to stop.
+            assert client.post("/auth/workspace", json={"workspace_id": "not-a-uuid"}).status_code == 422
+        finally:
+            _cleanup(pid)
+
+
+class TestAuthorizationIsDerivedPerRequest:
+    def test_revoking_membership_blocks_the_very_next_request(self):
+        """No logout, no cache invalidation, no session expiry needed.
+
+        This is the whole reason clearance is not in the cookie.
+        """
+        subject = f"sub-{uuid.uuid4()}"
+        pid = _provisioned_principal(subject)
+        ws = _workspace("revoke")
+        _membership(pid, ws, clearance=4)
+        try:
+            client = _logged_in(subject)
+            client.post("/auth/workspace", json={"workspace_id": ws})
+            assert client.get("/auth/context").status_code == 200
+
+            _revoke(pid, ws)
+
+            # Same session, same cookie, next request.
+            assert client.get("/auth/context").status_code == 403
+        finally:
+            _drop_workspaces(ws)
+            _cleanup(pid)
+
+    def test_a_clearance_change_takes_effect_immediately(self):
+        subject = f"sub-{uuid.uuid4()}"
+        pid = _provisioned_principal(subject)
+        ws = _workspace("demote")
+        _membership(pid, ws, clearance=4)
+        try:
+            client = _logged_in(subject)
+            client.post("/auth/workspace", json={"workspace_id": ws})
+            assert client.get("/auth/context").json()["clearance"] == 4
+
+            _admin(
+                "UPDATE membership SET clearance = 1 WHERE principal_id = %s AND workspace_id = %s",
+                (pid, ws),
+            )
+            # A demoted director must not keep reading confidential material until
+            # their session expires.
+            assert client.get("/auth/context").json()["clearance"] == 1
+        finally:
+            _drop_workspaces(ws)
+            _cleanup(pid)
+
+    def test_a_stale_session_cannot_bypass_authorization(self):
+        """The cookie survives; the authorization does not.
+
+        Deleting the membership entirely leaves a perfectly valid, correctly signed
+        session pointing at a principal who no longer belongs anywhere.
+        """
+        subject = f"sub-{uuid.uuid4()}"
+        pid = _provisioned_principal(subject)
+        ws = _workspace("stale")
+        _membership(pid, ws, clearance=2)
+        try:
+            client = _logged_in(subject)
+            client.post("/auth/workspace", json={"workspace_id": ws})
+            cookie = client.cookies.get("session")
+            assert cookie and client.get("/auth/context").status_code == 200
+
+            _admin("DELETE FROM membership WHERE principal_id = %s AND workspace_id = %s", (pid, ws))
+
+            # The session still reads — identity is intact — but authorization fails.
+            assert client.get("/auth/me").status_code == 200
+            assert client.get("/auth/context").status_code == 403
+            assert client.cookies.get("session") == cookie, "the cookie was not the thing that changed"
+        finally:
+            _drop_workspaces(ws)
+            _cleanup(pid)
+
+    def test_a_protected_endpoint_refuses_before_a_workspace_is_chosen(self):
+        """409, not 401: they are authenticated, they just have not chosen. Telling
+        them to log in again would loop."""
+        subject = f"sub-{uuid.uuid4()}"
+        pid = _provisioned_principal(subject)
+        try:
+            client = _logged_in(subject)
+            response = client.get("/auth/context")
+            assert response.status_code == 409
+            assert response.json()["detail"]["code"] == "workspace_not_selected"
+        finally:
+            _cleanup(pid)
+
+    def test_logging_in_again_clears_a_previous_selection(self):
+        subject = f"sub-{uuid.uuid4()}"
+        pid = _provisioned_principal(subject)
+        ws = _workspace("relogin")
+        _membership(pid, ws, clearance=2)
+        try:
+            client = _logged_in(subject)
+            client.post("/auth/workspace", json={"workspace_id": ws})
+            assert client.get("/auth/me").json()["workspace_id"] == ws
+
+            # A new login is a new session; a selection must not outlive it.
+            client.get("/auth/callback")
+            assert client.get("/auth/me").json()["workspace_id"] is None
+        finally:
+            _drop_workspaces(ws)
+            _cleanup(pid)
+
+
+class TestTheSessionStoresNoAuthorization:
+    def test_the_cookie_carries_no_clearance_role_or_membership(self):
+        subject = f"sub-{uuid.uuid4()}"
+        pid = _provisioned_principal(subject)
+        ws = _workspace("cookie")
+        _membership(pid, ws, clearance=4)
+        try:
+            client = _logged_in(subject)
+            client.post("/auth/workspace", json={"workspace_id": ws})
+
+            raw = client.cookies.get("session") or ""
+            for forbidden in ("clearance", "role", "permission", "membership", "active"):
+                assert forbidden not in raw, f"session cookie leaks {forbidden!r}"
+        finally:
+            _drop_workspaces(ws)
+            _cleanup(pid)
+
+    def test_the_session_keys_are_exactly_identity_plus_selection(self):
+        # Pins the contract structurally, so a future field cannot be added without
+        # this failing and forcing the question.
+        session: dict = {}
+        sess.establish(session, principal_id="p1", provider="i", subject="s")
+        sess.select_workspace(session, str(uuid.uuid4()))
+        assert set(session) == {
+            sess.PRINCIPAL_ID,
+            sess.PROVIDER,
+            sess.SUBJECT,
+            sess.WORKSPACE_ID,
+        }
