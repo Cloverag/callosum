@@ -421,7 +421,10 @@ def graph_search(
                     seen_facts.add(fact)
                     facts.append(fact)
                 if chunks[i]:
-                    chunk_ids.append(uuid.UUID(chunks[i]))
+                    try:
+                        chunk_ids.append(uuid.UUID(chunks[i]))
+                    except (ValueError, TypeError):
+                        logger.warning("Ignoring invalid chunk_id string from graph path: %r", chunks[i])
 
             # For genuine multi-hop paths, also surface the chain itself — this is the
             # connection a vector search cannot make, and the thing worth showing the

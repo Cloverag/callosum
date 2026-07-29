@@ -14,9 +14,12 @@ Design contract:
   - Every update/transition/supersession is version-guarded by optimistic concurrency.
 """
 
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 from callosum import store
 from callosum.store import DEFAULT_WORKSPACE_ID
@@ -368,6 +371,8 @@ def record_stance(
                 f"cannot record stance for decision in status {dec['status']!r}; stances are locked on non-proposed decisions"
             )
 
+        _assert_meeting_active(conn, dec["meeting_id"])
+
         old_row = conn.execute(
             "SELECT stance, comment FROM decision_stance WHERE decision_id = %s AND person_name = %s",
             (dec_uuid, person_name.strip()),
@@ -408,8 +413,8 @@ def record_stance(
                 },
                 workspace_id=workspace_id,
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to record stance audit event for decision %s: %s", dec_uuid, exc)
 
     return _row_to_stance(row)
 

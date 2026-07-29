@@ -21,8 +21,11 @@ Security invariants preserved:
 """
 
 import json
+import logging
 import uuid
 from typing import Iterator
+
+logger = logging.getLogger(__name__)
 
 import psycopg
 from neo4j import Driver
@@ -184,9 +187,10 @@ def detect_conflicts(
                 ),
             )
             queued += 1
-        except psycopg.Error:
+        except psycopg.Error as exc:
             # On a fresh database (entity_conflict table does not exist yet),
             # degrade gracefully and return the queued count so far.
+            logger.warning("Failed to insert entity conflict row: %s", exc)
             return queued
 
     return queued
@@ -244,6 +248,14 @@ def approve_conflict(
         ),
     ).fetchone()
     change_id = change_row["id"]
+
+    # Ensure the (:Chunk) node exists in Neo4j so apply_relationship matches the provenance anchor
+    with driver.session() as session:
+        session.run(
+            "MERGE (c:Chunk {id: $chunk_id, workspace_id: $workspace_id})",
+            chunk_id=chunk_id,
+            workspace_id=str(row["workspace_id"]),
+        )
 
     # Immediately approve — this is a human decision, not an LLM proposal.
     store.approve(conn, driver, change_id, reviewer_id)
