@@ -90,6 +90,5 @@ def engine_health() -> dict:
     """
     return {
         "status": "ok",
-        "engine": "callosum",
-        "engine_version": getattr(callosum, "__version__", "0.1.0"),
+        "version": getattr(callosum, "__version__", "0.1.0"),
     }
