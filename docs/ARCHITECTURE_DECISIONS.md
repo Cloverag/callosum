@@ -164,3 +164,32 @@ defaulting. Three layers now hold the same line: the guard rejects a missing wor
 session is the only source of a present one, and the test proves no endpoint offers a third.
 **Status:** Accepted (P3, owner-approved 2026-07-29). Guard built (#67); test not yet built
 — CP-A.
+
+## ADR-014 — API endpoints mirror the domain functions 1:1 for P3
+**Decision:** each public function in `meridian/*.py` gets one endpoint, shaped as the
+function is — `list_resolutions` → `GET /api/resolutions`, `get_resolution` →
+`GET /api/resolutions/{id}`, `transition_resolution` →
+`POST /api/resolutions/{id}/transition`. **Minus two arguments**: `workspace_id` and
+`clearance` are never accepted from the client and are supplied by
+`deps.current_principal` from the session (ADR-013). Pure helpers that touch no
+database — `resolutions.tally`, `commitments.is_overdue` — get no endpoint at all;
+they are computed client-side from data already returned.
+**Alternatives:** task-shaped / BFF endpoints composed around screens
+(`GET /api/meeting/{id}/prep-pack` returning meeting, agenda, pack and decisions in
+one call).
+**Why:** the frontend's `lib/*.ts` modules were deliberately written to mirror the
+Python dataclasses field-for-field, so a 1:1 API makes each swap a change of transport
+and nothing else — six of them become mechanical, and the existing frontend tests
+become the acceptance criteria without being rewritten. It is also the reviewable
+option: a reviewer can check an endpoint against one function rather than against a
+composition whose behaviour lives in the endpoint itself.
+
+**The cost, stated rather than discovered later:** 1:1 leaks the domain model into the
+wire format, so a domain refactor becomes a breaking API change, and a screen needing
+four aggregates makes four round trips. Both are real. Neither bites at P3's scale —
+one frontend, same origin, no external consumers — and paying for a BFF layer before
+any real flow exists would be designing against imagined screens.
+**Revisit at P6**, when live meeting flows exist and the round-trip cost is measurable
+rather than assumed. That is the point at which composition should be evidence-driven,
+in keeping with the standing rule that structure follows measurement.
+**Status:** Accepted (P3, owner-approved 2026-07-29). Not yet built — CP-B onward.
