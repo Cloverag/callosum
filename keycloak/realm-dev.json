@@ -1,0 +1,62 @@
+{
+  "realm": "meridian",
+  "enabled": true,
+  "displayName": "Meridian (development)",
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "clients": [
+    {
+      "clientId": "meridian-api",
+      "name": "Meridian API",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "dev-client-secret-change-me",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://localhost:8000/auth/callback"],
+      "webOrigins": ["http://localhost:8000"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      }
+    }
+  ],
+  "users": [
+    {
+      "username": "raj",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "raj@meridian.example",
+      "firstName": "Raj",
+      "lastName": "Malhotra",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "raj",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "stranger",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "stranger@example.com",
+      "firstName": "Not",
+      "lastName": "Provisioned",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "stranger",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}
