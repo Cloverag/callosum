@@ -485,12 +485,16 @@ def approve(conn: psycopg.Connection, driver: Driver, change_id: uuid.UUID,
     if not row:
         raise ValueError(f"No pending change {change_id}")
 
-    if row["kind"] == "add_entity":
-        apply_entity(driver, row["payload"])
-    elif row["kind"] == "add_relationship":
-        apply_relationship(driver, row["payload"])
-    else:
-        raise ValueError(f"Unknown change kind: {row['kind']}")
+    try:
+        if row["kind"] == "add_entity":
+            apply_entity(driver, row["payload"])
+        elif row["kind"] == "add_relationship":
+            apply_relationship(driver, row["payload"])
+        else:
+            raise ValueError(f"Unknown change kind: {row['kind']}")
+    except Exception:
+        conn.rollback()
+        raise
 
     conn.execute(
         """
