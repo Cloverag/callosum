@@ -2,7 +2,7 @@ import * as React from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { addDays, dayKey, formatDayFull, formatTime } from "@/lib/calendar";
-import { MEETING_STATUS_LABEL, MEETING_STATUS_TONE, type Meeting } from "@/lib/meetings";
+import { MEETING_STATUS_LABEL, MEETING_STATUS_TONE, type ScheduledMeeting } from "@/lib/meetings";
 
 export function DayView({
   cursor,
@@ -11,8 +11,8 @@ export function DayView({
   onNavigate,
 }: {
   cursor: Date;
-  byDay: Map<string, Meeting[]>;
-  onSelect: (m: Meeting) => void;
+  byDay: Map<string, ScheduledMeeting[]>;
+  onSelect: (m: ScheduledMeeting) => void;
   onNavigate: (next: Date) => void;
 }) {
   const list = byDay.get(dayKey(cursor)) ?? [];
@@ -50,7 +50,7 @@ export function DayView({
                 className="flex w-full items-center gap-4 px-5 py-3 text-left transition-colors duration-150 hover:bg-surface-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus"
               >
                 <span className="w-28 shrink-0 text-sm tabular-nums text-muted-foreground">
-                  {formatTime(m.start)} – {formatTime(m.end)}
+                  {formatTime(m.scheduled_start)} – {formatTime(m.scheduled_end)}
                 </span>
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate text-sm font-medium text-foreground">{m.title}</span>
