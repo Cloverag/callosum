@@ -18,14 +18,8 @@ from meridian.api.deps import CurrentPrincipal
 
 router = APIRouter(prefix="/api/meetings", tags=["meetings"])
 
-MeetingStatus = Literal["draft", "scheduled", "in_progress", "completed", "cancelled"]
-
-
 @router.get("")
-def list_meetings(
-    principal: CurrentPrincipal,
-    status: MeetingStatus | None = None,
-) -> list[domain.Meeting]:
+def list_meetings(principal: CurrentPrincipal, status: str | None = None) -> list[domain.Meeting]:
     """Meetings in the caller's workspace, calendar-ordered.
 
     Includes meetings with no scheduled window — a `draft` has none until it is
