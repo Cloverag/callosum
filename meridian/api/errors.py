@@ -168,3 +168,39 @@ def _is_domain_exception(exc: BaseException) -> bool:
 def status_for(exc: BaseException) -> int:
     """Convenience for handlers that only need the code."""
     return classify(exc).status
+
+
+def install_exception_handlers(app) -> None:
+    """Registers `classify()` as the app's handler for every domain exception.
+
+    Without this each endpoint would need its own try/except, and the mapping would
+    drift the moment one route caught something a sibling did not — the exact
+    scattering this module exists to prevent. Registering centrally also means CP-C's
+    endpoints inherit correct statuses without doing anything.
+
+    Handlers are attached to the *base* classes. Starlette dispatches on the closest
+    registered ancestor, so `StaleResolutionError` is caught by the `ResolutionError`
+    handler and `IdentityNotProvisioned` by the `PrincipalNotFound` one — subclasses
+    added later are covered without being registered.
+    """
+    from fastapi.responses import JSONResponse
+
+    async def handle(_request, exc: BaseException):
+        mapped = classify(exc)
+        return JSONResponse(status_code=mapped.status, content=mapped.as_response())
+
+    bases: list[type[BaseException]] = [
+        agenda.AgendaItemError,
+        audit.AuditValidationError,
+        board_members.BoardMemberError,
+        commitments.CommitmentError,
+        decisions.DecisionError,
+        meetings.MeetingError,
+        minutes.MinutesError,
+        packs.BoardPackError,
+        resolutions.ResolutionError,
+        PrincipalNotFound,
+        WorkspaceRequired,
+    ]
+    for base in bases:
+        app.add_exception_handler(base, handle)
