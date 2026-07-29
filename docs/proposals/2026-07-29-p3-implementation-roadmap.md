@@ -320,11 +320,12 @@ which is the authoritative statement. The table below is a summary.
 | D3 | Unknown subject on first login | **rejected** — no auto-provisioning; provisioning stays an administrative act | ADR-011 | CP-A |
 | D4 | Multi-workspace selection | explicit step, stored in session, **re-validated against `membership` every request** | ADR-012 | CP-A |
 | D5 | Enforcement of "never from the request" | scoped-connection dependency **+ a test that walks the OpenAPI schema** and fails if any endpoint declares `workspace_id` or `clearance` | ADR-013 | CP-A |
-| D6 | 1:1 vs task-shaped endpoints | **still open** — recommend 1:1 for P3 | — | CP-B |
+| D6 | 1:1 vs task-shaped endpoints | **1:1 with the domain functions**, minus `workspace_id`/`clearance` which come from the session; revisit at P6 | ADR-014 | CP-B |
 | D7 | Who may read the audit trail | **still open** | — | `audit` endpoint only |
 | — | `graph` + `assistant` deferred to P6 | still open — recommend a recorded exception, as CP9 was | — | CP-E |
 | — | `insights` tiles | still open — recommend derive or delete, never approximate | — | CP-E |
 
 **§5 is complete** (#67 guard, #68 id-keyed lookup, #69 error taxonomy, #70 `decisions.ts`,
-#71 `/commitments`). D1–D5 no longer block, so **CP-A is unblocked and awaiting a start
-instruction** — it has not begun. D6 blocks CP-B and is still open.
+#71 `/commitments`). **CP-A is complete** (#73 A1 · #74 A2 · #75 A3 · #76 A4 · #77 A5).
+D6 is approved as ADR-014, so **CP-B is unblocked**. D7 remains open and gates only the
+`audit` endpoint.

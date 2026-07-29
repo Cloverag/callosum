@@ -4,6 +4,21 @@ A human-readable log of the decisions that shaped the project and *why* — the 
 
 ---
 
+### 2026-07-29 — P3 API shape: 1:1 with the domain functions, revisit at P6
+Owner approved D6 as **ADR-014**. Each public `meridian/*.py` function gets one
+endpoint, **minus `workspace_id` and `clearance`** — those come from the session
+(ADR-013), never from the client. Pure helpers (`tally`, `is_overdue`) get no endpoint;
+they are computed client-side.
+**Why:** the frontend `lib/*.ts` modules already mirror the Python dataclasses
+field-for-field, so a 1:1 API makes six of the swaps a change of transport and nothing
+else, and the existing frontend tests become the acceptance criteria unrewritten. It is
+also the reviewable option — an endpoint can be checked against one function.
+**The cost, recorded so it is not rediscovered:** 1:1 leaks the domain model into the
+wire format (a domain refactor becomes a breaking API change) and a screen needing four
+aggregates makes four round trips. Neither bites at one same-origin frontend with no
+external consumers. Revisit at P6 when round-trip cost is measurable rather than
+assumed.
+
 ### 2026-07-29 — P3 authentication: OIDC, cookie session, no auto-provisioning
 Owner approved D1–D5, recorded as **ADR-009 – ADR-013**. Authentication is **OIDC**; the
 session is an **httpOnly signed cookie** (same-origin Next.js, so no bearer token). The
