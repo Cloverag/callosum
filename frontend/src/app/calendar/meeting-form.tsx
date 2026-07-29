@@ -6,7 +6,6 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { dayKey } from "@/lib/calendar";
 import {
-  meetingsApi,
   MEETING_STATUSES,
   MEETING_STATUS_LABEL,
   type Meeting,
@@ -27,19 +26,24 @@ const toTimeInput = (iso: string) => {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 };
 
+function todayInput(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
 export function MeetingForm({
   open,
   editing,
   defaultDate,
   onClose,
-  onSaved,
 }: {
   open: boolean;
   editing: Meeting | null;
   /** Pre-fills the date field when creating (e.g. the day the user pressed Enter on). */
   defaultDate?: Date | null;
   onClose: () => void;
-  onSaved: () => void;
+  /** Accepted but unused until CP-D gives meetings write endpoints. */
+  onSaved?: () => void;
 }) {
   const [title, setTitle] = React.useState("");
   const [date, setDate] = React.useState("");
@@ -47,21 +51,19 @@ export function MeetingForm({
   const [end, setEnd] = React.useState("10:00");
   const [location, setLocation] = React.useState("");
   const [status, setStatus] = React.useState<MeetingStatus>("draft");
-  const [sensitivity, setSensitivity] = React.useState(2);
-  const [objectives, setObjectives] = React.useState("");
-  const [saving, setSaving] = React.useState(false);
+  const [saveError, setSaveError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     if (!open) return;
     if (editing) {
       setTitle(editing.title);
-      setDate(toDateInput(editing.start));
-      setStart(toTimeInput(editing.start));
-      setEnd(toTimeInput(editing.end));
+      // A draft has no window until it is scheduled, so fall back to the defaults
+      // rather than formatting a null into an Invalid Date.
+      setDate(editing.scheduled_start ? toDateInput(editing.scheduled_start) : todayInput());
+      setStart(editing.scheduled_start ? toTimeInput(editing.scheduled_start) : "09:00");
+      setEnd(editing.scheduled_end ? toTimeInput(editing.scheduled_end) : "10:00");
       setLocation(editing.location ?? "");
       setStatus(editing.status);
-      setSensitivity(editing.sensitivity);
-      setObjectives(editing.objectives ?? "");
     } else {
       setTitle("");
       setDate(dayKey(defaultDate ?? new Date()));
@@ -69,31 +71,16 @@ export function MeetingForm({
       setEnd("10:00");
       setLocation("");
       setStatus("draft");
-      setSensitivity(2);
-      setObjectives("");
     }
   }, [open, editing, defaultDate]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setSaving(true);
-    const payload = {
-      title: title.trim(),
-      status,
-      start: `${date}T${start}:00`,
-      end: `${date}T${end}:00`,
-      location: location.trim() || undefined,
-      objectives: objectives.trim() || undefined,
-      sensitivity,
-    };
-    try {
-      if (editing) await meetingsApi.update(editing.id, payload);
-      else await meetingsApi.create(payload);
-      onSaved();
-      onClose();
-    } finally {
-      setSaving(false);
-    }
+    // Writes are CP-D. There is no POST or PATCH endpoint yet, and the mock that
+    // used to accept them is gone — so this says so rather than pretending to save
+    // into somewhere that no longer exists. `onSaved` stays on the props for the
+    // same reason: CP-D restores this path rather than rebuilding it.
+    setSaveError("Creating and editing meetings is not available yet.");
   }
 
   return (
@@ -106,12 +93,18 @@ export function MeetingForm({
           <Button variant="ghost" type="button" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" form="meeting-form" loading={saving}>
+          <Button type="submit" form="meeting-form" disabled>
             {editing ? "Save changes" : "Create meeting"}
           </Button>
         </>
       }
     >
+      {saveError && (
+        <p className="mb-3 rounded-[10px] bg-surface-sunken px-3 py-2 text-xs text-muted-foreground">
+          {saveError}
+        </p>
+      )}
+
       <form id="meeting-form" onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-1.5">
           <label htmlFor="mtg-title" className="text-sm font-medium text-foreground">
@@ -172,36 +165,6 @@ export function MeetingForm({
               ))}
             </select>
           </div>
-          <div className="space-y-1.5">
-            <label htmlFor="mtg-clr" className="text-sm font-medium text-foreground">
-              Clearance
-            </label>
-            <select
-              id="mtg-clr"
-              value={sensitivity}
-              onChange={(e) => setSensitivity(Number(e.target.value))}
-              className={field}
-            >
-              {[1, 2, 3, 4, 5].map((n) => (
-                <option key={n} value={n}>
-                  Level {n}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div className="space-y-1.5">
-          <label htmlFor="mtg-obj" className="text-sm font-medium text-foreground">
-            Objectives <span className="text-muted-foreground">(optional)</span>
-          </label>
-          <textarea
-            id="mtg-obj"
-            value={objectives}
-            onChange={(e) => setObjectives(e.target.value)}
-            rows={3}
-            className="w-full resize-none rounded-md border border-border bg-surface-raised px-3 py-2 text-sm text-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus"
-          />
         </div>
       </form>
     </Dialog>

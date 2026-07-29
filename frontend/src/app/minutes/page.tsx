@@ -14,15 +14,24 @@ import {
   type MinutesStatus,
 } from "@/lib/minutes";
 import { meetingsApi, type Meeting } from "@/lib/meetings";
+
+/**
+ * Minutes belong to a meeting, so this surface names one — `list_minutes` requires it
+ * and the mock only made it optional. A meeting picker is CP-F's job.
+ */
+const MEETING_ID = "m-q3";
 import { MinutesCard } from "./minutes-card";
 
 /**
  * Minutes — the record of what each meeting resolved.
  *
- * Note what this page does not have: a clearance switch. `/packs` has one
- * because `list_packs` takes a clearance and filters on it. `list_minutes` does
- * not, so offering the control here would imply a filter that does not exist.
- * The absence is the honest mirror of the contract.
+ * Note what this page does not have: a clearance switch. `/packs` filters by the
+ * caller's clearance server-side; `list_minutes` takes no clearance at all, so
+ * offering any such control here would imply a filter that does not exist. The
+ * absence is the honest mirror of the contract — see issue #49.
+ *
+ * The status chips filter in the browser, over minutes already returned. That is
+ * presentation, not a query, and emphatically not a security filter.
  */
 export default function MinutesPage() {
   const [minutes, setMinutes] = useState<Minutes[] | null>(null);
@@ -30,7 +39,10 @@ export default function MinutesPage() {
   const [active, setActive] = useState<Set<MinutesStatus>>(new Set());
 
   useEffect(() => {
-    minutesApi.list().then(setMinutes);
+    minutesApi
+      .list({ meeting_id: MEETING_ID })
+      .then(setMinutes)
+      .catch(() => setMinutes([]));
     meetingsApi.list().then(setMeetings);
   }, []);
 

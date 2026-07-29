@@ -13,65 +13,61 @@ import {
   type BoardPack,
   type PackStatus,
 } from "@/lib/packs";
-import {
-  INVESTOR_CLEARANCE,
-  RESTRICTED_CLEARANCE,
-  documentsApi,
-  type Document,
-} from "@/lib/documents";
+import { RESTRICTED_CLEARANCE, documentsApi, type Document } from "@/lib/documents";
 import { meetingsApi, type Meeting } from "@/lib/meetings";
 import { PackCard } from "./pack-card";
 
 /**
+ * Packs hang off a meeting, so this surface names one. A meeting picker is CP-F's
+ * job; until then it is the demo board's meeting.
+ */
+const MEETING_ID = "m-q3";
+
+/**
  * Board packs — the pre-read circulated before each meeting.
  *
- * The clearance switch is not a demo toy. It exercises the rule the backend
- * enforces in SQL: `_fetch_items_for_packs` drops items above the caller's level
- * before the pack is serialised, then renumbers what survives.
+ * **The clearance switch is gone, and its absence is the point.** It existed because
+ * the mock had to be told which level to filter at. The real API resolves clearance
+ * from the caller's active membership on every request (ADR-013) — there is nowhere
+ * to pass one, and a client that could name its own would be able to ask for every
+ * restricted document in the workspace.
  *
- * Note how this differs from `/memory`, deliberately. The graph surface tells
- * you *how many* nodes were withheld, because `graph_search` returns that count.
- * This surface never does, because `list_packs` does not — and could not without
- * undoing its own renumbering. Switch between Founder and Investor and watch: no
- * gap appears in the numbering, no total changes, nothing announces itself. That
- * silence is the contract working, not a missing feature.
+ * What it demonstrated still holds, it is simply no longer switchable from the
+ * browser: `_fetch_items_for_packs` drops items above the caller's level before the
+ * pack is serialised, then renumbers what survives.
+ *
+ * Note how this differs from `/memory`, deliberately. The graph surface tells you
+ * *how many* nodes were withheld, because `graph_search` returns that count. This one
+ * never does, because `list_packs` does not — and could not without undoing its own
+ * renumbering. No gap appears in the numbering, no total changes, nothing announces
+ * itself. That silence is the contract working, not a missing feature.
  */
-/** What one clearance level's reads returned, kept together with the level itself. */
-type Loaded = { clearance: number; packs: BoardPack[]; documents: Document[] };
+type Loaded = { packs: BoardPack[]; documents: Document[] };
 
 export default function PacksPage() {
   const [data, setData] = useState<Loaded | null>(null);
   const [meetings, setMeetings] = useState<Meeting[] | null>(null);
   const [active, setActive] = useState<Set<PackStatus>>(new Set());
-  const [asFounder, setAsFounder] = useState(true);
-
-  const clearance = asFounder ? RESTRICTED_CLEARANCE : INVESTOR_CLEARANCE;
 
   useEffect(() => {
     let stale = false;
-    // Both reads are clearance-scoped. The document list is fetched at the same
-    // level as the packs so a title can never be resolved for an item the pack
-    // API declined to return — the two filters agree by construction.
-    Promise.all([packsApi.list({ clearance }), documentsApi.list({ clearance })]).then(
+    // Pack items are filtered by the server at the caller's own clearance. The
+    // document list is still the CP-E mock, so a title may fail to resolve for an
+    // item the API did return — the card renders that as an unresolved reference,
+    // never as withheld content, which is the honest reading of a dangling id.
+    Promise.all([packsApi.list({ meeting_id: MEETING_ID }), documentsApi.list({ clearance: RESTRICTED_CLEARANCE })]).then(
       ([p, d]) => {
         if (stale) return;
-        setData({ clearance, packs: p, documents: d });
+        setData({ packs: p, documents: d });
       },
     );
     return () => {
       stale = true;
     };
-  }, [clearance]);
+  }, []);
 
-  // The loaded clearance is stored alongside the data and checked during render
-  // rather than cleared in the effect. Two reasons, and the second is the real
-  // one: it avoids a cascading render, and it makes it impossible to paint one
-  // clearance's packs under another clearance's label during the gap between
-  // switching and the new read resolving. A stale render here would not be a
-  // flicker, it would be a disclosure.
-  const loaded = data && data.clearance === clearance ? data : null;
-  const packs = loaded?.packs ?? null;
-  const documents = loaded?.documents ?? [];
+  const packs = data?.packs ?? null;
+  const documents = data?.documents ?? [];
 
   useEffect(() => {
     meetingsApi.list().then(setMeetings);
@@ -152,30 +148,6 @@ export default function PacksPage() {
               Clear
             </button>
           )}
-        </div>
-
-        <div className="inline-flex rounded-full border border-border p-0.5" role="group" aria-label="Reader clearance">
-          {[
-            { key: true, label: "Founder", hint: "Full clearance" },
-            { key: false, label: "Investor", hint: "Restricted clearance" },
-          ].map((opt) => (
-            <button
-              key={String(opt.key)}
-              type="button"
-              onClick={() => setAsFounder(opt.key)}
-              aria-pressed={asFounder === opt.key}
-              title={opt.hint}
-              className={cn(
-                "rounded-full px-3 py-1 text-xs transition-colors",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
-                asFounder === opt.key
-                  ? "bg-accent-subtle text-accent-emphasis"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {opt.label}
-            </button>
-          ))}
         </div>
       </div>
 
