@@ -18,6 +18,7 @@ import callosum
 from meridian.api import auth, errors
 from meridian.api import agenda as agenda_api
 from meridian.api import board_members as board_members_api
+from meridian.api import commitments as commitments_api
 from meridian.api import decisions as decisions_api
 from meridian.api import meetings as meetings_api
 from meridian.api import minutes as minutes_api
@@ -70,6 +71,7 @@ app.include_router(meetings_api.router)
 app.include_router(packs_api.router)
 app.include_router(minutes_api.router)
 app.include_router(decisions_api.router)
+app.include_router(commitments_api.router)
 
 # Domain exceptions map to HTTP centrally (P3 §5.3). Registered once here rather than
 # caught in each route, so a new endpoint inherits the right statuses — a 409 for a
