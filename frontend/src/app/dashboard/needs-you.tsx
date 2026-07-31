@@ -7,10 +7,15 @@ import { FileSignature, GitMerge, CalendarClock, FileUp, ChevronRight, Check } f
 import { Card } from "@/components/ui/card";
 
 export type ActionCounts = {
-  decisions: number;
+  /**
+   * `null` means "not measured", which is not the same as zero and must not render
+   * as one. `decisions` and `docs` are null until something counts them: the CP-E
+   * audit found both were literals printed as if they had been.
+   */
+  decisions: number | null;
   conflicts: number;
   meetings: number;
-  docs: number;
+  docs: number | null;
 };
 
 // Ordered by urgency — actionability decreases as you move down.
@@ -24,7 +29,12 @@ const ROWS: { key: keyof ActionCounts; label: string; href: string; icon: ReactN
 export function NeedsYou({ counts }: { counts: ActionCounts | null }) {
   const reduce = useReducedMotion();
   const loading = counts === null;
-  const total = counts ? counts.decisions + counts.conflicts + counts.meetings + counts.docs : 0;
+  // Unmeasured rows are excluded from the total rather than counted as zero — a
+  // total that silently absorbs a null is a number nobody can reconcile with the
+  // rows above it.
+  const total = counts
+    ? (counts.decisions ?? 0) + counts.conflicts + counts.meetings + (counts.docs ?? 0)
+    : 0;
 
   return (
     <Card className="flex h-full flex-col overflow-hidden">
@@ -75,7 +85,16 @@ export function NeedsYou({ counts }: { counts: ActionCounts | null }) {
                     {r.icon}
                   </span>
                   <span className="flex-1 text-sm text-foreground">{r.label}</span>
-                  {count > 0 ? (
+                  {count === null ? (
+                    // Not measured. An em dash says so; a "0" would claim there is
+                    // nothing waiting, which is a different and unverified statement.
+                    <span
+                      className="text-xs tabular-nums text-subtle-foreground"
+                      title="Not measured yet"
+                    >
+                      —
+                    </span>
+                  ) : count > 0 ? (
                     <span className="rounded-full bg-accent-subtle px-2 py-0.5 text-xs font-medium tabular-nums text-accent-emphasis">
                       {count}
                     </span>
