@@ -344,7 +344,7 @@ decisions in ADR-009 – ADR-014.
 | CP-A | identity + session | ✅ `principal_identity` · subject resolution · OIDC/Keycloak · workspace selection · OpenAPI guard |
 | CP-B | first vertical slice | ✅ `/api/resolutions` + real client, mock deleted |
 | CP-C | remaining mechanical reads | ✅ **7 / 7** — `board_members` `agenda` `meetings` `packs` `minutes` `decisions` `commitments` |
-| CP-D | writes + 409 concurrency | 🟩 **D1 done** — `meetings` create/patch/transition, the pattern the rest follow; D2 (remaining aggregates) and D3 (frontend conflict handling) open |
+| CP-D | writes + 409 concurrency | 🟩 **D1 + D2a + D2b done** — `meetings` `agenda` `decisions` `packs` `minutes`; D2c (`resolutions` `commitments` `board_members`) and D3 (frontend conflict handling) open |
 | CP-E | the four orphan mocks | ⬜ `documents` `insights` `graph` `assistant` |
 | CP-F | states, rate limits, observability | ⬜ |
 | CP-G | accessibility | ⬜ |
