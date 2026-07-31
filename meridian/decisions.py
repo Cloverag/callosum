@@ -88,6 +88,13 @@ class DecisionStance:
     decision_id: str
     workspace_id: str
     person_name: str
+    #: Optional resolution of `person_name` to the board directory, added by
+    #: `0012_board_member` as a composite `(board_member_id, workspace_id)` FK. The
+    #: column has been selected all along — `SELECT *` fetched it and this dataclass
+    #: dropped it — so a stance resolved to a director looked unresolved to every
+    #: reader. Nullable forever: a stance recorded before the directory existed, or
+    #: against someone not in it, is still a valid stance.
+    board_member_id: str | None
     stance: str
     comment: str | None
     created_at: datetime
@@ -116,6 +123,7 @@ def _row_to_stance(row: dict) -> DecisionStance:
         decision_id=str(row["decision_id"]),
         workspace_id=str(row["workspace_id"]),
         person_name=row["person_name"],
+        board_member_id=str(row["board_member_id"]) if row["board_member_id"] else None,
         stance=row["stance"],
         comment=row["comment"],
         created_at=row["created_at"],
