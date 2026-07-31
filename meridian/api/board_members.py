@@ -1,4 +1,4 @@
-"""Read endpoints for the board directory (Meridian P3, CP-C — ADR-014).
+"""Board directory endpoints (Meridian P3, CP-C reads · CP-D writes — ADR-014).
 
 1:1 with `meridian/board_members.py`, minus `workspace_id`, which comes from the
 session (ADR-013).
@@ -14,10 +14,43 @@ inactive-only case.
 import uuid
 from typing import Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, status
+from pydantic import BaseModel, ConfigDict
 
 from meridian import board_members as domain
 from meridian.api.deps import CurrentPrincipal
+
+
+class MemberCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    full_name: str
+    role: str
+    #: Optional link to a `principal`. A director who has no account is still a
+    #: director — the directory records the board, not the user list.
+    principal_id: uuid.UUID | None = None
+    organization: str | None = None
+    contact_email: str | None = None
+    voting: str = "voting"
+
+
+class MemberPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int
+    full_name: str | None = None
+    organization: str | None = None
+    role: str | None = None
+    contact_email: str | None = None
+    voting: str | None = None
+
+
+class MemberVersioned(BaseModel):
+    """For deactivate/reactivate — the whole body is the concurrency check."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int
 
 router = APIRouter(prefix="/api/board-members", tags=["board-members"])
 
@@ -54,3 +87,74 @@ def get_member(member_id: uuid.UUID, principal: CurrentPrincipal) -> domain.Boar
     unresolvable.
     """
     return domain.get_member(str(member_id), workspace_id=principal.workspace_id)
+
+
+@router.post("", status_code=status.HTTP_201_CREATED)
+def create_member(payload: MemberCreate, principal: CurrentPrincipal) -> domain.BoardMember:
+    """Adds a director to the workspace directory.
+
+    Deliberately no uniqueness on `(workspace_id, full_name)`: two real people can share
+    a name, and this system's alias machinery exists precisely because names collide.
+    """
+    return domain.create_member(
+        payload.full_name,
+        payload.role,
+        workspace_id=principal.workspace_id,
+        principal_id=str(payload.principal_id) if payload.principal_id else None,
+        organization=payload.organization,
+        contact_email=payload.contact_email,
+        voting=payload.voting,
+    )
+
+
+@router.patch("/{member_id}")
+def update_member(
+    member_id: uuid.UUID, payload: MemberPatch, principal: CurrentPrincipal
+) -> domain.BoardMember:
+    """Edits a directory entry under optimistic concurrency.
+
+    `active` is not patchable — leaving the board is `deactivate`, which is a distinct
+    event rather than a field edit.
+    """
+    changes = payload.model_dump(exclude_unset=True)
+    changes.pop("expected_version", None)
+    return domain.update_member(
+        str(member_id),
+        expected_version=payload.expected_version,
+        workspace_id=principal.workspace_id,
+        **changes,
+    )
+
+
+@router.post("/{member_id}/deactivate")
+def deactivate_member(
+    member_id: uuid.UUID, payload: MemberVersioned, principal: CurrentPrincipal
+) -> domain.BoardMember:
+    """Marks a director as departed. **Not a delete.**
+
+    Their stances, votes and commitments reference them and remain valid — a decision
+    taken by the board that existed at the time is not unmade by someone leaving. The
+    composite `(id, workspace_id)` foreign keys make removal impossible anyway, which is
+    the constraint enforcing the intent rather than a convention describing it.
+    """
+    return domain.deactivate_member(
+        str(member_id),
+        expected_version=payload.expected_version,
+        workspace_id=principal.workspace_id,
+    )
+
+
+@router.post("/{member_id}/reactivate")
+def reactivate_member(
+    member_id: uuid.UUID, payload: MemberVersioned, principal: CurrentPrincipal
+) -> domain.BoardMember:
+    """Returns a director to active service.
+
+    Separate from `deactivate` rather than one toggle taking a boolean, per ADR-014's
+    1:1 rule — and because the two are not symmetric operations to audit.
+    """
+    return domain.reactivate_member(
+        str(member_id),
+        expected_version=payload.expected_version,
+        workspace_id=principal.workspace_id,
+    )
