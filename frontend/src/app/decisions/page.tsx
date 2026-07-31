@@ -26,8 +26,17 @@ export default function DecisionsPage() {
   const [active, setActive] = useState<Set<DecisionStatus>>(new Set());
 
   useEffect(() => {
-    decisionsApi.list().then(setDecisions).catch((e) => setError(asApiError(e)));
-    meetingsApi.list().then(setMeetings);
+    // There is no workspace-wide decisions query — a decision exists only inside a
+    // meeting, so the meetings must be fetched first and the decisions fanned out
+    // across them. See the note on `decisionsApi`.
+    meetingsApi
+      .list()
+      .then((ms) => {
+        setMeetings(ms);
+        return decisionsApi.listForMeetings(ms.map((m) => m.id));
+      })
+      .then(setDecisions)
+      .catch((e) => setError(asApiError(e)));
   }, []);
 
   const meetingTitle = useMemo(() => {

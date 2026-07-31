@@ -36,12 +36,19 @@ export default function DashboardPage() {
   const [decisions, setDecisions] = useState<Decision[] | null>(null);
 
   useEffect(() => {
-    meetingsApi.list().then(setMeetings).catch((e) => setError(asApiError(e)));
+    meetingsApi
+      .list()
+      .then((ms) => {
+        setMeetings(ms);
+        // Recent decisions need meetings first: the API has no workspace-wide list.
+        return decisionsApi.listForMeetings(ms.map((m) => m.id));
+      })
+      .then((d) => setDecisions(d.slice(0, 5)))
+      .catch((e) => setError(asApiError(e)));
     apiClient.getPendingConflicts().then(setConflicts);
     insightsApi.get().then(setInsights);
     // Newest five. The card links through to /decisions for the rest rather than
     // growing without bound on the dashboard.
-    decisionsApi.list().then((d) => setDecisions(d.slice(0, 5)));
   }, []);
 
   const upcoming = useMemo(() => {

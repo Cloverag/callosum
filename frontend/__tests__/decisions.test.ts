@@ -1,57 +1,80 @@
-import { decisionsApi, stanceBreakdown, supersededBy, type Decision } from "../src/lib/decisions";
+import { stanceBreakdown, supersededBy, type Decision } from "../src/lib/decisions";
 import { nameOf } from "../src/lib/board-members";
-// The directory is a live API client as of CP-C. These tests only need a member
-// list to resolve ids against — that is a cross-module contract assertion, not a
-// client test — so they read the fixture directly rather than stubbing fetch.
-import { BOARD_MEMBER_FIXTURES } from "../test-support/board-members-fixture";
 
 /**
- * `decision_stance.board_member_id` shipped in CP5a (`0012_board_member`) as a
- * composite `(board_member_id, workspace_id)` foreign key. `decisions.ts` had carried
- * a note saying it was still "coming in CP5" long after it arrived.
+ * The derived helpers on `lib/decisions.ts`, and the stance properties the UI depends
+ * on.
  *
- * The property worth pinning is not that the field exists — it is that it is
- * **nullable forever**, and that `person_name` survives beside it. Those two facts are
- * what stop a surface from treating an unresolved stance as an error, or from
- * replacing what was minuted with what the directory currently says.
+ * **These used to read from `decisionsApi`, when it was a mock.** The client went live
+ * during the demo build-out, so the tests now assert against a local fixture instead:
+ * `stanceBreakdown` and `supersededBy` are pure functions, and testing a pure function
+ * through a network client only ever tested the client.
+ *
+ * The stance *shape* properties they also covered — `board_member_id` nullable,
+ * `person_name` always present beside it — are now pinned server-side, against the real
+ * database, by `tests/test_decisions_api.py`:
+ *   · `test_a_resolved_stance_carries_its_board_member_id`
+ *   · `test_an_unresolved_stance_is_null_not_missing`
+ * That is a stronger guarantee than a fixture could give, because a fixture can be
+ * written to agree with a bug.
  */
 
+const STANCE = (over: Partial<Decision["stances"][number]>) => ({
+  id: "s-1",
+  decision_id: "d-price-reject",
+  workspace_id: "ws-1",
+  person_name: "Priya Nair",
+  board_member_id: null,
+  stance: "SUPPORTED" as const,
+  comment: null,
+  created_at: "2026-03-11T10:00:00Z",
+  updated_at: "2026-03-11T10:00:00Z",
+  ...over,
+});
+
+const REJECT: Decision = {
+  id: "d-price-reject",
+  meeting_id: "m-12",
+  agenda_item_id: null,
+  workspace_id: "ws-1",
+  title: "Reject Pricing Model B",
+  rationale: null,
+  status: "superseded",
+  superseded_by_id: "d-price-adopt",
+  version: 2,
+  created_at: "2026-03-11T10:00:00Z",
+  updated_at: "2026-06-10T10:00:00Z",
+  stances: [
+    STANCE({ id: "s-1", person_name: "Raj Malhotra", stance: "APPROVED", board_member_id: "bm-raj" }),
+    STANCE({ id: "s-2", person_name: "Priya Nair", stance: "SUPPORTED" }),
+    STANCE({ id: "s-3", person_name: "Marcus Webb", stance: "OPPOSED" }),
+  ],
+};
+
+const ADOPT: Decision = {
+  ...REJECT,
+  id: "d-price-adopt",
+  title: "Adopt Usage-Based Pricing",
+  status: "approved",
+  superseded_by_id: null,
+  created_at: "2026-06-10T10:00:00Z",
+  stances: [],
+};
+
 describe("stances resolve to the directory, optionally", () => {
-  it("resolves a stance whose recorded name is in the directory", async () => {
-    const decisions = await decisionsApi.list();
-    const members = BOARD_MEMBER_FIXTURES;
-    const resolved = decisions
-      .flatMap((d) => d.stances)
-      .filter((s) => s.board_member_id !== null);
-
+  it("keeps the recorded name beside a resolved id", () => {
+    // `person_name` is what was minuted and is permanent audit data; `board_member_id`
+    // is an optional resolution of it. Collapsing them would lose the record of what
+    // was actually written down.
+    const resolved = REJECT.stances.filter((s) => s.board_member_id !== null);
     expect(resolved.length).toBeGreaterThan(0);
-    for (const s of resolved) {
-      // A populated id must actually resolve. If it does not, the two mocks have
-      // drifted apart and the real API would 404 on the same lookup.
-      expect(nameOf(s.board_member_id, members)).not.toBeNull();
-    }
+    expect(resolved.every((s) => s.person_name.length > 0)).toBe(true);
   });
 
-  it("keeps the recorded name even when the stance resolves", async () => {
-    // person_name is what was minuted and is permanent audit data; board_member_id is
-    // an optional resolution of it. Collapsing them would lose the record of what was
-    // actually written down.
-    const decisions = await decisionsApi.list();
-    for (const s of decisions.flatMap((d) => d.stances)) {
-      expect(typeof s.person_name).toBe("string");
-      expect(s.person_name.length).toBeGreaterThan(0);
-    }
-  });
-
-  it("leaves board_member_id null for a name the directory does not know", async () => {
+  it("treats a null board_member_id as valid, not as an error", () => {
     // The realistic case, not an oversight: a stance minuted before the directory
-    // existed, or against someone never added to it, is still a valid stance. A mock
-    // where every row resolved would let an unresolved-stance bug go unnoticed.
-    const decisions = await decisionsApi.list();
-    const unresolved = decisions
-      .flatMap((d) => d.stances)
-      .filter((s) => s.board_member_id === null);
-
+    // existed, or against someone never added to it, is still a valid stance.
+    const unresolved = REJECT.stances.filter((s) => s.board_member_id === null);
     expect(unresolved.length).toBeGreaterThan(0);
     expect(unresolved.every((s) => s.person_name.length > 0)).toBe(true);
   });
@@ -65,19 +88,18 @@ describe("stances resolve to the directory, optionally", () => {
   });
 });
 
-describe("existing decision contract still holds", () => {
-  it("counts stances in spectrum order, omitting those nobody took", async () => {
-    const d = (await decisionsApi.get("d-price-reject"))!;
-    const rows = stanceBreakdown(d);
+describe("the derived helpers", () => {
+  it("counts stances in spectrum order, omitting those nobody took", () => {
+    const rows = stanceBreakdown(REJECT);
     expect(rows.every((r) => r.count > 0)).toBe(true);
-    expect(rows.reduce((n, r) => n + r.count, 0)).toBe(d.stances.length);
+    expect(rows.reduce((n, r) => n + r.count, 0)).toBe(REJECT.stances.length);
   });
 
-  it("follows a supersession link, and tolerates a missing target", async () => {
-    const all = await decisionsApi.list();
-    const superseded = all.find((d) => d.id === "d-price-reject")!;
-    expect(supersededBy(superseded, all)!.id).toBe("d-price-adopt");
+  it("follows a supersession link, and tolerates a missing target", () => {
+    expect(supersededBy(REJECT, [REJECT, ADOPT])!.id).toBe("d-price-adopt");
 
+    // A dangling pointer must not crash a page. It renders as "no replacement found",
+    // which is the truth, rather than throwing.
     const orphan = { id: "x", superseded_by_id: "gone" } as Decision;
     expect(supersededBy(orphan, [orphan])).toBeNull();
   });

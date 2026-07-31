@@ -5,6 +5,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Sparkles, PanelRightClose, ArrowUp, BadgeCheck, Lock, FileText, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { assistantApi, type AssistantTurn } from "@/lib/assistant";
+import { meetingsApi } from "@/lib/meetings";
 import { decisionsApi, type Decision } from "@/lib/decisions";
 
 // Quick shortcuts map to questions the approved memory can actually answer —
@@ -58,7 +59,14 @@ export function AssistantRail() {
     // Approved only: the rail surfaces settled positions, not live motions. The
     // filter runs server-side in the real API, so it is passed as an argument
     // here rather than applied after the fetch.
-    decisionsApi.list({ status: "approved" }).then((d) => setDecisions(d.slice(0, 3)));
+    // Meetings first — there is no workspace-wide decisions query. A failure here
+    // leaves the rail's recent-decisions list empty rather than throwing; the rail is
+    // an aside, and an error banner inside it would shout louder than the page.
+    meetingsApi
+      .list()
+      .then((ms) => decisionsApi.listForMeetings(ms.map((m) => m.id), { status: "approved" }))
+      .then((d) => setDecisions(d.slice(0, 3)))
+      .catch(() => setDecisions([]));
   }, []);
 
   useEffect(() => {
