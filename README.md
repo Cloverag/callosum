@@ -218,12 +218,25 @@ the answer — and is not told what they are missing.
 which proxies `/api` and `/auth` through to FastAPI, because the session is a
 same-origin httpOnly cookie:
 
+Both commands `cd` first, because `.venv/bin/uvicorn` is relative to the repository
+root and the second one is not — running them in the wrong directory is the first thing
+that goes wrong.
+
 ```bash
-# terminal 1 — the API
+# terminal 1 — the API, from the repository root
+cd /path/to/callosum
 .venv/bin/uvicorn meridian.api.main:app --reload --port 8000
 
 # terminal 2 — the web app
-cd frontend && npm install && npm run dev     # http://localhost:3000
+cd /path/to/callosum/frontend
+npm install && npm run dev                    # http://localhost:3000
+```
+
+Check the API is up before loading a page:
+
+```bash
+curl -s localhost:8000/health/engine
+# {"status":"ok","engine":"callosum","engine_version":"0.1.5"}
 ```
 
 Starting only the second one is the common mistake: every page loads and every panel
