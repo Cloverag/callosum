@@ -156,8 +156,20 @@ def _token_pattern(token: str) -> str:
     return "".join(_GLYPH_CLASSES.get(ch, re.escape(ch)) for ch in token)
 
 
+#: What may sit between two tokens of a located quote: horizontal whitespace, or a
+#: single line break with indentation on either side — never a blank line.
+#:
+#: `\r` is in the horizontal class rather than treated as a line terminator so CRLF
+#: input reflows like LF. Leaving it out silently broke every CRLF document, which is
+#: most of what arrives from Windows and from email.
+#:
+#: The lookahead is `[ \t\r]*\n` rather than `\s*\n` so it cannot itself consume a
+#: newline while deciding whether a newline follows.
+_REFLOW = r"(?:[ \t\r]*\n[ \t\r]*(?![ \t\r]*\n)|[ \t\r]+)"
+
+
 def locate(quote: str, haystack: str) -> tuple[int, int] | None:
-    """Find a quote's exact character span, tolerating reflowed whitespace and
+    r"""Find a quote's exact character span, tolerating reflowed whitespace and
     typographic-vs-ASCII punctuation.
 
     Models reflow quotes across line breaks and swap quote/dash glyphs — the text is
@@ -167,12 +179,23 @@ def locate(quote: str, haystack: str) -> tuple[int, int] | None:
 
     Deliberately NOT fuzzy beyond whitespace, case, and glyph equivalence. A
     paraphrase is a fabrication, and it must not be located.
+
+    Reflow is matched WITHIN a block, never ACROSS one. `\s+` would happily bridge a
+    blank line, so a quote could be assembled from the end of one speaker's turn and
+    the start of the next — text that appears verbatim in the document while never
+    having been said by anyone. `_REFLOW` allows horizontal whitespace and at most one
+    line break with surrounding indentation, and the negative lookahead refuses a
+    second line break.
+
+    THIS BOUNDS THE THESIS: an edge is verified because its evidence quote was located,
+    so what `locate()` accepts is what "verified" means. Widening it is a claim about
+    the corpus and must be measured, not argued.
     """
     tokens = quote.split()
     if not tokens:
         return None
 
-    pattern = r"\s+".join(_token_pattern(t) for t in tokens)
+    pattern = _REFLOW.join(_token_pattern(t) for t in tokens)
     match = re.search(pattern, haystack, flags=re.IGNORECASE)
     return (match.start(), match.end()) if match else None
 
