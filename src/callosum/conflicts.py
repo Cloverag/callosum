@@ -184,10 +184,19 @@ def detect_conflicts(
                 ),
             )
             queued += 1
-        except Exception:
-            # On a fresh database (entity_conflict table does not exist yet),
-            # degrade gracefully. The CLI will print a helpful migration message.
-            raise
+        except psycopg.errors.UndefinedTable as exc:
+            # A fresh database has no entity_conflict table (migration 0005). Name the
+            # cause instead of surfacing a bare "relation does not exist" from the
+            # middle of a scan.
+            #
+            # This deliberately still RAISES. The rejected alternative was to log and
+            # return the count queued so far, which reports a missing migration as
+            # "no conflicts found" — a scan that silently examines nothing is worse
+            # than one that stops.
+            raise RuntimeError(
+                "entity_conflict table is missing — apply migration 0005 before scanning "
+                "for conflicts."
+            ) from exc
 
     return queued
 

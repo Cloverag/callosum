@@ -18,7 +18,7 @@ if os.environ.get("CALLOSUM_RUN_INTEGRATION") != "1":
 import psycopg
 
 from callosum.config import settings
-from meridian import agenda, decisions, meetings
+from meridian import agenda, audit, decisions, meetings
 from meridian.decisions import (
     APPROVED,
     DEFERRED,
@@ -56,6 +56,9 @@ def _new_workspace() -> str:
 
 def _cleanup(*workspace_ids: str) -> None:
     for ws in workspace_ids:
+        # Before the aggregates: `record_stance` now writes an audit_event in the same
+        # transaction, and the workspace row cannot go while those rows reference it.
+        _admin("DELETE FROM audit_event WHERE workspace_id = %s", (ws,))
         _admin("DELETE FROM decision_stance WHERE workspace_id = %s", (ws,))
         _admin("DELETE FROM decision WHERE workspace_id = %s", (ws,))
         _admin("DELETE FROM agenda_item WHERE workspace_id = %s", (ws,))
@@ -120,6 +123,74 @@ def test_record_stance_and_upsert():
         names_and_stances = {(x.person_name, x.stance) for x in fetched.stances}
         assert ("Raj Malhotra", STANCE_APPROVED) in names_and_stances
         assert ("Priya Nair", STANCE_OPPOSED) in names_and_stances
+    finally:
+        _cleanup(ws)
+
+
+def test_record_stance_writes_an_audit_event_carrying_the_previous_stance():
+    """The audit trail must show what a stance changed *from*, not only its new value.
+
+    Written this way on purpose: the first stance and the change to it are asserted
+    separately, because the interesting field is `old_stance` and it only exists on the
+    second. A test that recorded one stance and checked an event existed would pass
+    against an implementation that read the prior row *after* the upsert had already
+    overwritten it — which is the bug this ordering avoids.
+    """
+    ws = _new_workspace()
+    try:
+        m = meetings.create_meeting("Audited Stance Meeting", workspace_id=ws)
+        dec = decisions.create_decision(m.id, "Adopt the new auditor", workspace_id=ws)
+
+        decisions.record_stance(dec.id, "Raj Malhotra", STANCE_SUPPORTED, workspace_id=ws)
+        decisions.record_stance(dec.id, "Raj Malhotra", STANCE_OPPOSED, workspace_id=ws)
+
+        events = audit.list_audit_events(
+            aggregate_type="decision", aggregate_id=dec.id, action="voted", workspace_id=ws
+        )
+        assert len(events) == 2, f"expected one event per stance write, got {len(events)}"
+
+        by_new_stance = {e.payload["new_stance"]: e.payload for e in events}
+
+        # First stance: nothing to have changed from.
+        assert by_new_stance[STANCE_SUPPORTED]["old_stance"] is None
+        assert by_new_stance[STANCE_SUPPORTED]["person_name"] == "Raj Malhotra"
+
+        # The change carries both ends of it.
+        assert by_new_stance[STANCE_OPPOSED]["old_stance"] == STANCE_SUPPORTED
+    finally:
+        _cleanup(ws)
+
+
+def test_a_failed_stance_audit_write_rolls_back_the_stance(monkeypatch):
+    """The audit event and the stance commit together or not at all.
+
+    `record_audit_event` documents that it must run inside the mutation's transaction,
+    and `store.pg` rolls back on any exception. This pins the consequence: an audit
+    write that fails must not leave a stance behind. The rejected alternative in the
+    original patch wrapped the audit call in `except Exception: pass`, which keeps the
+    stance and silently drops its record — the one outcome an append-only trail exists
+    to prevent.
+
+    Forced with monkeypatch because no ordinary input makes the call fail once the
+    aggregate_type and action validate.
+    """
+    ws = _new_workspace()
+    try:
+        m = meetings.create_meeting("Rollback Meeting", workspace_id=ws)
+        dec = decisions.create_decision(m.id, "Approve the budget", workspace_id=ws)
+
+        def _fail(*args, **kwargs):
+            raise RuntimeError("audit unavailable")
+
+        monkeypatch.setattr(audit, "record_audit_event", _fail)
+
+        with pytest.raises(RuntimeError, match="audit unavailable"):
+            decisions.record_stance(dec.id, "Priya Nair", STANCE_SUPPORTED, workspace_id=ws)
+
+        monkeypatch.undo()
+
+        fetched = decisions.get_decision(dec.id, workspace_id=ws)
+        assert fetched.stances == [], "the stance survived an audit write that failed"
     finally:
         _cleanup(ws)
 

@@ -14,6 +14,8 @@ a workspace-wide list of every version of every meeting's minutes is not a quest
 domain was built to answer.
 """
 
+import uuid
+
 from fastapi import APIRouter
 
 from meridian import minutes as domain
@@ -23,16 +25,16 @@ router = APIRouter(prefix="/api/minutes", tags=["minutes"])
 
 
 @router.get("")
-def list_minutes(meeting_id: str, principal: CurrentPrincipal) -> list[domain.Minutes]:
+def list_minutes(meeting_id: uuid.UUID, principal: CurrentPrincipal) -> list[domain.Minutes]:
     """Every minutes version for a meeting, `version_no DESC, created_at DESC`.
 
     Returns all versions, not just the standing one: the correction trail is the
     point of this surface, and a list that showed only the current record would hide
     exactly what a board needs to reconstruct.
     """
-    return domain.list_minutes(meeting_id, workspace_id=principal.workspace_id)
+    return domain.list_minutes(str(meeting_id), workspace_id=principal.workspace_id)
 
 
 @router.get("/{minutes_id}")
-def get_minutes(minutes_id: str, principal: CurrentPrincipal) -> domain.Minutes:
-    return domain.get_minutes(minutes_id, workspace_id=principal.workspace_id)
+def get_minutes(minutes_id: uuid.UUID, principal: CurrentPrincipal) -> domain.Minutes:
+    return domain.get_minutes(str(minutes_id), workspace_id=principal.workspace_id)
