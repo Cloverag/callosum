@@ -51,6 +51,9 @@ def _new_workspace() -> str:
 
 def _cleanup(*workspace_ids: str) -> None:
     for ws in workspace_ids:
+        # Before the aggregates: `record_stance` now writes an audit_event in the same
+        # transaction, and the workspace row cannot go while those rows reference it.
+        _admin("DELETE FROM audit_event WHERE workspace_id = %s", (ws,))
         _admin("DELETE FROM decision_stance WHERE workspace_id = %s", (ws,))
         _admin("DELETE FROM decision WHERE workspace_id = %s", (ws,))
         _admin("DELETE FROM board_member WHERE workspace_id = %s", (ws,))
