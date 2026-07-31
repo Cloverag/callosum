@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Users } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
+import { LoadFailed, asApiError } from "@/components/ui/load-failed";
+import type { ApiError } from "@/lib/http";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -57,9 +59,10 @@ function Section({ title, meetings }: { title: string; meetings: Meeting[] }) {
 
 export default function MeetingsPage() {
   const [meetings, setMeetings] = useState<Meeting[] | null>(null);
+  const [error, setError] = useState<ApiError | null>(null);
 
   useEffect(() => {
-    meetingsApi.list().then(setMeetings);
+    meetingsApi.list().then(setMeetings).catch((e) => setError(asApiError(e)));
   }, []);
 
   const { upcoming, past } = useMemo(() => {
@@ -76,7 +79,9 @@ export default function MeetingsPage() {
     <div className="p-6">
       <PageHeader title="Meetings" description="Every board meeting in the Acme Corp workspace." icon={<Users />} />
       <div className="mt-6 space-y-6">
-        {meetings === null ? (
+        {error ? (
+          <LoadFailed what="Meetings" error={error} />
+        ) : meetings === null ? (
           <Card>
             <p className="px-5 py-8 text-center text-sm text-muted-foreground">Loading…</p>
           </Card>

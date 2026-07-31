@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight, Plus, Search } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
+import { LoadFailed, asApiError } from "@/components/ui/load-failed";
+import type { ApiError } from "@/lib/http";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -62,6 +64,7 @@ export default function CalendarPage() {
   const [view, setView] = useState<View>("month");
   const [cursor, setCursor] = useState(() => new Date());
   const [meetings, setMeetings] = useState<Meeting[] | null>(null);
+  const [error, setError] = useState<ApiError | null>(null);
   const [selected, setSelected] = useState<Meeting | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Meeting | null>(null);
@@ -71,7 +74,9 @@ export default function CalendarPage() {
   const [focusedDate, setFocusedDate] = useState<Date>(() => startOfDay(new Date()));
 
   const load = useCallback(() => {
-    meetingsApi.list().then(setMeetings);
+    meetingsApi.list()
+      .then(setMeetings)
+      .catch((e) => setError(asApiError(e)));
   }, []);
 
   useEffect(() => {
@@ -214,6 +219,15 @@ export default function CalendarPage() {
           </>
         }
       />
+
+      {/* Stated once, above the grid. Without it a failed load renders an empty
+          calendar — a confident claim that there are no meetings, when the truth is
+          that we could not find out. */}
+      {error && (
+        <div className="mt-6">
+          <LoadFailed what="Meetings" error={error} />
+        </div>
+      )}
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <Input
