@@ -16,12 +16,12 @@ security cases), updated docs/status, runnable verification commands, and a revi
 No checkpoint may weaken evidence verification, human approval, RBAC, provenance, or audit
 requirements.
 
-## Current progress — 2026-07-29
+## Current progress — 2026-08-01
 
 | Track | Completed | Active | Remaining |
 |---|---:|---|---:|
 | Research engine | **14 / 14** accepted (`R0`–`R13`) | — research track CLOSED 2026-07-18, baseline frozen at `6ed5ed5` | 0 |
-| Meridian product | **3 / 13** accepted (`P0`, `P1`, `P2`) | **P3 in progress** — CP-A + CP-B done, CP-C 6/7 | **10** (`P3`–`P12`) |
+| Meridian product | **3 / 13** accepted (`P0`, `P1`, `P2`) | **P3 FROZEN** — feature-complete through CP-E; exit gate not claimed (CP-F/G/H deferred, #93) | **10** (`P3`–`P12`) |
 
 The counts must not be combined into one percentage: the research track validates the
 memory engine; the product track makes it a deployable board operating system. The CLI
@@ -331,9 +331,15 @@ publication/version semantics, ownership, and retries.
 **Exit:** migration/recovery plan is tested; invalid transitions and cross-workspace access
 are rejected; superseded/published records preserve immutable history.
 
-## P3 — Authenticated API and accessible application shell — 🟩 IN PROGRESS
+## P3 — Authenticated API and accessible application shell — 🧊 FROZEN (feature-complete, exit gate not claimed)
 
-### Checkpoint status (2026-07-29)
+**Frozen 2026-08-01 at `caf650d`** — [freeze record](./docs/reviews/2026-08-01-p3-freeze.md).
+Feature-complete through CP-E. The phase is **not** marked accepted: of its three exit
+criteria, one is met, one is partial and one is not met, because CP-F/CP-G/CP-H were
+deferred by recorded exception (#93). Counting it as accepted would make this table say
+something the evidence does not support.
+
+### Checkpoint status (2026-08-01)
 
 Design in [docs/proposals/2026-07-29-p3-implementation-roadmap.md](./docs/proposals/2026-07-29-p3-implementation-roadmap.md);
 decisions in ADR-009 – ADR-014.
