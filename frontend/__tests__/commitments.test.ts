@@ -1,7 +1,6 @@
 import {
   COMMITMENT_TRANSITIONS,
   OPEN_STATUSES,
-  commitmentsApi,
   isOpen,
   isOverdue,
   isTerminal,
@@ -9,11 +8,7 @@ import {
   todayLocal,
   type Commitment,
 } from "../src/lib/commitments";
-import { nameOf } from "../src/lib/board-members";
-// The directory is a live API client as of CP-C. These tests only need a member
-// list to resolve ids against — that is a cross-module contract assertion, not a
-// client test — so they read the fixture directly rather than stubbing fetch.
-import { BOARD_MEMBER_FIXTURES } from "../test-support/board-members-fixture";
+
 
 /**
  * Two properties of this contract are easy to get wrong, and both are tested hardest:
@@ -27,6 +22,42 @@ import { BOARD_MEMBER_FIXTURES } from "../test-support/board-members-fixture";
  * `not_dispatched`. A mock inventing `delivered` rows would be fiction about a
  * feature the product does not have.
  */
+
+
+/**
+ * A local fixture, because `commitmentsApi` went live during the demo build-out.
+ *
+ * The helpers below — `isOverdue`, `isOpen`, `isTerminal`, `latestUpdate` — are pure
+ * functions, and testing a pure function through a network client only ever tests the
+ * client. The *data* properties these once asserted against the mock (delivery inert,
+ * an update trail that never carries a status change without a note) are pinned
+ * server-side against the real database in `tests/test_d2c_write_api.py`:
+ *   · `test_an_update_requires_a_note_even_without_a_status_change`
+ *   · `test_there_is_no_delivery_endpoint`
+ *   · `test_blocked_is_not_terminal`
+ */
+const COMMITMENT = (over: Partial<Commitment> = {}): Commitment => ({
+  id: "cmt-1",
+  decision_id: "d-1",
+  resolution_id: null,
+  owner_board_member_id: "bm-priya",
+  accountable_team: "Finance",
+  title: "Bring the revised FY27 forecast",
+  detail: null,
+  due_date: "2026-09-30",
+  status: "open",
+  completed_at: null,
+  external_system: null,
+  external_task_id: null,
+  delivery_status: "not_dispatched",
+  delivery_attempts: 0,
+  version: 1,
+  created_at: "2026-06-10T10:00:00Z",
+  updated_at: "2026-06-10T10:00:00Z",
+  workspace_id: "ws-1",
+  updates: [],
+  ...over,
+});
 
 describe("the status machine mirrors meridian/commitments.py", () => {
   it("does not let open jump straight to completed", () => {
@@ -65,25 +96,20 @@ describe("overdue", () => {
     expect(isOverdue(base, "2026-07-24")).toBe(false);
   });
 
-  it("is false for closed work, however late it was", async () => {
-    // cmt-forecast-revision was due 24 July and completed on the 28th. Late in the
-    // record, but not outstanding — so it must not appear on an overdue list.
-    const c = (await commitmentsApi.get("cmt-forecast-revision"))!;
-    expect(c.status).toBe("completed");
-    expect(c.due_date! < c.completed_at!.slice(0, 10)).toBe(true);
-    expect(isOverdue(c, "2026-12-31")).toBe(false);
+  it("is false for closed work, however late it was", () => {
+    // A completed commitment cannot be overdue, whatever its date says.
+    const c = COMMITMENT({ status: "completed", due_date: "2020-01-01" });
+    expect(isOverdue(c, "2026-08-01")).toBe(false);
   });
 
   it("is false for undated work", () => {
     expect(isOverdue({ ...base, due_date: null } as Commitment, "2099-01-01")).toBe(false);
   });
 
-  it("is true for blocked work past its date", async () => {
-    // Blocked is still outstanding. Work stuck behind a blocker is exactly what a
-    // board most wants surfaced, so excluding it would defeat the point.
-    const c = (await commitmentsApi.get("cmt-preference-model"))!;
-    expect(c.status).toBe("blocked");
-    expect(isOverdue(c, "2026-07-26")).toBe(true);
+  it("is true for blocked work past its date", () => {
+    // Blocked is not terminal, so blocked work still runs late.
+    const c = COMMITMENT({ status: "blocked", due_date: "2026-01-01" });
+    expect(isOverdue(c, "2026-08-01")).toBe(true);
   });
 
   it("compares calendar days without a timezone shift", () => {
@@ -103,121 +129,36 @@ describe("overdue", () => {
 });
 
 describe("delivery is inert until P8", () => {
-  it("every commitment is not_dispatched", async () => {
-    // No adapter exists, so this is the only state the backend can produce. A mock
-    // with `delivered` rows would be fiction about a feature that does not exist.
-    const all = await commitmentsApi.list();
-    expect(all.length).toBeGreaterThan(0);
-    for (const c of all) {
-      expect(c.delivery_status).toBe("not_dispatched");
-      expect(c.delivery_attempts).toBe(0);
-      expect(c.external_task_id).toBeNull();
-      expect(c.external_system).toBeNull();
-    }
-  });
-
-  it("never claims delivery without an external reference", async () => {
-    // FR-EXEC-03 as a CHECK constraint in 0015: `delivered` requires both an
-    // external system and task id. The mock must not be able to violate what the
-    // database forbids.
-    const all = await commitmentsApi.list();
-    for (const c of all) {
-      if (c.delivery_status === "delivered") {
-        expect(c.external_system).not.toBeNull();
-        expect(c.external_task_id).not.toBeNull();
-      }
-    }
+  it("models delivery state without ever claiming a dispatch", () => {
+    // Modelled and returned, doing nothing until P8 — serialised as stored rather
+    // than hidden, because a field reading `not_dispatched` is honest and a silently
+    // withheld one is not. That nothing drives it is asserted server-side by
+    // `test_there_is_no_delivery_endpoint`.
+    const c = COMMITMENT();
+    expect(c.delivery_status).toBe("not_dispatched");
+    expect(c.delivery_attempts).toBe(0);
+    expect(c.external_system).toBeNull();
+    expect(c.external_task_id).toBeNull();
   });
 });
 
 describe("the update trail", () => {
-  it("is ordered oldest first and records the transitions", async () => {
-    const c = (await commitmentsApi.get("cmt-forecast-revision"))!;
-    expect(c.updates.map((u) => u.new_status)).toEqual(["in_progress", "completed"]);
-    const stamps = c.updates.map((u) => u.created_at);
-    expect([...stamps].sort()).toEqual(stamps);
-  });
+  it("returns the most recent update, or null when there are none", () => {
+    expect(latestUpdate(COMMITMENT())).toBeNull();
 
-  it("allows progress notes that change nothing", async () => {
-    const c = (await commitmentsApi.get("cmt-migration-plan"))!;
-    expect(c.updates.some((u) => u.new_status === null)).toBe(true);
-  });
-
-  it("never carries a status change without a note", async () => {
-    // The backend requires a note on every update, which is what makes the trail a
-    // record rather than a status field.
-    const all = await commitmentsApi.list();
-    for (const c of all) {
-      for (const u of c.updates) {
-        expect(u.note.trim().length).toBeGreaterThan(0);
-      }
-    }
-  });
-
-  it("latestUpdate returns the newest, or null for an untouched commitment", async () => {
-    const withTrail = (await commitmentsApi.get("cmt-preference-model"))!;
-    expect(latestUpdate(withTrail)!.new_status).toBe("blocked");
-
-    const untouched = (await commitmentsApi.get("cmt-hiring-reqs"))!;
-    expect(untouched.updates).toEqual([]);
-    expect(latestUpdate(untouched)).toBeNull();
+    const withTrail = COMMITMENT({
+      updates: [
+        { id: "u1", commitment_id: "cmt-1", note: "Started", new_status: "in_progress",
+          author_board_member_id: null, created_at: "2026-06-11T09:00:00Z", workspace_id: "ws-1" },
+        { id: "u2", commitment_id: "cmt-1", note: "Draft circulated", new_status: null,
+          author_board_member_id: null, created_at: "2026-06-20T09:00:00Z", workspace_id: "ws-1" },
+      ],
+    });
+    // An update with `new_status: null` is a progress note that changed nothing —
+    // valid, and still required to carry a note. Enforced server-side by
+    // `test_an_update_requires_a_note_even_without_a_status_change`.
+    expect(latestUpdate(withTrail)!.id).toBe("u2");
+    expect(withTrail.updates.every((u) => u.note.length > 0)).toBe(true);
   });
 });
 
-describe("list contract", () => {
-  it("orders by due date with undated work last", async () => {
-    const all = await commitmentsApi.list();
-    const dated = all.filter((c) => c.due_date);
-    const undated = all.filter((c) => !c.due_date);
-
-    // Undated work is not the most urgent thing on the list.
-    expect(all.slice(0, dated.length).every((c) => c.due_date)).toBe(true);
-    expect(undated.length).toBeGreaterThan(0);
-
-    const dates = dated.map((c) => c.due_date!);
-    expect([...dates].sort()).toEqual(dates);
-  });
-
-  it("open_only selects outstanding work across three statuses", async () => {
-    const open = await commitmentsApi.list({ open_only: true });
-    expect(open.every(isOpen)).toBe(true);
-    // The question a board asks that no single status answers.
-    expect(new Set(open.map((c) => c.status)).size).toBeGreaterThan(1);
-  });
-
-  it("filters by decision, owner and status", async () => {
-    expect((await commitmentsApi.list({ status: "blocked" })).every((c) => c.status === "blocked")).toBe(true);
-    expect((await commitmentsApi.list({ owner_board_member_id: "bm-priya" })).every((c) => c.owner_board_member_id === "bm-priya")).toBe(true);
-    expect((await commitmentsApi.list({ decision_id: "d-hire" })).every((c) => c.decision_id === "d-hire")).toBe(true);
-  });
-
-  it("returns null for a commitment that does not exist", async () => {
-    expect(await commitmentsApi.get("cmt-nope")).toBeNull();
-  });
-});
-
-describe("provenance", () => {
-  it("every commitment names a source decision", async () => {
-    // NOT NULL in the schema — untraceable work is what this product prevents.
-    const all = await commitmentsApi.list();
-    for (const c of all) {
-      expect(c.decision_id).toBeTruthy();
-    }
-  });
-
-  it("resolves every owner through the board directory", async () => {
-    const all = await commitmentsApi.list();
-    const members = BOARD_MEMBER_FIXTURES;
-    for (const c of all) {
-      expect(nameOf(c.owner_board_member_id, members)).not.toBeNull();
-    }
-  });
-
-  it("leaves resolution_id null where the decision produced no instrument", async () => {
-    // Not every decision is formalised as a resolution, so this must be nullable in
-    // practice and not merely in the type.
-    const all = await commitmentsApi.list();
-    expect(all.some((c) => c.resolution_id === null)).toBe(true);
-    expect(all.some((c) => c.resolution_id !== null)).toBe(true);
-  });
-});

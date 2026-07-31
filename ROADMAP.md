@@ -349,7 +349,7 @@ decisions in ADR-009 – ADR-014.
 | §5 | work needing no decision | ✅ tenancy guard · id lookup · error taxonomy · `decisions.ts` fix · `/commitments` |
 | CP-A | identity + session | ✅ `principal_identity` · subject resolution · OIDC/Keycloak · workspace selection · OpenAPI guard |
 | CP-B | first vertical slice | ✅ `/api/resolutions` + real client, mock deleted |
-| CP-C | remaining mechanical reads | ✅ **7 / 7** — `board_members` `agenda` `meetings` `packs` `minutes` `decisions` `commitments` |
+| CP-C | remaining mechanical reads | ✅ **7 / 7** — `board_members` `agenda` `meetings` `packs` `minutes` `decisions` `commitments`. *Corrected 2026-08-01: the API landed for all seven in P3, but the `decisions` and `commitments` **client** swaps were missed and only completed during the demo build-out. The checkpoint was reported complete when it was 5/7 on the frontend.* |
 | CP-D | writes + 409 concurrency | ✅ **complete** — D1/D2 all eight aggregates; D3 client write path with actionable 409 handling |
 | CP-E | the four orphan mocks | ✅ **complete** — `documents` live; `insights` audited tile by tile; `graph` + `assistant` deferred to P6 (recorded exception, issue #100) |
 | CP-F | states, rate limits, observability | ⬜ |

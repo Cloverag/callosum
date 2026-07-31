@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { ClipboardCheck } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
+import { LoadFailed, asApiError } from "@/components/ui/load-failed";
+import type { ApiError } from "@/lib/http";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import {
@@ -33,6 +35,7 @@ import { CommitmentCard } from "./commitment-card";
  */
 export default function CommitmentsPage() {
   const [commitments, setCommitments] = useState<Commitment[] | null>(null);
+  const [error, setError] = useState<ApiError | null>(null);
   const [members, setMembers] = useState<BoardMember[]>([]);
   const [active, setActive] = useState<Set<CommitmentStatus>>(new Set());
   const [openOnly, setOpenOnly] = useState(false);
@@ -41,7 +44,7 @@ export default function CommitmentsPage() {
   const today = useMemo(() => todayLocal(), []);
 
   useEffect(() => {
-    commitmentsApi.list().then(setCommitments);
+    commitmentsApi.list().then(setCommitments).catch((e) => setError(asApiError(e)));
     boardMembersApi.list({ active: "all" }).then(setMembers);
   }, []);
 
@@ -154,7 +157,9 @@ export default function CommitmentsPage() {
       )}
 
       <div className="mt-6 space-y-4">
-        {visible === null ? (
+        {error ? (
+          <LoadFailed what="Commitments" error={error} />
+        ) : visible === null ? (
           Array.from({ length: 3 }).map((_, i) => (
             <Card key={i} className="p-6">
               <div className="h-4 w-2/5 rounded bg-surface-sunken" />

@@ -31,6 +31,8 @@ import type { BadgeTone } from "@/components/ui/badge";
 // --- Status ----------------------------------------------------------------
 
 /** `meridian/commitments.py:38-42`. */
+import { apiGet, apiGetOrNull } from "@/lib/http";
+
 export type CommitmentStatus =
   | "open"
   | "in_progress"
@@ -212,139 +214,19 @@ function update(
  * three surfaces describe one company. Every row is `not_dispatched`, because that is
  * the only delivery state the backend can produce before P8.
  */
-const mockCommitments: Commitment[] = [
-  {
-    id: "cmt-migration-plan",
-    decision_id: "d-price-adopt",
-    resolution_id: "res-pricing-v1",
-    owner_board_member_id: "bm-priya",
-    accountable_team: "Revenue Operations",
-    title: "Produce the usage-based pricing migration plan",
-    detail:
-      "Board asked for the plan before any customer is moved. Must cover existing " +
-      "annual contracts and the communications sequence.",
-    due_date: "2026-08-14",
-    status: "in_progress",
-    completed_at: null,
-    external_system: null,
-    external_task_id: null,
-    delivery_status: "not_dispatched",
-    delivery_attempts: 0,
-    version: 3,
-    created_at: "2026-07-20T16:50:00Z",
-    updated_at: "2026-07-26T09:15:00Z",
-    workspace_id: WS,
-    updates: [
-      update("cmt-migration-plan", 1, "Drafting against the FY27 contract list.", "in_progress", "bm-priya", "2026-07-22T10:00:00Z"),
-      update("cmt-migration-plan", 2, "Legal review of the annual-contract clause under way.", null, "bm-priya", "2026-07-26T09:15:00Z"),
-    ],
-  },
-  {
-    id: "cmt-preference-model",
-    decision_id: "d-terms",
-    resolution_id: null,
-    owner_board_member_id: "bm-marcus",
-    accountable_team: null,
-    title: "Model the Series B liquidation preference stack",
-    detail: "Requested before the board votes on final terms.",
-    // Deliberately in the past and still open — the overdue path has to render.
-    due_date: "2026-07-25",
-    status: "blocked",
-    completed_at: null,
-    external_system: null,
-    external_task_id: null,
-    delivery_status: "not_dispatched",
-    delivery_attempts: 0,
-    version: 4,
-    created_at: "2026-07-21T09:30:00Z",
-    updated_at: "2026-07-27T14:00:00Z",
-    workspace_id: WS,
-    updates: [
-      update("cmt-preference-model", 1, "Started against the draft term sheet.", "in_progress", "bm-marcus", "2026-07-22T11:00:00Z"),
-      update("cmt-preference-model", 2, "Blocked — waiting on the final term sheet from Sequoia.", "blocked", "bm-marcus", "2026-07-27T14:00:00Z"),
-    ],
-  },
-  {
-    id: "cmt-hiring-reqs",
-    decision_id: "d-hire",
-    resolution_id: "res-hiring",
-    owner_board_member_id: "bm-raj",
-    accountable_team: "People",
-    title: "Open six engineering requisitions for FY27",
-    detail: null,
-    due_date: "2026-07-31",
-    status: "open",
-    completed_at: null,
-    external_system: null,
-    external_task_id: null,
-    delivery_status: "not_dispatched",
-    delivery_attempts: 0,
-    version: 1,
-    created_at: "2026-07-09T11:40:00Z",
-    updated_at: "2026-07-09T11:40:00Z",
-    workspace_id: WS,
-    updates: [],
-  },
-  {
-    id: "cmt-forecast-revision",
-    decision_id: "d-fcst",
-    resolution_id: null,
-    owner_board_member_id: "bm-priya",
-    accountable_team: "Finance",
-    title: "Bring the revised FY27 forecast to the next cycle",
-    detail: "Deferred pending the Q4 audit numbers.",
-    // Completed AFTER its due date. Late, but not outstanding — so it must not
-    // appear on an overdue list.
-    due_date: "2026-07-24",
-    status: "completed",
-    completed_at: "2026-07-28T16:00:00Z",
-    external_system: null,
-    external_task_id: null,
-    delivery_status: "not_dispatched",
-    delivery_attempts: 0,
-    version: 4,
-    created_at: "2026-07-21T09:45:00Z",
-    updated_at: "2026-07-28T16:00:00Z",
-    workspace_id: WS,
-    updates: [
-      update("cmt-forecast-revision", 1, "Audit numbers received.", "in_progress", "bm-priya", "2026-07-27T10:00:00Z"),
-      update("cmt-forecast-revision", 2, "Revised forecast circulated to the board.", "completed", "bm-priya", "2026-07-28T16:00:00Z"),
-    ],
-  },
-  {
-    id: "cmt-berlin-scout",
-    decision_id: "d-office",
-    resolution_id: "res-berlin",
-    owner_board_member_id: "bm-elena",
-    accountable_team: null,
-    title: "Scout Berlin office locations",
-    detail: "Cancelled when the board rejected the second office for FY27.",
-    due_date: null,
-    status: "cancelled",
-    completed_at: null,
-    external_system: null,
-    external_task_id: null,
-    delivery_status: "not_dispatched",
-    delivery_attempts: 0,
-    version: 2,
-    created_at: "2026-07-09T11:30:00Z",
-    updated_at: "2026-07-09T11:35:00Z",
-    workspace_id: WS,
-    updates: [
-      update("cmt-berlin-scout", 1, "Cancelled — resolution 2026-02 was not approved.", "cancelled", "bm-raj", "2026-07-09T11:35:00Z"),
-    ],
-  },
-];
 
-const clone = (c: Commitment): Commitment => structuredClone(c);
-const delay = (ms = 400) => new Promise((r) => setTimeout(r, ms));
+// --- API client ------------------------------------------------------------
 
 /**
- * Mocked Meridian commitments API.
+ * Meridian commitments API. **Live; the in-memory mock is gone.**
  *
- * Method names and arguments follow `meridian/commitments.py`. Ordering matches
- * `list_commitments`: soonest due first, **undated last** — a commitment with no
- * deadline is not the most urgent thing on the list.
+ * The mock survived CP-C because the backend endpoint landed in the same checkpoint
+ * and the client swap was never done — found by running the application and seeing
+ * seeded commitments missing from a page that was rendering fabricated ones.
+ *
+ * All four filters are the domain's own. `open_only` is the one that earns its place:
+ * "what is still outstanding" is the question a board asks, and no single status
+ * answers it.
  */
 export const commitmentsApi = {
   async list(opts?: {
@@ -353,31 +235,15 @@ export const commitmentsApi = {
     status?: CommitmentStatus;
     open_only?: boolean;
   }): Promise<Commitment[]> {
-    await delay();
-    return mockCommitments
-      .filter((c) => (opts?.decision_id ? c.decision_id === opts.decision_id : true))
-      .filter((c) =>
-        opts?.owner_board_member_id
-          ? c.owner_board_member_id === opts.owner_board_member_id
-          : true,
-      )
-      .filter((c) => (opts?.status ? c.status === opts.status : true))
-      .filter((c) => (opts?.open_only ? OPEN_STATUSES.includes(c.status) : true))
-      .slice()
-      .sort((a, b) => {
-        if (a.due_date && b.due_date) {
-          return a.due_date.localeCompare(b.due_date) || b.created_at.localeCompare(a.created_at);
-        }
-        if (a.due_date) return -1; // NULLS LAST
-        if (b.due_date) return 1;
-        return b.created_at.localeCompare(a.created_at);
-      })
-      .map(clone);
+    return apiGet<Commitment[]>("/commitments", {
+      decision_id: opts?.decision_id,
+      owner_board_member_id: opts?.owner_board_member_id,
+      status: opts?.status,
+      open_only: opts?.open_only ? "true" : undefined,
+    });
   },
 
   async get(id: string): Promise<Commitment | null> {
-    await delay(200);
-    const c = mockCommitments.find((x) => x.id === id);
-    return c ? clone(c) : null;
+    return apiGetOrNull<Commitment>(`/commitments/${encodeURIComponent(id)}`);
   },
 };

@@ -93,10 +93,15 @@ def engine_health() -> dict:
 
     We only touch the package handle here — no database, no model call — so this
     stays a fast, dependency-free check that the boundary is wired correctly.
+
+    **It does not report where the engine was loaded from.** It used to return
+    `callosum.__file__`, an absolute server path, on an unauthenticated endpoint —
+    which tells an anonymous caller the deployment layout and the operating user's
+    home directory. The version answers the question this check exists for ("is the
+    boundary wired, and to what") without the disclosure.
     """
     return {
         "status": "ok",
         "engine": "callosum",
         "engine_version": callosum.__version__,
-        "engine_loaded_from": callosum.__file__,
     }

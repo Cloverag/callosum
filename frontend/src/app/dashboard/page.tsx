@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { LayoutDashboard } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
+import { LoadFailed, asApiError } from "@/components/ui/load-failed";
+import type { ApiError } from "@/lib/http";
 import type { StatSegment } from "@/components/ui/stat-bar";
 import {
   meetingsApi,
@@ -28,17 +30,25 @@ import { ApprovedFacts } from "./approved-facts";
 
 export default function DashboardPage() {
   const [meetings, setMeetings] = useState<Meeting[] | null>(null);
+  const [error, setError] = useState<ApiError | null>(null);
   const [conflicts, setConflicts] = useState<EntityConflict[] | null>(null);
   const [insights, setInsights] = useState<DashboardInsights | null>(null);
   const [decisions, setDecisions] = useState<Decision[] | null>(null);
 
   useEffect(() => {
-    meetingsApi.list().then(setMeetings);
+    meetingsApi
+      .list()
+      .then((ms) => {
+        setMeetings(ms);
+        // Recent decisions need meetings first: the API has no workspace-wide list.
+        return decisionsApi.listForMeetings(ms.map((m) => m.id));
+      })
+      .then((d) => setDecisions(d.slice(0, 5)))
+      .catch((e) => setError(asApiError(e)));
     apiClient.getPendingConflicts().then(setConflicts);
     insightsApi.get().then(setInsights);
     // Newest five. The card links through to /decisions for the rest rather than
     // growing without bound on the dashboard.
-    decisionsApi.list().then((d) => setDecisions(d.slice(0, 5)));
   }, []);
 
   const upcoming = useMemo(() => {
@@ -101,6 +111,16 @@ export default function DashboardPage() {
   return (
     <div className="p-8">
       <PageHeader title="Dashboard" description="What needs you now, and whether the memory can be trusted." icon={<LayoutDashboard />} />
+
+      {/* A failed load is stated once, at the top. Every card below already renders
+          "—" for data it does not have, so the page degrades honestly underneath — but
+          without this the reader would see a page of em dashes and conclude the
+          workspace is empty rather than unreachable. */}
+      {error && (
+        <div className="mt-6">
+          <LoadFailed what="Dashboard data" error={error} />
+        </div>
+      )}
 
       <div className="mt-6">
         <DailyBrief brief={brief} />
