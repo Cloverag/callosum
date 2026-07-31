@@ -1,4 +1,4 @@
-"""Read endpoints for resolutions (Meridian P3, CP-B — ADR-014).
+"""Resolution endpoints (Meridian P3, CP-B reads · CP-D writes — ADR-014).
 
 The first vertical slice: one aggregate, end to end, so the pattern every other module
 follows is established once and reviewed once.
@@ -20,10 +20,56 @@ becomes 422, without this module restating either.
 
 import uuid
 
-from fastapi import APIRouter
+from fastapi import APIRouter, status
+from pydantic import BaseModel, ConfigDict
 
 from meridian import resolutions as domain
 from meridian.api.deps import CurrentPrincipal
+
+
+class ResolutionCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision_id: uuid.UUID
+    title: str
+    body: str
+
+
+class ResolutionPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int
+    title: str | None = None
+    body: str | None = None
+
+
+class VoteRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    board_member_id: uuid.UUID
+    vote: str
+
+
+class ResolutionTransition(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    new_status: str
+    expected_version: int
+
+
+class ResolutionSupersede(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    new_title: str
+    new_body: str
+    expected_version: int
+
+
+class ResolutionSupersession(BaseModel):
+    """Both halves — the caller needs each."""
+
+    superseded: domain.Resolution
+    replacement: domain.Resolution
 
 router = APIRouter(prefix="/api/resolutions", tags=["resolutions"])
 
@@ -57,3 +103,88 @@ def get_resolution(resolution_id: uuid.UUID, principal: CurrentPrincipal) -> dom
     404 and "exists but not yours" are the same answer, which is the intent.
     """
     return domain.get_resolution(str(resolution_id), workspace_id=principal.workspace_id)
+
+
+@router.post("", status_code=status.HTTP_201_CREATED)
+def create_resolution(payload: ResolutionCreate, principal: CurrentPrincipal) -> domain.Resolution:
+    """Drafts the formal instrument a decision produced."""
+    return domain.create_resolution(
+        str(payload.decision_id),
+        payload.title,
+        payload.body,
+        workspace_id=principal.workspace_id,
+    )
+
+
+@router.patch("/{resolution_id}")
+def update_resolution(
+    resolution_id: uuid.UUID, payload: ResolutionPatch, principal: CurrentPrincipal
+) -> domain.Resolution:
+    """Edits a draft resolution under optimistic concurrency.
+
+    `title` and `body` are both `NOT NULL`, so a `null` is refused at the boundary.
+    """
+    changes = payload.model_dump(exclude_unset=True)
+    changes.pop("expected_version", None)
+    return domain.update_resolution(
+        str(resolution_id),
+        expected_version=payload.expected_version,
+        workspace_id=principal.workspace_id,
+        **changes,
+    )
+
+
+@router.post("/{resolution_id}/vote", status_code=status.HTTP_201_CREATED)
+def record_vote(
+    resolution_id: uuid.UUID, payload: VoteRecord, principal: CurrentPrincipal
+) -> domain.ResolutionVote:
+    """Records one director's vote.
+
+    No `expected_version`, for the same reason as `record_stance`: this writes
+    `resolution_vote`, not the resolution, so two directors voting at once do not
+    contend.
+
+    **The tally does not decide the outcome.** `resolutions.tally` is advisory and has
+    no endpoint at all — it is a pure function, computed client-side from the votes this
+    endpoint returns. Quorum and supermajority rules vary per board and nothing here
+    records them, so inferring a result would assert governance nobody configured
+    (#58 decision 2).
+    """
+    return domain.record_vote(
+        str(resolution_id),
+        str(payload.board_member_id),
+        payload.vote,
+        workspace_id=principal.workspace_id,
+    )
+
+
+@router.post("/{resolution_id}/transition")
+def transition_resolution(
+    resolution_id: uuid.UUID, payload: ResolutionTransition, principal: CurrentPrincipal
+) -> domain.Resolution:
+    """Moves a resolution through its lifecycle. A human sets the status, not the tally."""
+    return domain.transition_resolution(
+        str(resolution_id),
+        payload.new_status,
+        expected_version=payload.expected_version,
+        workspace_id=principal.workspace_id,
+    )
+
+
+@router.post("/{resolution_id}/supersede", status_code=status.HTTP_201_CREATED)
+def supersede_resolution(
+    resolution_id: uuid.UUID, payload: ResolutionSupersede, principal: CurrentPrincipal
+) -> ResolutionSupersession:
+    """Replaces an adopted resolution with amended text, keeping both.
+
+    **Votes are deliberately not copied forward.** They were cast on the old text, and
+    carrying them over would record directors as having voted for words they never saw.
+    """
+    new, old = domain.supersede_resolution(
+        str(resolution_id),
+        payload.new_title,
+        payload.new_body,
+        expected_version=payload.expected_version,
+        workspace_id=principal.workspace_id,
+    )
+    return ResolutionSupersession(superseded=old, replacement=new)
