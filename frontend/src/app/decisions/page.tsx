@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Gavel } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
+import { LoadFailed, asApiError } from "@/components/ui/load-failed";
+import type { ApiError } from "@/lib/http";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import {
@@ -19,12 +21,22 @@ import { StanceLegend } from "./stance-bar";
 
 export default function DecisionsPage() {
   const [decisions, setDecisions] = useState<Decision[] | null>(null);
+  const [error, setError] = useState<ApiError | null>(null);
   const [meetings, setMeetings] = useState<Meeting[] | null>(null);
   const [active, setActive] = useState<Set<DecisionStatus>>(new Set());
 
   useEffect(() => {
-    decisionsApi.list().then(setDecisions);
-    meetingsApi.list().then(setMeetings);
+    // There is no workspace-wide decisions query — a decision exists only inside a
+    // meeting, so the meetings must be fetched first and the decisions fanned out
+    // across them. See the note on `decisionsApi`.
+    meetingsApi
+      .list()
+      .then((ms) => {
+        setMeetings(ms);
+        return decisionsApi.listForMeetings(ms.map((m) => m.id));
+      })
+      .then(setDecisions)
+      .catch((e) => setError(asApiError(e)));
   }, []);
 
   const meetingTitle = useMemo(() => {
@@ -106,7 +118,9 @@ export default function DecisionsPage() {
       </div>
 
       <div className="mt-6 space-y-4">
-        {visible === null ? (
+        {error ? (
+          <LoadFailed what="Decisions" error={error} />
+        ) : visible === null ? (
           Array.from({ length: 3 }).map((_, i) => (
             <Card key={i} className="p-6">
               <div className="h-4 w-2/5 rounded bg-surface-sunken" />

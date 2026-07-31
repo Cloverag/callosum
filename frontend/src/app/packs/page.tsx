@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Briefcase } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
+import { LoadFailed, asApiError } from "@/components/ui/load-failed";
+import type { ApiError } from "@/lib/http";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import {
@@ -21,7 +23,6 @@ import { PackCard } from "./pack-card";
  * Packs hang off a meeting, so this surface names one. A meeting picker is CP-F's
  * job; until then it is the demo board's meeting.
  */
-const MEETING_ID = "m-q3";
 
 /**
  * Board packs — the pre-read circulated before each meeting.
@@ -46,21 +47,33 @@ type Loaded = { packs: BoardPack[]; documents: Document[] };
 
 export default function PacksPage() {
   const [data, setData] = useState<Loaded | null>(null);
+  const [error, setError] = useState<ApiError | null>(null);
   const [meetings, setMeetings] = useState<Meeting[] | null>(null);
   const [active, setActive] = useState<Set<PackStatus>>(new Set());
 
   useEffect(() => {
     let stale = false;
     // Pack items are filtered by the server at the caller's own clearance. The
-    // document list is still the CP-E mock, so a title may fail to resolve for an
-    // item the API did return — the card renders that as an unresolved reference,
-    // never as withheld content, which is the honest reading of a dangling id.
-    Promise.all([packsApi.list({ meeting_id: MEETING_ID }), documentsApi.list()]).then(
-      ([p, d]) => {
+    // Both are live as of CP-E. A title may still fail to resolve if an item points
+    // at a document the caller may not read — the card renders that as an unresolved
+    // reference, never as withheld content, which is the honest reading of a
+    // dangling id.
+    // `MEETING_ID = "m-q3"` used to be hard-coded here — a mock identifier that no
+    // real meeting has, so against the live API this page asked for a meeting that
+    // does not exist and rendered nothing. Packs belong to a meeting, so the meetings
+    // are fetched first and every meeting's packs are collected.
+    Promise.all([meetingsApi.list(), documentsApi.list()])
+      .then(async ([ms, d]) => {
+        const perMeeting = await Promise.all(
+          ms.map((m) => packsApi.list({ meeting_id: m.id })),
+        );
         if (stale) return;
-        setData({ packs: p, documents: d });
-      },
-    );
+        setData({ packs: perMeeting.flat(), documents: d });
+      })
+      .catch((e) => {
+        if (stale) return;
+        setError(asApiError(e));
+      });
     return () => {
       stale = true;
     };
@@ -70,7 +83,7 @@ export default function PacksPage() {
   const documents = data?.documents ?? [];
 
   useEffect(() => {
-    meetingsApi.list().then(setMeetings);
+    meetingsApi.list().then(setMeetings).catch(() => setMeetings([]));
   }, []);
 
   const meetingTitle = useMemo(() => {
@@ -152,7 +165,9 @@ export default function PacksPage() {
       </div>
 
       <div className="mt-6 space-y-4">
-        {visible === null ? (
+        {error ? (
+          <LoadFailed what="Board packs" error={error} />
+        ) : visible === null ? (
           Array.from({ length: 3 }).map((_, i) => (
             <Card key={i} className="p-6">
               <div className="h-4 w-2/5 rounded bg-surface-sunken" />

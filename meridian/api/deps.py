@@ -43,6 +43,7 @@ from meridian.tenancy import WorkspaceRequired, require_workspace
 #: Machine-readable codes, so a client can tell "log in" from "pick a workspace"
 #: without parsing prose. Both are 4xx and only one of them means re-authenticate.
 NOT_AUTHENTICATED = "not_authenticated"
+SESSION_NOT_CONFIGURED = "session_not_configured"
 WORKSPACE_NOT_SELECTED = "workspace_not_selected"
 FORBIDDEN = "forbidden"
 
@@ -54,7 +55,27 @@ def current_session(request: Request) -> AuthenticatedSession:
     may do. A partial session reads as absent (see `session.read`), so a malformed
     cookie is a logged-out request rather than a half-trusted one.
     """
-    current = sess.read(request.session)
+    try:
+        raw = request.session
+    except AssertionError as exc:
+        # `SessionMiddleware` is installed only when a signing secret is configured
+        # (see `api/main.py`) — deliberately, because handing out forgeable cookies is
+        # worse than refusing to start the feature. But the resulting failure was an
+        # `AssertionError` on every authenticated request, i.e. a 500: an internal
+        # error, for a configuration problem the operator can fix in one line.
+        #
+        # `main.py` already treats missing OIDC config this way — "the routes still
+        # mount and answer 503, which is a deployment state, not a crash". This gives
+        # the session path the same treatment.
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": SESSION_NOT_CONFIGURED,
+                "detail": "Sessions are not configured on this server; set MERIDIAN_SESSION_SECRET.",
+            },
+        ) from exc
+
+    current = sess.read(raw)
     if current is None:
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED,

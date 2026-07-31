@@ -20,19 +20,27 @@
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": false,
-      "redirectUris": ["http://localhost:8000/auth/callback"],
-      "webOrigins": ["http://localhost:8000"],
+      "redirectUris": [
+        "http://localhost:3000/auth/callback",
+        "http://localhost:8000/auth/callback"
+      ],
+      "webOrigins": [
+        "http://localhost:3000",
+        "http://localhost:8000"
+      ],
       "attributes": {
-        "pkce.code.challenge.method": "S256"
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:3000/*##http://localhost:8000/*"
       }
     }
   ],
   "users": [
     {
+      "id": "00000000-0000-4000-a000-000000000001",
       "username": "raj",
       "enabled": true,
       "emailVerified": true,
-      "email": "raj@meridian.example",
+      "email": "raj@callosum.inc",
       "firstName": "Raj",
       "lastName": "Malhotra",
       "credentials": [
@@ -44,6 +52,39 @@
       ]
     },
     {
+      "id": "00000000-0000-4000-a000-000000000002",
+      "username": "priya",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "priya@callosum.inc",
+      "firstName": "Priya",
+      "lastName": "Nair",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "priya",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "00000000-0000-4000-a000-000000000003",
+      "username": "marcus",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "marcus@sequoia.com",
+      "firstName": "Marcus",
+      "lastName": "Webb",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "marcus",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "00000000-0000-4000-a000-000000000099",
       "username": "stranger",
       "enabled": true,
       "emailVerified": true,
