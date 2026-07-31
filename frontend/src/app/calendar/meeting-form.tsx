@@ -8,9 +8,25 @@ import { dayKey } from "@/lib/calendar";
 import {
   MEETING_STATUSES,
   MEETING_STATUS_LABEL,
+  changesBetween,
+  meetingsApi,
   type Meeting,
   type MeetingStatus,
 } from "@/lib/meetings";
+import { ApiError } from "@/lib/http";
+
+/**
+ * A conflict the user has to decide about, not an error to dismiss.
+ *
+ * `theirs` is the server's current copy, fetched *after* the 409 — so the dialog can
+ * show what actually changed rather than telling the user something went wrong and
+ * leaving them to find out what.
+ */
+type Conflict = {
+  theirs: Meeting;
+  expected: number;
+  current: number;
+};
 
 // Shared native-control styling, token-driven to match <Input>. color-scheme keeps
 // the browser date/time pickers legible in both themes.
@@ -36,13 +52,14 @@ export function MeetingForm({
   editing,
   defaultDate,
   onClose,
+  onSaved,
 }: {
   open: boolean;
   editing: Meeting | null;
   /** Pre-fills the date field when creating (e.g. the day the user pressed Enter on). */
   defaultDate?: Date | null;
   onClose: () => void;
-  /** Accepted but unused until CP-D gives meetings write endpoints. */
+  /** Called after a successful create, update or transition, so the caller can refetch. */
   onSaved?: () => void;
 }) {
   const [title, setTitle] = React.useState("");
@@ -52,6 +69,8 @@ export function MeetingForm({
   const [location, setLocation] = React.useState("");
   const [status, setStatus] = React.useState<MeetingStatus>("draft");
   const [saveError, setSaveError] = React.useState<string | null>(null);
+  const [conflict, setConflict] = React.useState<Conflict | null>(null);
+  const [saving, setSaving] = React.useState(false);
 
   React.useEffect(() => {
     if (!open) return;
@@ -72,15 +91,96 @@ export function MeetingForm({
       setLocation("");
       setStatus("draft");
     }
+    setSaveError(null);
+    setConflict(null);
   }, [open, editing, defaultDate]);
+
+  /** Local date + time inputs to the ISO instant the API stores. */
+  function isoAt(time: string): string {
+    return new Date(`${date}T${time}`).toISOString();
+  }
+
+  /**
+   * Saves against a known version.
+   *
+   * Split out from the submit handler so "save mine anyway" can re-run it against the
+   * server's current version without duplicating any of the request building — a
+   * second copy is how the retry path ends up sending a subtly different body.
+   */
+  async function save(againstVersion: number | null) {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      if (!editing || againstVersion === null) {
+        await meetingsApi.create({
+          title,
+          scheduled_start: isoAt(start),
+          scheduled_end: isoAt(end),
+          location: location.trim() === "" ? null : location,
+        });
+      } else {
+        // Only what changed. Sending the whole form would clear every field the user
+        // left empty, because the API reads `null` as "clear this".
+        const changes = changesBetween(editing, {
+          title,
+          scheduled_start: isoAt(start),
+          scheduled_end: isoAt(end),
+          location: location.trim() === "" ? null : location,
+        });
+        let current = editing;
+        if (Object.keys(changes).length > 0) {
+          current = await meetingsApi.update(editing.id, againstVersion, changes);
+        }
+        // Status is deliberately not patchable — it moves through the state machine,
+        // so it is a second call and only when it actually changed.
+        if (status !== editing.status) {
+          await meetingsApi.transition(editing.id, status, current.version);
+        }
+      }
+      setConflict(null);
+      onSaved?.();
+      onClose();
+    } catch (error) {
+      await handleSaveError(error);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleSaveError(error: unknown) {
+    if (!(error instanceof ApiError)) {
+      setSaveError("Something went wrong saving this meeting.");
+      return;
+    }
+
+    // A stale version is the one conflict a user can actually resolve, so it gets a
+    // decision rather than a message. Fetch what is actually there now — showing the
+    // other version without showing what it says would be an error dressed as help.
+    if (error.isStale && editing) {
+      const theirs = await meetingsApi.get(editing.id);
+      const versions = error.versions;
+      if (theirs && versions) {
+        setConflict({ theirs, expected: versions.expected, current: versions.current });
+        return;
+      }
+      setSaveError("This meeting changed while you were editing it. Reopen it to see the current version.");
+      return;
+    }
+
+    // Everything else 409 refuses the operation itself — a completed meeting, an
+    // illegal move. Retrying cannot help, so nothing here offers to.
+    if (error.isUnretryableConflict) {
+      setSaveError(error.message);
+      return;
+    }
+
+    // 422 and the rest: the request needs changing, and the server already said how.
+    setSaveError(error.message);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    // Writes are CP-D. There is no POST or PATCH endpoint yet, and the mock that
-    // used to accept them is gone — so this says so rather than pretending to save
-    // into somewhere that no longer exists. `onSaved` stays on the props for the
-    // same reason: CP-D restores this path rather than rebuilding it.
-    setSaveError("Creating and editing meetings is not available yet.");
+    await save(editing ? editing.version : null);
   }
 
   return (
@@ -93,16 +193,88 @@ export function MeetingForm({
           <Button variant="ghost" type="button" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" form="meeting-form" disabled>
-            {editing ? "Save changes" : "Create meeting"}
+          <Button type="submit" form="meeting-form" disabled={saving || conflict !== null}>
+            {saving ? "Saving…" : editing ? "Save changes" : "Create meeting"}
           </Button>
         </>
       }
     >
       {saveError && (
-        <p className="mb-3 rounded-[10px] bg-surface-sunken px-3 py-2 text-xs text-muted-foreground">
+        <p role="alert" className="mb-3 rounded-[10px] bg-surface-sunken px-3 py-2 text-xs text-muted-foreground">
           {saveError}
         </p>
+      )}
+
+      {conflict && (
+        // The whole point of CP-D on this side: a 409 is a decision, not a toast.
+        // The user is told who changed what, shown the current values, and given the
+        // two choices that actually exist. Nothing is resolved automatically —
+        // silently keeping either version is how an edit disappears without anyone
+        // noticing.
+        <div
+          role="alert"
+          aria-live="assertive"
+          className="mb-4 rounded-[10px] border border-warning-emphasis/30 bg-warning-subtle px-3 py-3"
+        >
+          <p className="text-sm font-medium text-foreground">
+            Someone else saved this meeting while you were editing.
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            You started from version {conflict.expected}; it is now version {conflict.current}.
+          </p>
+
+          <dl className="mt-3 space-y-1 text-xs">
+            <div className="flex gap-2">
+              <dt className="w-20 shrink-0 text-muted-foreground">Their title</dt>
+              <dd className="text-foreground">{conflict.theirs.title}</dd>
+            </div>
+            <div className="flex gap-2">
+              <dt className="w-20 shrink-0 text-muted-foreground">Their location</dt>
+              <dd className="text-foreground">{conflict.theirs.location ?? "—"}</dd>
+            </div>
+            <div className="flex gap-2">
+              <dt className="w-20 shrink-0 text-muted-foreground">Their status</dt>
+              <dd className="text-foreground">{MEETING_STATUS_LABEL[conflict.theirs.status]}</dd>
+            </div>
+          </dl>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                // Take theirs: load the current values into the form and let the user
+                // decide what to re-apply. Closing outright would throw away what they
+                // typed, which is the same data loss from the other direction.
+                const t = conflict.theirs;
+                setTitle(t.title);
+                setDate(t.scheduled_start ? toDateInput(t.scheduled_start) : todayInput());
+                setStart(t.scheduled_start ? toTimeInput(t.scheduled_start) : "09:00");
+                setEnd(t.scheduled_end ? toTimeInput(t.scheduled_end) : "10:00");
+                setLocation(t.location ?? "");
+                setStatus(t.status);
+                setConflict(null);
+              }}
+            >
+              Load their version
+            </Button>
+            <Button
+              type="button"
+              disabled={saving}
+              onClick={() => {
+                // Keep mine: re-run the same save against the version that is actually
+                // current. Deliberately a button and not automatic — an overwrite the
+                // user did not ask for is exactly what optimistic concurrency exists
+                // to prevent.
+                const against = conflict.current;
+                setConflict(null);
+                void save(against);
+              }}
+            >
+              Keep my changes
+            </Button>
+          </div>
+        </div>
       )}
 
       <form id="meeting-form" onSubmit={handleSubmit} className="space-y-4">
