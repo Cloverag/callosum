@@ -214,11 +214,21 @@ callosum query "What is Priya's compensation?" --as Marcus   # withheld — inve
 The last two lines are the demo: the same system, two callers, one of whom does not get
 the answer — and is not told what they are missing.
 
-**The web application:**
+**The web application** — it needs *two* processes. The browser talks only to Next,
+which proxies `/api` and `/auth` through to FastAPI, because the session is a
+same-origin httpOnly cookie:
 
 ```bash
+# terminal 1 — the API
+.venv/bin/uvicorn meridian.api.main:app --reload --port 8000
+
+# terminal 2 — the web app
 cd frontend && npm install && npm run dev     # http://localhost:3000
 ```
+
+Starting only the second one is the common mistake: every page loads and every panel
+shows an error, because `/api/...` resolves to the Next dev server, which has no such
+routes. Set `MERIDIAN_API_ORIGIN` if the API is not on `:8000`.
 
 **Verification:**
 
