@@ -91,7 +91,7 @@ describe("a 409 is classified, not just caught", () => {
   it("recognises a stale version and recovers both version numbers", async () => {
     stubFetch(409, errorBody("stale_resource", "meeting x: expected version 3, current 4"));
 
-    const error: ApiError = await apiPatch("/meetings/x", { expected_version: 3 }).catch((e) => e);
+    const error = (await apiPatch("/meetings/x", { expected_version: 3 }).catch((e) => e)) as ApiError;
 
     expect(error).toBeInstanceOf(ApiError);
     expect(error.isConflict).toBe(true);
@@ -105,7 +105,7 @@ describe("a 409 is classified, not just caught", () => {
   it("marks a locked refusal as unretryable", async () => {
     stubFetch(409, errorBody("conflict", "cannot edit a published board pack"));
 
-    const error: ApiError = await apiPatch("/packs/x", { expected_version: 1 }).catch((e) => e);
+    const error = (await apiPatch("/packs/x", { expected_version: 1 }).catch((e) => e)) as ApiError;
 
     expect(error.isConflict).toBe(true);
     expect(error.isStale).toBe(false);
@@ -117,7 +117,7 @@ describe("a 409 is classified, not just caught", () => {
   it("does not treat a 422 as a conflict", async () => {
     stubFetch(422, errorBody("invalid", "scheduled_end must be after scheduled_start"));
 
-    const error: ApiError = await apiPost("/meetings", { title: "x" }).catch((e) => e);
+    const error = (await apiPost("/meetings", { title: "x" }).catch((e) => e)) as ApiError;
 
     expect(error.status).toBe(422);
     expect(error.isConflict).toBe(false);
@@ -129,7 +129,7 @@ describe("a 409 is classified, not just caught", () => {
     // refetch a resource and not to show a merge decision.
     stubFetch(409, errorBody("workspace_not_selected", "no workspace selected"));
 
-    const error: ApiError = await apiPost("/meetings", {}).catch((e) => e);
+    const error = (await apiPost("/meetings", {}).catch((e) => e)) as ApiError;
 
     expect(error.needsWorkspace).toBe(true);
     expect(error.isStale).toBe(false);
@@ -139,7 +139,7 @@ describe("a 409 is classified, not just caught", () => {
   it("returns null versions rather than guessing when the detail omits them", async () => {
     stubFetch(409, errorBody("stale_resource", "meeting x was modified"));
 
-    const error: ApiError = await apiPatch("/meetings/x", {}).catch((e) => e);
+    const error = (await apiPatch("/meetings/x", {}).catch((e) => e)) as ApiError;
 
     expect(error.isStale).toBe(true);
     expect(error.versions).toBeNull();
@@ -184,7 +184,7 @@ describe("the write helpers", () => {
       new Response("<html>502 Bad Gateway</html>", { status: 502 }),
     ) as unknown as typeof fetch;
 
-    const error: ApiError = await apiPost("/meetings", {}).catch((e) => e);
+    const error = (await apiPost("/meetings", {}).catch((e) => e)) as ApiError;
 
     expect(error).toBeInstanceOf(ApiError);
     expect(error.status).toBe(502);
