@@ -23,7 +23,6 @@ import { PackCard } from "./pack-card";
  * Packs hang off a meeting, so this surface names one. A meeting picker is CP-F's
  * job; until then it is the demo board's meeting.
  */
-const MEETING_ID = "m-q3";
 
 /**
  * Board packs — the pre-read circulated before each meeting.
@@ -59,10 +58,17 @@ export default function PacksPage() {
     // at a document the caller may not read — the card renders that as an unresolved
     // reference, never as withheld content, which is the honest reading of a
     // dangling id.
-    Promise.all([packsApi.list({ meeting_id: MEETING_ID }), documentsApi.list()])
-      .then(([p, d]) => {
+    // `MEETING_ID = "m-q3"` used to be hard-coded here — a mock identifier that no
+    // real meeting has, so against the live API this page asked for a meeting that
+    // does not exist and rendered nothing. Packs belong to a meeting, so the meetings
+    // are fetched first and every meeting's packs are collected.
+    Promise.all([meetingsApi.list(), documentsApi.list()])
+      .then(async ([ms, d]) => {
+        const perMeeting = await Promise.all(
+          ms.map((m) => packsApi.list({ meeting_id: m.id })),
+        );
         if (stale) return;
-        setData({ packs: p, documents: d });
+        setData({ packs: perMeeting.flat(), documents: d });
       })
       .catch((e) => {
         if (stale) return;

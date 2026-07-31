@@ -19,6 +19,8 @@ import type { BadgeTone } from "@/components/ui/badge";
 // --- Status ----------------------------------------------------------------
 
 /** `meridian/decisions.py:25-29`. There is no "pending"; a new decision is `proposed`. */
+import { apiGet, apiGetOrNull } from "@/lib/http";
+
 export type DecisionStatus =
   | "proposed"
   | "approved"
@@ -227,157 +229,58 @@ function stance(
  * describe the memory engine must be real or absent, while the demo company's
  * board minutes are scenario.
  */
-const mockDecisions: Decision[] = [
-  {
-    id: "d-price-reject",
-    meeting_id: "m-14",
-    agenda_item_id: "a2",
-    workspace_id: WS,
-    title: "Reject Pricing Model B for FY27",
-    rationale: "Metered billing was judged too risky ahead of the Series B close.",
-    status: "superseded",
-    superseded_by_id: "d-price-adopt",
-    version: 3,
-    created_at: "2026-07-09T10:35:00Z",
-    updated_at: "2026-07-20T16:40:00Z",
-    stances: [
-      stance("d-price-reject", 1, "Raj Malhotra", "APPROVED", "We're not doing Model B.", "2026-07-09T10:36:00Z"),
-      stance("d-price-reject", 2, "Priya Nair", "SUPPORTED", "Agreed — the forecast doesn't support it yet.", "2026-07-09T10:37:00Z"),
-      stance("d-price-reject", 3, "Marcus Webb", "OPPOSED", "I think we're leaving revenue on the table.", "2026-07-09T10:38:00Z"),
-      stance("d-price-reject", 4, "Elena Fischer", "SUPPORTED", null, "2026-07-09T10:39:00Z"),
-      // Deliberately not in the board directory. A stance minuted before the
-      // directory existed — or taken by someone who was never added to it — is still
-      // a valid stance, which is why `board_member_id` is nullable forever. Without a
-      // row like this the null path never renders and a bug in it goes unnoticed.
-      stance("d-price-reject", 5, "Sarah Lindqvist", "OPPOSED", "Recorded from the minutes; seat has since ended.", "2026-07-09T10:40:00Z"),
-    ],
-  },
-  {
-    id: "d-price-adopt",
-    meeting_id: "m-q3",
-    agenda_item_id: "b3",
-    workspace_id: WS,
-    title: "Adopt usage-based pricing (Model B)",
-    rationale: "Reversed after the Q2 cohort data showed metered accounts retaining better.",
-    status: "approved",
-    superseded_by_id: null,
-    version: 2,
-    created_at: "2026-07-20T16:38:00Z",
-    updated_at: "2026-07-20T16:40:00Z",
-    stances: [
-      stance("d-price-adopt", 1, "Raj Malhotra", "APPROVED", "On reflection we're moving ahead with usage-based pricing after all.", "2026-07-20T16:39:00Z"),
-      stance("d-price-adopt", 2, "Marcus Webb", "SUPPORTED", null, "2026-07-20T16:39:30Z"),
-      stance("d-price-adopt", 3, "Priya Nair", "REQUESTED", "Fine, but I want the migration plan minuted.", "2026-07-20T16:40:00Z"),
-    ],
-  },
-  {
-    id: "d-seq",
-    meeting_id: "m-seq",
-    agenda_item_id: null,
-    workspace_id: WS,
-    title: "Sequoia to lead the Series B round",
-    rationale: null,
-    status: "approved",
-    superseded_by_id: null,
-    version: 2,
-    created_at: "2026-07-19T11:00:00Z",
-    updated_at: "2026-07-19T11:05:00Z",
-    stances: [
-      stance("d-seq", 1, "Raj Malhotra", "APPROVED", "Sequoia has confirmed they'll lead the Series B at the proposed valuation.", "2026-07-19T11:05:00Z"),
-      stance("d-seq", 2, "Elena Fischer", "SUPPORTED", null, "2026-07-19T11:05:30Z"),
-    ],
-  },
-  {
-    id: "d-terms",
-    meeting_id: "m-q3",
-    agenda_item_id: "b3",
-    workspace_id: WS,
-    title: "Series B final terms",
-    rationale: "Liquidation preference and board composition still open.",
-    status: "proposed",
-    superseded_by_id: null,
-    version: 1,
-    created_at: "2026-07-21T09:20:00Z",
-    updated_at: "2026-07-21T09:20:00Z",
-    stances: [
-      stance("d-terms", 1, "Marcus Webb", "REQUESTED", "I want the preference stack modelled before we vote.", "2026-07-21T09:25:00Z"),
-    ],
-  },
-  {
-    id: "d-hire",
-    meeting_id: "m-14",
-    agenda_item_id: "a3",
-    workspace_id: WS,
-    title: "Six-person engineering hire",
-    rationale: "Signed off against the FY27 plan.",
-    status: "approved",
-    superseded_by_id: null,
-    version: 2,
-    created_at: "2026-07-09T11:15:00Z",
-    updated_at: "2026-07-09T11:20:00Z",
-    stances: [
-      stance("d-hire", 1, "Raj Malhotra", "APPROVED", "We signed off on the six-engineer hiring plan for the half.", "2026-07-09T11:20:00Z"),
-      stance("d-hire", 2, "Priya Nair", "SUPPORTED", null, "2026-07-09T11:20:30Z"),
-    ],
-  },
-  {
-    id: "d-fcst",
-    meeting_id: "m-q3",
-    agenda_item_id: "b2",
-    workspace_id: WS,
-    title: "Revise the FY27 forecast",
-    rationale: "Deferred pending the Q4 audit numbers.",
-    status: "deferred",
-    superseded_by_id: null,
-    version: 2,
-    created_at: "2026-07-21T09:15:00Z",
-    updated_at: "2026-07-21T09:40:00Z",
-    stances: [
-      stance("d-fcst", 1, "Priya Nair", "REQUESTED", "Priya will bring the revised FY27 forecast to the next cycle.", "2026-07-21T09:30:00Z"),
-    ],
-  },
-  {
-    id: "d-office",
-    meeting_id: "m-14",
-    agenda_item_id: null,
-    workspace_id: WS,
-    title: "Open a second office in Berlin",
-    rationale: "Rejected on runway grounds.",
-    status: "rejected",
-    superseded_by_id: null,
-    version: 2,
-    created_at: "2026-07-09T11:25:00Z",
-    updated_at: "2026-07-09T11:28:00Z",
-    stances: [
-      stance("d-office", 1, "Priya Nair", "OPPOSED", "Not before the B closes.", "2026-07-09T11:26:00Z"),
-      stance("d-office", 2, "Raj Malhotra", "OPPOSED", null, "2026-07-09T11:27:00Z"),
-    ],
-  },
-];
 
-const clone = (d: Decision): Decision => structuredClone(d);
-const delay = (ms = 400) => new Promise((r) => setTimeout(r, ms));
+// --- API client ------------------------------------------------------------
 
 /**
- * Mocked Meridian decisions API.
+ * Meridian decisions API. **Live; the in-memory mock is gone.**
  *
- * Method names and arguments follow `meridian/decisions.py` so the P3 swap is
- * mechanical. Ordering matches `list_decisions`: newest first.
+ * ---------------------------------------------------------------------------
+ * THE SEVENTH CONTRACT DEFECT: THERE IS NO WORKSPACE-WIDE DECISIONS LIST
+ * ---------------------------------------------------------------------------
+ * The mock offered `list()` with no arguments, returning every decision in the
+ * workspace. **The domain has never had that query.** `list_decisions(meeting_id, ...)`
+ * requires a meeting, because a decision exists only in the context of one — so
+ * `GET /api/decisions` requires `meeting_id` and refuses without it.
+ *
+ * Three surfaces were written against the mock's shape. Rather than invent a
+ * workspace-wide endpoint during a feature freeze, `listForMeetings` fans out and
+ * concatenates. That is N requests for N meetings, and it is exactly the round-trip
+ * cost ADR-014 named when it chose 1:1 endpoints: *"a screen needing four aggregates
+ * makes four round trips… neither bites at P3's scale… revisit at P6."* This is the
+ * bill for that decision arriving, on schedule.
  */
 export const decisionsApi = {
-  async list(opts?: { status?: DecisionStatus; meeting_id?: string }): Promise<Decision[]> {
-    await delay();
-    return mockDecisions
-      .filter((d) => (opts?.status ? d.status === opts.status : true))
-      .filter((d) => (opts?.meeting_id ? d.meeting_id === opts.meeting_id : true))
-      .slice()
-      .sort((a, b) => b.created_at.localeCompare(a.created_at))
-      .map(clone);
+  /** Decisions for one meeting, newest first — the shape the API actually offers. */
+  async listForMeeting(
+    meetingId: string,
+    opts?: { status?: DecisionStatus },
+  ): Promise<Decision[]> {
+    return apiGet<Decision[]>("/decisions", {
+      meeting_id: meetingId,
+      status: opts?.status,
+    });
+  },
+
+  /**
+   * Decisions across several meetings, newest first.
+   *
+   * Ordering is re-applied here because each request is sorted only within its own
+   * meeting; concatenating them would interleave nothing and produce a list that is
+   * sorted by meeting rather than by date.
+   */
+  async listForMeetings(
+    meetingIds: string[],
+    opts?: { status?: DecisionStatus },
+  ): Promise<Decision[]> {
+    if (meetingIds.length === 0) return [];
+    const perMeeting = await Promise.all(
+      meetingIds.map((id) => this.listForMeeting(id, opts)),
+    );
+    return perMeeting.flat().sort((a, b) => b.created_at.localeCompare(a.created_at));
   },
 
   async get(id: string): Promise<Decision | null> {
-    await delay(200);
-    const d = mockDecisions.find((x) => x.id === id);
-    return d ? clone(d) : null;
+    return apiGetOrNull<Decision>(`/decisions/${encodeURIComponent(id)}`);
   },
 };
