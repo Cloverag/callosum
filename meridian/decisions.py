@@ -461,7 +461,11 @@ def transition_decision_status(
             )
 
         if new_status not in _ALLOWED_TRANSITIONS[current["status"]]:
-            raise DecisionValidationError(
+            # `Locked`, not `Validation` — so this is a 409 like every other module's
+            # illegal transition (#97). The request was well-formed and the *state*
+            # refused it; there is no input for the caller to correct, so telling them
+            # to fix and resend would have them resend forever.
+            raise DecisionLockedError(
                 f"cannot transition decision from {current['status']!r} to {new_status!r}"
             )
 

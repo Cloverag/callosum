@@ -212,7 +212,7 @@ def test_decision_lifecycle_transitions():
         _cleanup(ws)
 
 
-def test_invalid_transition_raises_validation_error():
+def test_invalid_transition_raises_locked_error():
     ws = _new_workspace()
     try:
         m = meetings.create_meeting("Invalid Transition Meeting", workspace_id=ws)
@@ -222,8 +222,10 @@ def test_invalid_transition_raises_validation_error():
         dec = decisions.transition_decision_status(dec.id, REJECTED, expected_version=1, workspace_id=ws)
         assert dec.status == REJECTED
 
-        # Transitioning out of REJECTED (terminal for direct transition) is forbidden
-        with pytest.raises(DecisionValidationError):
+        # Transitioning out of REJECTED (terminal for direct transition) is forbidden.
+        # `Locked`, not `Validation`: the state refused a well-formed request, so it is
+        # a 409 at the API boundary like every other module's illegal move (#97).
+        with pytest.raises(DecisionLockedError):
             decisions.transition_decision_status(dec.id, PROPOSED, expected_version=2, workspace_id=ws)
     finally:
         _cleanup(ws)
@@ -431,8 +433,10 @@ def test_transition_to_deferred_and_terminal_guard():
         )
         assert deferred_dec.status == DEFERRED
 
-        # Cannot directly transition out of DEFERRED
-        with pytest.raises(DecisionValidationError):
+        # Cannot directly transition out of DEFERRED. `Locked`, not `Validation`:
+        # a terminal state refusing a well-formed request is a 409 at the API
+        # boundary, matching every other module (#97).
+        with pytest.raises(DecisionLockedError):
             decisions.transition_decision_status(
                 dec.id, APPROVED, expected_version=2, workspace_id=ws
             )
