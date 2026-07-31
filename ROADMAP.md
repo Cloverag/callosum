@@ -343,14 +343,14 @@ decisions in ADR-009 – ADR-014.
 | §5 | work needing no decision | ✅ tenancy guard · id lookup · error taxonomy · `decisions.ts` fix · `/commitments` |
 | CP-A | identity + session | ✅ `principal_identity` · subject resolution · OIDC/Keycloak · workspace selection · OpenAPI guard |
 | CP-B | first vertical slice | ✅ `/api/resolutions` + real client, mock deleted |
-| CP-C | remaining mechanical reads | 🟩 **6 / 7** — `board_members` `agenda` `meetings` `packs` `minutes` done; **`decisions` remains** |
+| CP-C | remaining mechanical reads | 🟩 **6 / 7** — `board_members` `agenda` `meetings` `packs` `minutes` `decisions` done; **`commitments` remains** |
 | CP-D | writes + 409 concurrency | ⬜ |
 | CP-E | the four orphan mocks | ⬜ `documents` `insights` `graph` `assistant` |
 | CP-F | states, rate limits, observability | ⬜ |
 | CP-G | accessibility | ⬜ |
 | CP-H | P3 exit gate | ⬜ |
 
-**Every mock swap so far has found a contract defect** — five swaps, five defects:
+**Every mock swap so far has found a contract defect** — six swaps, six defects:
 nothing enforced the TS↔Python correspondence at all; `include_inactive` was invented
 *and* lossy; three phantom `Meeting` fields (`agenda`, `objectives`, `sensitivity`);
 a nullable scheduling window declared as required; and `clearance` accepted as a
