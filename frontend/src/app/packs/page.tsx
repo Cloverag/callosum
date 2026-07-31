@@ -13,7 +13,7 @@ import {
   type BoardPack,
   type PackStatus,
 } from "@/lib/packs";
-import { RESTRICTED_CLEARANCE, documentsApi, type Document } from "@/lib/documents";
+import { documentsApi, type Document } from "@/lib/documents";
 import { meetingsApi, type Meeting } from "@/lib/meetings";
 import { PackCard } from "./pack-card";
 
@@ -55,7 +55,7 @@ export default function PacksPage() {
     // document list is still the CP-E mock, so a title may fail to resolve for an
     // item the API did return — the card renders that as an unresolved reference,
     // never as withheld content, which is the honest reading of a dangling id.
-    Promise.all([packsApi.list({ meeting_id: MEETING_ID }), documentsApi.list({ clearance: RESTRICTED_CLEARANCE })]).then(
+    Promise.all([packsApi.list({ meeting_id: MEETING_ID }), documentsApi.list()]).then(
       ([p, d]) => {
         if (stale) return;
         setData({ packs: p, documents: d });

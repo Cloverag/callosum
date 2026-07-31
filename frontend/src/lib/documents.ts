@@ -1,3 +1,5 @@
+import { apiGet, apiGetOrNull } from "@/lib/http";
+
 /**
  * Documents — the readable columns of the core `document` table.
  *
@@ -41,11 +43,14 @@ export const DOC_TYPE_LABEL: Record<DocType, string> = {
  * in step with the table: a hard-coded maximum silently stops meaning "maximum"
  * the moment a level is added.
  */
-export const PUBLIC_CLEARANCE = 0;
-export const INVESTOR_CLEARANCE = 1;
-export const INTERNAL_CLEARANCE = 2;
-export const CONFIDENTIAL_CLEARANCE = 3;
-export const RESTRICTED_CLEARANCE = 4;
+// The clearance *ladder* deliberately does not live here any more. It moved to the
+// server with CP-E: the API resolves a caller's clearance from their membership, so no
+// client code has a legitimate use for the numbers. A `RESTRICTED_CLEARANCE = 4` left
+// lying in the browser is an invitation to pass it somewhere, which is exactly the
+// fail-open `clearance: int = 4` that `packs.list_packs` shipped with.
+//
+// `Sensitivity` stays, because a document's own level is data the caller may see and
+// `SENSITIVITY_LABEL` renders it.
 
 export type Sensitivity = 0 | 1 | 2 | 3 | 4;
 
@@ -78,120 +83,34 @@ export type Document = {
  * The sensitivity spread is the point: it is what gives the board-pack surface
  * something real to withhold.
  */
-const mockDocuments: Document[] = [
-  {
-    id: "doc-q3-deck",
-    title: "Q3 FY26 board deck",
-    doc_type: "board_deck",
-    source_uri: "gdrive://meridian/board/q3-fy26-deck.pdf",
-    sensitivity: 1,
-    authored_at: "2026-07-05T09:00:00Z",
-    ingested_at: "2026-07-05T14:22:00Z",
-  },
-  {
-    id: "doc-kpi",
-    title: "FY27 KPI pack",
-    doc_type: "board_deck",
-    source_uri: "gdrive://meridian/board/fy27-kpis.xlsx",
-    sensitivity: 1,
-    authored_at: "2026-07-06T11:30:00Z",
-    ingested_at: "2026-07-06T12:02:00Z",
-  },
-  {
-    id: "doc-pricing-memo",
-    title: "Pricing Model B — analysis",
-    doc_type: "memo",
-    source_uri: null,
-    sensitivity: 2,
-    authored_at: "2026-07-07T16:45:00Z",
-    ingested_at: "2026-07-07T17:10:00Z",
-  },
-  {
-    id: "doc-runway",
-    title: "Runway and burn scenarios",
-    doc_type: "memo",
-    source_uri: null,
-    sensitivity: 2,
-    authored_at: "2026-07-08T10:15:00Z",
-    ingested_at: "2026-07-08T10:40:00Z",
-  },
-  {
-    id: "doc-seriesb-term",
-    title: "Series B term sheet (draft)",
-    doc_type: "contract",
-    source_uri: "gdrive://meridian/legal/series-b-ts-v4.pdf",
-    sensitivity: 3,
-    authored_at: "2026-07-12T13:00:00Z",
-    ingested_at: "2026-07-12T13:35:00Z",
-  },
-  {
-    id: "doc-comp",
-    title: "Executive compensation review",
-    doc_type: "memo",
-    source_uri: null,
-    sensitivity: 4,
-    authored_at: "2026-07-10T08:00:00Z",
-    ingested_at: "2026-07-10T08:30:00Z",
-  },
-  {
-    id: "doc-m14-minutes",
-    title: "Board Meeting 14 — minutes",
-    doc_type: "minutes",
-    source_uri: null,
-    sensitivity: 1,
-    authored_at: "2026-07-09T15:00:00Z",
-    ingested_at: "2026-07-09T15:20:00Z",
-  },
-  {
-    id: "doc-hiring",
-    title: "FY27 hiring plan",
-    doc_type: "memo",
-    source_uri: null,
-    sensitivity: 2,
-    authored_at: "2026-07-04T09:45:00Z",
-    ingested_at: "2026-07-04T10:00:00Z",
-  },
-];
+
+// --- API client ------------------------------------------------------------
 
 /**
- * The document store as the server sees it — every row, unfiltered.
+ * Meridian documents API. **Live as of CP-E; the in-memory mock is gone.**
  *
- * Exported for the mock pack API only, which applies the clearance predicate the
- * way `_fetch_items_for_packs` does. UI code must not import this: reading it
- * from a component is precisely the app-side filtering that Invariant #1 exists
- * to prevent.
+ * It had to go. `packsApi` went live in CP-C while this stayed mocked, so the packs
+ * page joined real `board_pack_item.document_id` values against fabricated ids. Every
+ * item in every pack resolved to nothing and rendered "Document reference could not be
+ * resolved" — a live surface making a false statement about real data.
  *
- * @internal
- */
-export const __unfilteredDocuments = mockDocuments;
-
-const clone = (d: Document): Document => structuredClone(d);
-const delay = (ms = 300) => new Promise((r) => setTimeout(r, ms));
-
-/**
- * Mocked document reads.
- *
- * Every method takes a `clearance` and filters before returning, mirroring the
- * server contract: a document above the caller's level is not returned in a
- * redacted form, it is not returned at all.
+ * **`clearance` is no longer an argument, and that is the point.** The mock took one
+ * because it filtered its own array; the real API resolves it from the caller's active
+ * membership on every request (ADR-013). A client able to name its own clearance could
+ * ask for every restricted document in the workspace, so there is deliberately nowhere
+ * to pass one.
  */
 export const documentsApi = {
-  async list(opts: { clearance: number }): Promise<Document[]> {
-    await delay();
-    return mockDocuments
-      .filter((d) => d.sensitivity <= opts.clearance)
-      .slice()
-      .sort((a, b) => b.ingested_at.localeCompare(a.ingested_at))
-      .map(clone);
+  async list(opts?: { doc_type?: DocType }): Promise<Document[]> {
+    return apiGet<Document[]>("/documents", { doc_type: opts?.doc_type });
   },
 
-  async get(id: string, opts: { clearance: number }): Promise<Document | null> {
-    await delay(150);
-    const d = mockDocuments.find((x) => x.id === id);
-    // A document the caller cannot read is indistinguishable from one that does
-    // not exist. Returning a different result for the two cases would turn this
-    // lookup into an existence oracle.
-    if (!d || d.sensitivity > opts.clearance) return null;
-    return clone(d);
+  /**
+   * One document, or `null` when it does not exist **or** is above the caller's
+   * clearance. The API answers 404 to both so the lookup cannot be used to prove a
+   * restricted document exists, and `apiGetOrNull` preserves that here.
+   */
+  async get(id: string): Promise<Document | null> {
+    return apiGetOrNull<Document>(`/documents/${encodeURIComponent(id)}`);
   },
 };
