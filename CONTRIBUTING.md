@@ -112,6 +112,27 @@ the number in the filename. The cost is confusion and rework, not corruption —
 it is entirely avoidable. Refer to checkpoints by name in specs ("CP8 — audit
 event"), and let the number be decided by whoever writes the file.
 
+**Never edit a migration that has been applied. Add a new one.**
+
+Alembic records which revisions a database has run and never re-runs one, so an edit
+splits the estate in two: databases migrated before it never receive the change,
+databases built fresh after it have it from the start, and both report the same
+`alembic_version`. Nothing notices until a constraint exists in one environment and
+not another.
+
+This is the invariant CP10 was accepted on — a full-chain downgrade and return
+reproducing 628 schema facts identical to a fresh build. It is now enforced by
+`tests/test_migration_immutability.py`, which checksums every migration against
+`meridian/migrations/CHECKSUMS.json`. When you add a migration, record it in the same
+commit:
+
+```bash
+python scripts/record_migration_checksums.py
+```
+
+If the test fails, do **not** regenerate the manifest to match — the recorder refuses
+that on purpose. Revert the file and put the change in a new migration.
+
 **Tenant-scoped foreign keys should reference the `(id, workspace_id)` pair.**
 
 Postgres validates foreign keys as the table owner, which **bypasses row-level
