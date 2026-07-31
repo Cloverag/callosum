@@ -343,19 +343,26 @@ decisions in ADR-009 – ADR-014.
 | §5 | work needing no decision | ✅ tenancy guard · id lookup · error taxonomy · `decisions.ts` fix · `/commitments` |
 | CP-A | identity + session | ✅ `principal_identity` · subject resolution · OIDC/Keycloak · workspace selection · OpenAPI guard |
 | CP-B | first vertical slice | ✅ `/api/resolutions` + real client, mock deleted |
-| CP-C | remaining mechanical reads | 🟩 **6 / 7** — `board_members` `agenda` `meetings` `packs` `minutes` `decisions` done; **`commitments` remains** |
+| CP-C | remaining mechanical reads | ✅ **7 / 7** — `board_members` `agenda` `meetings` `packs` `minutes` `decisions` `commitments` |
 | CP-D | writes + 409 concurrency | ⬜ |
 | CP-E | the four orphan mocks | ⬜ `documents` `insights` `graph` `assistant` |
 | CP-F | states, rate limits, observability | ⬜ |
 | CP-G | accessibility | ⬜ |
 | CP-H | P3 exit gate | ⬜ |
 
-**Every mock swap so far has found a contract defect** — six swaps, six defects:
-nothing enforced the TS↔Python correspondence at all; `include_inactive` was invented
-*and* lossy; three phantom `Meeting` fields (`agenda`, `objectives`, `sensitivity`);
-a nullable scheduling window declared as required; and `clearance` accepted as a
-*client* argument on packs. Each is now pinned by a cross-language test that reads the
-TypeScript and compares it to the Python.
+**Six of the seven mock swaps found a contract defect**: nothing enforced the TS↔Python
+correspondence at all; `include_inactive` was invented *and* lossy; three phantom
+`Meeting` fields (`agenda`, `objectives`, `sensitivity`); a nullable scheduling window
+declared as required; `clearance` accepted as a *client* argument on packs; and
+`board_member_id` declared on `DecisionStance` but dropped by `_row_to_stance`, so a
+stance resolved to a director arrived looking unresolved. Each is now pinned by a
+cross-language test that reads the TypeScript and compares it to the Python.
+
+**`commitments` was the exception, and the reason generalises.** It is the only mock
+written *after* its domain shipped, against the real contract rather than ahead of it —
+fields, statuses, transitions and the `NULLS LAST` sort all matched. Every defect above
+came from a mock authored before the Python existed. Write the domain first and the
+swap is a change of transport; write the mock first and it is a negotiation.
 
 **Open decisions:** D7 (who may read the audit trail) gates only the `audit` endpoint.
 The CP-E orphans need a call each — `graph` and `assistant` recommended for deferral to
