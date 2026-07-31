@@ -266,21 +266,11 @@ class TestStance:
 
 
 class TestTransitionAndSupersede:
-    def test_an_illegal_move_is_422_here_and_409_on_meetings(self, restore_client):
-        """Records a real inconsistency rather than hiding it. See issue filed with D2a.
+    def test_an_illegal_move_is_409(self, restore_client):
+        """#97, now fixed: the same as `meetings`, `resolutions` and `commitments`.
 
-        `meetings.transition_status` raises `InvalidTransition` for an illegal move, so
-        it is a 409. `decisions.transition_decision_status` raises
-        `DecisionValidationError` for the same event, so it is a 422.
-
-        Both are defensible in isolation and they cannot both be right together — the
-        frontend cannot write one conflict handler. 409 is the better answer (the
-        request was well-formed; the state refused it), but changing it means changing
-        `test_invalid_transition_raises_validation_error` and auditing every module, so
-        it is not being slipped into a write-endpoint PR.
-
-        This test asserts what the API *does* today. When the inconsistency is resolved
-        it should fail, which is the point.
+        The request was well-formed and the state refused it. There is no input to
+        correct, so a 422 would tell the caller to fix nothing and resend forever.
         """
         f = _Fixture("illegal")
         try:
@@ -289,7 +279,7 @@ class TestTransitionAndSupersede:
                 f"/api/decisions/{d['id']}/transition",
                 json={"new_status": "proposed", "expected_version": d["version"]},
             )
-            assert response.status_code == 422
+            assert response.status_code == 409
         finally:
             f.close()
 
@@ -306,8 +296,8 @@ class TestTransitionAndSupersede:
                 f"/api/decisions/{deferred['id']}/transition",
                 json={"new_status": "approved", "expected_version": deferred["version"]},
             )
-            # 422 for the same reason as above, not because `deferred` is special.
-            assert response.status_code == 422
+            # 409 for the same reason as above, not because `deferred` is special.
+            assert response.status_code == 409
         finally:
             f.close()
 

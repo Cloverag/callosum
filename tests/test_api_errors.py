@@ -112,6 +112,64 @@ class TestStaleIsA409:
         assert "expected version 3, current 4" in classify(exc).detail
 
 
+class TestAnIllegalTransitionIsA409Everywhere:
+    """Closes #97.
+
+    `decisions` used to raise `DecisionValidationError` for an illegal move, making it
+    the only module where the same event was a 422. Three modules already answered 409
+    — `meetings` via the explicit `InvalidTransition` rule, `resolutions` and
+    `commitments` via their `*Locked*` suffix — so the outlier was fixed rather than
+    the majority.
+
+    **Why 409 is the right answer and 422 is actively misleading.** The two statuses
+    tell a client to do opposite things:
+
+    - **422** — change something and resend. A missing field, a bad enum, an unmet
+      invariant of the target state (`scheduled` without a time window: supply one).
+    - **409** — re-read and reconsider. A stale version, a locked parent, a move the
+      state machine does not allow.
+
+    An illegal transition has no input to correct. A client told 422 would fix nothing,
+    resend, and be refused identically forever.
+
+    This is parametrised over the modules that *have* a lifecycle rather than asserted
+    once, because the bug was a single module drifting from the convention and a test
+    that checked one module is how it stayed hidden.
+    """
+
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            meetings.InvalidTransition("draft -> completed is not an allowed transition"),
+            decisions.DecisionLockedError("cannot transition decision from 'rejected' to 'proposed'"),
+            resolutions.ResolutionLockedError("cannot move a resolution from 'adopted' to 'draft'"),
+            commitments.CommitmentLockedError("cannot update a commitment in terminal status"),
+        ],
+        ids=lambda e: type(e).__name__,
+    )
+    def test_every_illegal_transition_is_409(self, exc):
+        assert classify(exc).status == 409
+
+    def test_decisions_no_longer_answers_422(self):
+        """The specific regression. If someone reinstates `DecisionValidationError`
+        here, this fails rather than the inconsistency quietly returning.
+        """
+        exc = decisions.DecisionLockedError("cannot transition decision from 'x' to 'y'")
+        assert classify(exc).status == 409, "decisions has drifted back to 422 (#97)"
+
+    def test_an_unmet_invariant_is_still_422(self):
+        """The other half of the distinction, so the fix does not overshoot.
+
+        Scheduling a meeting with no time window is a legal *move* whose target state
+        has an unmet requirement. There genuinely is something for the caller to supply,
+        so it stays 422.
+        """
+        exc = meetings.MeetingValidationError(
+            "cannot move to 'scheduled' without scheduled_start and scheduled_end"
+        )
+        assert classify(exc).status == 422
+
+
 class TestTheOtherStatuses:
     @pytest.mark.parametrize(
         "exc,status,code",
