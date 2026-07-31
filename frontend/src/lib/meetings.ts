@@ -1,5 +1,5 @@
 import type { BadgeTone } from "@/components/ui/badge";
-import { apiGet, apiGetOrNull } from "@/lib/http";
+import { apiGet, apiGetOrNull, apiPatch, apiPost } from "@/lib/http";
 
 /**
  * `meridian/meetings.py:31-35`. **These are the only five states the domain has.**
@@ -133,4 +133,77 @@ export const meetingsApi = {
   async get(id: string): Promise<Meeting | null> {
     return apiGetOrNull<Meeting>(`/meetings/${encodeURIComponent(id)}`);
   },
+
+  /**
+   * Creates a `draft`. The API sets `created_by` from the session — there is no
+   * parameter for it here because there is no parameter for it there (ADR-013).
+   */
+  async create(input: MeetingCreate): Promise<Meeting> {
+    return apiPost<Meeting>("/meetings", input);
+  },
+
+  /**
+   * Updates only the fields present in `changes`.
+   *
+   * **Send what changed, not the whole form.** The API distinguishes an omitted field
+   * from an explicit `null`: omitted leaves the value alone, `null` clears it. Passing
+   * a form's entire state would send `null` for every empty input and wipe fields the
+   * user never touched. `changesBetween()` below exists so no surface has to remember.
+   */
+  async update(id: string, expectedVersion: number, changes: MeetingChanges): Promise<Meeting> {
+    return apiPatch<Meeting>(`/meetings/${encodeURIComponent(id)}`, {
+      expected_version: expectedVersion,
+      ...changes,
+    });
+  },
+
+  /** Moves a meeting through its lifecycle. An illegal move is a 409, not a 422. */
+  async transition(id: string, newStatus: MeetingStatus, expectedVersion: number): Promise<Meeting> {
+    return apiPost<Meeting>(`/meetings/${encodeURIComponent(id)}/transition`, {
+      new_status: newStatus,
+      expected_version: expectedVersion,
+    });
+  },
 };
+
+/** The fields `POST /api/meetings` accepts. `status` and `created_by` are not among them. */
+export type MeetingCreate = {
+  title: string;
+  scheduled_start?: string | null;
+  scheduled_end?: string | null;
+  location?: string | null;
+};
+
+/** The patchable fields. Absent means "leave alone"; `null` means "clear". */
+export type MeetingChanges = {
+  title?: string;
+  scheduled_start?: string | null;
+  scheduled_end?: string | null;
+  location?: string | null;
+};
+
+/**
+ * The minimal patch that turns `before` into `after`.
+ *
+ * Exists because the tri-state is easy to get wrong in exactly one direction: a
+ * surface that sends its whole form state clears every field the user left empty. This
+ * compares field by field and emits only what actually differs, so an untouched
+ * `location` is absent from the request rather than present as `null`.
+ *
+ * `title` is never emitted as `null` — it is `NOT NULL` in the schema, so an empty
+ * title is a validation error for the form to catch, not a clear instruction.
+ */
+export function changesBetween(before: Meeting, after: MeetingChanges): MeetingChanges {
+  const changes: MeetingChanges = {};
+  if (after.title !== undefined && after.title !== before.title) changes.title = after.title;
+  if (after.scheduled_start !== undefined && after.scheduled_start !== before.scheduled_start) {
+    changes.scheduled_start = after.scheduled_start;
+  }
+  if (after.scheduled_end !== undefined && after.scheduled_end !== before.scheduled_end) {
+    changes.scheduled_end = after.scheduled_end;
+  }
+  if (after.location !== undefined && after.location !== before.location) {
+    changes.location = after.location;
+  }
+  return changes;
+}
