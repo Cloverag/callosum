@@ -42,6 +42,47 @@ export class ApiError extends Error {
     return this.code === "stale_resource";
   }
 
+  /**
+   * True when the *state* refused a well-formed request: a stale version, a locked
+   * parent, a move the lifecycle does not allow.
+   *
+   * The distinction from 422 is the whole point of CP-D and is worth stating once
+   * here rather than being rediscovered per surface. A 409 means **re-read and
+   * reconsider**; a 422 means **change something and resend**. Offering "try again"
+   * on a 422 invites the user to resend an identical request forever.
+   */
+  get isConflict(): boolean {
+    return this.status === 409;
+  }
+
+  /**
+   * True when a 409 will *never* succeed on retry, however fresh the caller's copy.
+   *
+   * A stale version resolves by refetching. A locked pack, a finalised set of minutes,
+   * an illegal transition — those refuse the operation itself, so a surface that
+   * offered "reload and retry" would be promising something that cannot happen.
+   */
+  get isUnretryableConflict(): boolean {
+    return this.isConflict && !this.isStale && !this.needsWorkspace;
+  }
+
+  /**
+   * The two version numbers a stale write reports, when the server included them.
+   *
+   * `errors.classify` passes the domain's message through verbatim precisely so this
+   * is recoverable — "expected version 3, current 4" tells a surface how far behind
+   * the user is, which is the difference between "someone else saved" and "someone
+   * else saved twice while you were typing".
+   *
+   * Returns `null` rather than guessing when the message does not carry them: an
+   * invented version number is worse than an absent one.
+   */
+  get versions(): { expected: number; current: number } | null {
+    const match = /expected version (\d+), current (\d+)/.exec(this.message);
+    if (!match) return null;
+    return { expected: Number(match[1]), current: Number(match[2]) };
+  }
+
   /** True when the session needs re-establishing rather than the request retrying. */
   get isUnauthenticated(): boolean {
     return this.status === 401;
@@ -115,4 +156,54 @@ export async function apiGetOrNull<T>(path: string, params?: Params): Promise<T 
     if (error instanceof ApiError && error.status === 404) return null;
     throw error;
   }
+}
+
+/**
+ * Send a JSON body and read a JSON response.
+ *
+ * One function behind `apiPost`/`apiPatch` rather than three near-copies, because the
+ * part worth getting right — credentials, the error envelope, the 204 case — is
+ * identical and should not drift between verbs.
+ */
+async function send<T>(method: string, path: string, body?: unknown, params?: Params): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}${query(params)}`, {
+    method,
+    credentials: "same-origin",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+
+  if (!response.ok) throw await toApiError(response);
+
+  // 204 has no body, and `response.json()` on an empty body throws a parse error that
+  // would surface as a crash on a successful delete.
+  if (response.status === 204) return undefined as T;
+  return (await response.json()) as T;
+}
+
+/** `POST` a JSON body. Creates return 201; action endpoints return 200. */
+export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
+  return send<T>("POST", path, body);
+}
+
+/**
+ * `PATCH` a JSON body.
+ *
+ * **Only send the fields the user actually changed.** The API distinguishes an omitted
+ * field from an explicit `null`: omitted leaves the value alone, `null` clears it. A
+ * caller that serialises its whole form state will send `null` for every empty input
+ * and silently wipe fields nobody touched.
+ */
+export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
+  return send<T>("PATCH", path, body);
+}
+
+/**
+ * `DELETE`, with the concurrency check in the query string.
+ *
+ * `expected_version` is required by the API and travels as a parameter rather than a
+ * body, because a request body on DELETE is legal but poorly supported by proxies.
+ */
+export async function apiDelete(path: string, expectedVersion: number): Promise<void> {
+  await send<void>("DELETE", path, undefined, { expected_version: String(expectedVersion) });
 }
