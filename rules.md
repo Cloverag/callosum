@@ -23,6 +23,7 @@ Related: [PRD.md](./PRD.md) · [ROADMAP.md](./ROADMAP.md) · [AGENTS.md](./AGENT
 
 ## 4. How we ship (incremental + measured)
 
+- **Feature work is frozen (2026-08-01).** The target is a portfolio-ready artifact by November. Only critical bug fixes, documentation, demo polish, deployment and evaluation reporting change. Deferred checkpoints (CP-F/G/H, #93) are **not** to be reopened because time remains — reopening them undoes the only thing that makes a deferral honest.
 - **One verified change per commit.** Smallest change that increases confidence. No drive-by refactors, no churn.
 - Branch off the default branch; never commit straight to it. **Commit and push only when the owner asks.**
 - Fix only real, reproduced bugs. Measure before refactoring — let the problem pick the work.
@@ -31,7 +32,7 @@ Related: [PRD.md](./PRD.md) · [ROADMAP.md](./ROADMAP.md) · [AGENTS.md](./AGENT
 ## 5. Ownership
 
 - **Frontend** = maintainer/owner. **Backend** (domain model, migrations, RLS/tenancy, API contracts, tests, infra) = Devguru.
-- Backend publishes stable contracts; the frontend consumes only those (or mocks until the P3 API exists). No API layer exists yet — all frontend data is mock-driven.
+- Backend publishes stable contracts; the frontend consumes only those. **The API layer is real as of P3** — nine `lib/*` modules call it through `lib/http.ts`. The three that are still local (`graph`, `assistant`, `insights`) are recorded exceptions, not swaps waiting to happen; see [phase.md](./phase.md).
 - **P3 interim (owner decision, 2026-07-29):** while Devguru is unavailable, the maintainer is
   backend owner so the phase does not stall. If he returns before CP-A implementation begins,
   review the design (ADR-009 – ADR-013) together and split the checkpoints then. **One owner

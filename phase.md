@@ -43,21 +43,31 @@ Measure-first, one aggregate root per checkpoint (own migration → domain modul
 - **Test count:** 263 backend (gated, real Postgres) and 121 frontend.
 - Deferred: retirement of the frozen-query gateway allowlist (rides the next planned retrieval change).
 
-## Frontend — 🟩 IN PROGRESS (maintainer)
+## Frontend — ⏸️ FROZEN with P3 (maintainer)
 
 **The whole frontend line is on `master`** (merged 2026-07-26, PRs #25 + #27 + #24). The long-lived
 `feat/frontend-*` branches are history, not work in progress.
 
 - **Design system (v2 "Calm Desk"):** light-mode only; blue `#2563EB` = action; violet `#6D28D9` reserved for Institutional Memory. Token layer, primitives, white sidebar, persistent collapsible AI rail, elevation + typography ramp, brand mark / icons / favicon. See [frontend/DESIGN.md](./frontend/DESIGN.md).
-- **Routes shipped:** dashboard, calendar, meetings, documents, settings, entity-conflicts, `/memory` (knowledge graph + provenance timeline + ontology bars, closes #13), `/decisions` (#37), `/packs` (#46), `/minutes` (#48), `/resolutions` (#60).
+- **Routes shipped:** dashboard, calendar, meetings, documents, settings, entity-conflicts, `/memory` (knowledge graph + provenance timeline + ontology bars, closes #13), `/decisions` (#37), `/packs` (#46), `/minutes` (#48), `/resolutions` (#60), `/commitments` (CP7 contract).
 - **Data honesty is the standing constraint.** Two rounds of fabricated figures were found and removed — repository metadata shown as memory coverage, an invented health %, a contradictory growth series, invented assistant citations, and unwired review-queue counts. Numbers on screen trace to a source or are labelled "not measured". Chart rules live in `frontend/DESIGN.md`.
 - **Settled 2026-07-28 — the product frontend is Next.js `frontend/`.** The Vite glassmorphism prototype at `frontendglass/meridian-glass/` is a visual reference only: it does not get wired to the P3 API and no further work goes into it. It stays in the tree for now; removing it is a separate deliberate commit. See [memory.md](./memory.md).
-- **Next:** `/commitments` against the merged CP7 contract; then resolving `decision_stance` to the board directory (`decisions.ts` still says `board_member_id` is "coming in CP5" — CP5a shipped it), and the responsive/mobile AI rail.
+- **Both open items from this list are closed:** `/commitments` shipped against CP7, and `decision_stance` now resolves to the board directory (the stale `board_member_id` "coming in CP5" note is gone). The responsive/mobile AI rail is **not** done — it is deferred with the rest of P3, not pending.
+- **Still mock-backed:** `/entity-conflicts` reads `lib/api.ts`. It sits off the demo path and has no backend module, so it was left alone at the freeze rather than swapped.
 
-## Product P3 — Authenticated API — 🟩 IN PROGRESS
+## Product P3 — Authenticated API — ⏸️ FROZEN (feature-complete, exit gate NOT claimed)
+
+**Frozen 2026-08-01** at `caf650d`, migration head `0017_principal_identity`. Feature work stopped here so the remaining runway to the November target goes to the writeup, diagrams, demo and deployment.
+
+**The product track stays at 3 of 13.** P3 is frozen, *not* accepted: of its three exit criteria, workspace authorization is **met**, draft/approved/withheld is **partial** (failed and loading states are CP-F, deferred), and the keyboard/accessibility smoke checks are **not met** (CP-G, deferred). Counting it as accepted would make the roadmap say something the evidence does not support. Full scoring in the [freeze record](./docs/reviews/2026-08-01-p3-freeze.md).
 
 - **Auth is real.** OIDC against Keycloak (compose service + realm import), an httpOnly signed-cookie session, and workspace selection re-validated against `membership` on every request. The session holds an identity and a choice — never a clearance, role or permission, so revoking a membership takes effect on the *next request* rather than at session expiry.
 - **`workspace_id` and `clearance` never come from a request.** Three layers hold that: `meridian/tenancy.py` raises rather than defaulting, `deps.current_principal` is the only path to a `Principal`, and a test walks the OpenAPI schema and fails the build if any endpoint declares either (ADR-013).
-- **Six of seven mock modules now talk to the real API**: resolutions, board members, agenda, meetings, packs, minutes. `decisions` remains.
-- **Four mocks have no backend and are untouched** (CP-E): `documents`, `insights`, `graph`, `assistant`.
-- **Test counts:** 460 backend (gated, real Postgres) · 159 frontend.
+- **Nine `lib/*` modules talk to the real API** through `lib/http.ts`: agenda, board members, commitments, decisions, documents, meetings, minutes, packs, resolutions. **61 API operations** across 44 paths and 9 routers. Every write carries `expected_version`; every mismatch is a 409, and the client acts on it rather than reporting it.
+- **Three remain local, each a recorded exception, not a pending swap:** `graph` and `assistant` are real-data snapshots deferred to P6 (#100); `insights` was audited tile by tile in CP-E — every figure is traceable to a file in this repo or is `null` with the reason recorded inline.
+- **Deferred to P9 (#93):** CP-F failed/loading states, CP-G keyboard + accessibility verification, CP-H exit gate. **Accessibility is designed to WCAG 2.2 AA and never audited** — deferring CP-G defers the verification, not the standard, and any claim must carry that qualifier.
+- **Verified at the freeze commit** `caf650d`, against real Postgres and Neo4j: 610 backend passed (gated) · 180 frontend · `tsc --noEmit` clean · build green, 15 routes · mechanism gate 22/22 candidate recall, 21/21 traversal (100% mean), RBAC fail-closed 1/1, `eval/mechanism.csv` **byte-identical**.
+- **Re-measured on `master` `7cbfa61` (2026-08-03): 612 backend passed** (0 failed, 5 deselected) · **168 frontend passed**, 10 suites.
+- **The frontend count went DOWN, 180 → 168, and that is not a regression.** All −12 come from the two files rewritten in `9d11390` when the last mocks were swapped: `commitments.test.ts` 23 → 12 cases and `decisions.test.ts` 6 → 5. Mock-shape assertions were replaced by real-contract ones; the suite count is unchanged at 10 and nothing was silently dropped. Recorded because a test count that falls between two documents is exactly the kind of number a reader is right to distrust.
+- The mechanism gate was **not** re-run at `7cbfa61`; the byte-identity claim above still belongs to `caf650d`.
+- **Not run at the freeze:** a clean-volume migration replay (destructive to the local volume; commands are in the freeze record).

@@ -246,10 +246,15 @@ routes. Set `MERIDIAN_API_ORIGIN` if the API is not on `:8000`.
 **Verification:**
 
 ```bash
+docker compose up -d && docker compose ps               # all three healthy FIRST
 .venv/bin/callosum eval-mechanism                        # deterministic gate, no LLM
-CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 610 tests, real stores
-cd frontend && npx jest && npm run build                 # 180 tests
+CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 612 tests, real stores
+cd frontend && npx jest && npm run build                 # 168 tests, 10 suites
 ```
+
+`CALLOSUM_RUN_INTEGRATION=1` runs against real Postgres and Neo4j, so the compose stack
+must be up. Run it with the containers stopped and roughly 395 tests fail on connection
+errors — the failure looks like a broken build and is a missing database.
 
 ---
 

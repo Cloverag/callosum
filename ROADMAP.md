@@ -24,9 +24,9 @@ requirements.
 | Meridian product | **3 / 13** accepted (`P0`, `P1`, `P2`) | **P3 FROZEN** — feature-complete through CP-E; exit gate not claimed (CP-F/G/H deferred, #93) | **10** (`P3`–`P12`) |
 
 The counts must not be combined into one percentage: the research track validates the
-memory engine; the product track makes it a deployable board operating system. The CLI
-research foundation exists, but the product still has no authenticated API, production
-identity, integration layer, or pilot yet.
+memory engine; the product track makes it a deployable board operating system. P3 gave the
+product an authenticated API and an OIDC identity, but both are **frozen and locally
+verified only** — there is no CI, no public deployment, no integration layer, and no pilot.
 
 ### P2 checkpoint status
 
