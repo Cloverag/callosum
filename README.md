@@ -144,12 +144,12 @@ feature-complete at P3.
 
 | | |
 |---|---|
-| Backend tests | **610** passing |
-| Frontend tests | **180** passing |
-| API | **61 operations** across 44 paths, 9 routers |
+| Backend tests | **612** passing |
+| Frontend tests | **168** passing, 10 suites |
+| API | **61 operations** across 44 paths, 10 routers |
 | Migrations | 17, forward and reverse tested |
 | Architecture decisions | 15 ADRs |
-| Commits | 305 |
+| Commits | 315 (`git rev-list --count master`) |
 
 **P3 is frozen, not accepted** — of its three exit criteria one is met, one is partial and
 one is not met, because the accessibility and error-state checkpoints were deliberately
@@ -287,7 +287,7 @@ Stated because a limitation a reader finds is worth less than one they are told.
 |---|---|
 | `src/callosum/` | the research engine — **frozen** at `eval-baseline-v3` |
 | `meridian/` | the product: domain modules, FastAPI, Alembic migrations |
-| `frontend/` | Next.js application, 15 routes |
+| `frontend/` | Next.js application, 13 pages |
 | `eval/` | gold questions, results, the deterministic gate log |
 | `docs/TECHNICAL_OVERVIEW.md` | the full engineering write-up |
 | `docs/findings.md` | the running research log — every experiment, including the failures |
