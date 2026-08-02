@@ -256,7 +256,7 @@ async def select_workspace(request: Request, selection: WorkspaceSelection):
         principal = deps.verify_membership(current.principal_id, selection.workspace_id)
     except WorkspaceRequired as exc:
         raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail={"code": "invalid", "detail": str(exc)},
         ) from exc
     except PrincipalNotFound as exc:
