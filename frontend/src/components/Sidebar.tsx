@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, CalendarDays, Users, FileText, Gavel, Scale, ClipboardCheck, Briefcase, ScrollText, Network, GitMerge, Settings, ChevronsUpDown } from "lucide-react";
+import { LayoutDashboard, CalendarDays, Users, FileText, Gavel, Scale, ClipboardCheck, Briefcase, ScrollText, Network, GitMerge, Settings } from "lucide-react";
 import { NavItem } from "./ui/nav-item";
 
 const nav = [
@@ -72,21 +72,20 @@ export default function Sidebar() {
         </div>
       </nav>
 
-      <div className="border-t border-border p-3">
-        <button
-          type="button"
-          className="flex w-full items-center gap-2.5 rounded-[10px] px-2 py-1.5 text-left transition-colors duration-150 hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-surface-elevated"
-        >
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent-subtle text-xs font-semibold text-accent-emphasis ring-1 ring-inset ring-accent-border">
-            AC
-          </span>
-          <span className="flex min-w-0 flex-1 flex-col leading-tight">
-            <span className="truncate text-sm font-medium text-foreground">Alex Chen</span>
-            <span className="truncate text-xs text-muted-foreground">Founder &amp; CEO</span>
-          </span>
-          <ChevronsUpDown className="size-4 shrink-0 text-subtle-foreground" aria-hidden />
-        </button>
-      </div>
+      {/*
+        The account block that sat here is gone. It read "Alex Chen · Founder & CEO"
+        with an "AC" avatar — hard-coded, and nobody's actual session. Once the header
+        began showing the real principal from `/auth/context`, the contradiction was
+        visible on one screen: the sidebar named one person while the header named
+        whoever had signed in.
+
+        It was also a `<button>` with no handler, carrying a chevron that implied an
+        account switcher the product does not have.
+
+        Not replaced with the real identity, because the header already shows it.
+        Naming the signed-in principal twice invites the two to disagree again the
+        moment one of them is changed.
+      */}
     </aside>
   );
 }
