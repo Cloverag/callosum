@@ -46,7 +46,11 @@ export function AssistantRail() {
   // ⌘/Ctrl+J toggles the rail from anywhere.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() === "j" && (e.metaKey || e.ctrlKey)) {
+      // `e.key` is typed as `string` but is genuinely absent on some keydown events —
+      // browser autofill and IME composition both dispatch them — so the unguarded
+      // `.toLowerCase()` threw a runtime TypeError from a global listener, on any page.
+      // The type says this cannot happen; the browser disagrees.
+      if (e.key?.toLowerCase() === "j" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         setCollapsed((c) => !c);
       }
