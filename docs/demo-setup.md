@@ -149,7 +149,15 @@ A **404** there means the proxy is not working. A **000** means the API is not r
 
 ## 6. Log in
 
-Open <http://localhost:3000>, which redirects to Keycloak.
+Open <http://localhost:3000>. You are met by a sign-in card; **Sign in** starts the OIDC
+flow at `/auth/login` and hands you to Keycloak.
+
+> **Corrected 2026-08-03.** This step previously read "Open http://localhost:3000, which
+> redirects to Keycloak." It did not. The root route redirected to `/dashboard`, nothing
+> in the frontend linked to `/auth/login`, and no surface could select a workspace — so a
+> browser could complete neither half of the flow, and every request answered `401` and
+> then `409 workspace_not_selected` forever. The curl walkthrough below passed throughout,
+> which is why it went unnoticed. `SessionGate` now renders both screens.
 
 | User | Password | Clearance | Sees |
 |---|---|---|---|
@@ -160,6 +168,21 @@ Open <http://localhost:3000>, which redirects to Keycloak.
 
 After sign-in you must select a workspace — that is ADR-012, not a bug. Until you do,
 API calls answer `409 workspace_not_selected`.
+
+The gate asks for a **workspace ID** rather than offering a list, and the absence of a
+list is the design: `membership` and `workspace` are both RLS-scoped, so no endpoint can
+answer "which workspaces does this person belong to" without becoming the membership
+oracle CP5b refused to build. Selection is verification, not enumeration.
+
+For the demo, the Default Workspace is:
+
+```
+00000000-0000-0000-0000-000000000001
+```
+
+The last accepted id is remembered in `localStorage`, so a returning demo is one click.
+That is a convenience on the device and never an assertion of access — the server
+re-verifies membership on selection, and again on every request after it.
 
 ---
 
