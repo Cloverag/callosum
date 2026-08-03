@@ -15,6 +15,7 @@ import { decisionsApi, type Decision } from "@/lib/decisions";
 import { agendaApi, type AgendaItem } from "@/lib/agenda";
 import { packsApi, type BoardPack } from "@/lib/packs";
 import {
+  nextMeetingToPrepare,
   prepReadiness,
   prepSignals,
   sourceHref,
@@ -71,12 +72,7 @@ export default function PreparePage() {
 
     (async () => {
       const meetings = await meetingsApi.list();
-      // The meeting being prepared is the next one not yet held. Meetings with no
-      // scheduled start sort last: an unscheduled meeting cannot be "next".
-      const upcoming = meetings
-        .filter((m) => m.status === "draft" || m.status === "scheduled")
-        .sort((a, b) => (a.scheduled_start ?? "").localeCompare(b.scheduled_start ?? ""));
-      const meeting = upcoming[0] ?? meetings[0];
+      const meeting = nextMeetingToPrepare(meetings);
       if (!meeting) {
         if (!stale) setData(null);
         return;
