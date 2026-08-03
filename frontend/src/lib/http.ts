@@ -108,7 +108,7 @@ function query(params?: Params): string {
   return encoded ? `?${encoded}` : "";
 }
 
-async function toApiError(response: Response): Promise<ApiError> {
+export async function toApiError(response: Response): Promise<ApiError> {
   // The taxonomy returns {"error": {"code", "detail"}}. Anything else — a proxy error
   // page, a gateway timeout — is still surfaced as an ApiError rather than as a parse
   // failure, because a caller handling errors should not also have to handle the
