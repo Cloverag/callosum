@@ -2,11 +2,13 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Sparkles, PanelRightClose, ArrowUp, BadgeCheck, Lock, FileText, ChevronRight } from "lucide-react";
+import { Sparkles, PanelRightClose, ArrowUp, BadgeCheck, Lock, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { assistantApi, type AssistantTurn } from "@/lib/assistant";
 import { meetingsApi } from "@/lib/meetings";
 import { decisionsApi, type Decision } from "@/lib/decisions";
+import { documentsApi, type Document } from "@/lib/documents";
+import { useSession } from "@/components/session-gate";
 
 // Quick shortcuts map to questions the approved memory can actually answer —
 // the rail never offers a prompt it would only abstain on.
@@ -17,11 +19,27 @@ const SHORTCUTS: { label: string; q: string }[] = [
   { label: "Last meeting", q: "Summarize the last board meeting." },
 ];
 
-const SUPPORTING_DOCS = ["Q2 Financial Model.pdf", "Board Meeting 13 — Minutes.pdf", "Pricing Model Comparison.xlsx"];
-
-// A proactive opener — the copilot orients the operator before they ask.
-const GREETING =
-  "Morning, Alex. The Q3 board meeting is in 13 days. I've drafted 60% of the pack — I still need Q2 churn and the updated hiring plan before it's ready.";
+/**
+ * The opener.
+ *
+ * This used to read: *"Morning, Alex. The Q3 board meeting is in 13 days. I've drafted
+ * 60% of the pack — I still need Q2 churn and the updated hiring plan before it's
+ * ready."* Every clause of it was false. "Alex" was nobody's session — the signed-in
+ * principal is whoever signed in. "13 days" contradicted the dashboard one panel away,
+ * which computes the real figure from the meeting record. "60% of the pack" was a
+ * measurement of nothing; no part of this product drafts a pack or could report progress
+ * on one.
+ *
+ * It greets by the session's real name and claims nothing else. A proactive opener is
+ * worth having, but not at the cost of the one sentence printed beneath the composer:
+ * *"Every answer cites its source."*
+ */
+function greeting(name: string | undefined): string {
+  const first = name?.trim().split(/\s+/)[0];
+  return first
+    ? `${first}, ask about any decision in approved memory. Every answer carries the sentence it came from — and says so plainly when there isn't one.`
+    : "Ask about any decision in approved memory. Every answer carries the sentence it came from — and says so plainly when there isn't one.";
+}
 
 const STORAGE_KEY = "meridian.rail.collapsed";
 
@@ -29,6 +47,8 @@ export function AssistantRail() {
   const [collapsed, setCollapsed] = useState(false);
   const [turns, setTurns] = useState<AssistantTurn[]>([]);
   const [decisions, setDecisions] = useState<Decision[] | null>(null);
+  const [documents, setDocuments] = useState<Document[] | null>(null);
+  const session = useSession();
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -71,6 +91,17 @@ export function AssistantRail() {
       .then((ms) => decisionsApi.listForMeetings(ms.map((m) => m.id), { status: "approved" }))
       .then((d) => setDecisions(d.slice(0, 3)))
       .catch(() => setDecisions([]));
+  }, []);
+
+  useEffect(() => {
+    // Same reasoning as the decisions list above: the rail is an aside, so a failure
+    // here shows nothing rather than an error banner that would shout louder than the
+    // page it sits beside. `null` keeps the section hidden until the answer is known,
+    // so an empty list is never rendered as though it were a measured "no documents".
+    documentsApi
+      .list()
+      .then((d) => setDocuments(d.slice(0, 3)))
+      .catch(() => setDocuments([]));
   }, []);
 
   useEffect(() => {
@@ -140,7 +171,7 @@ export function AssistantRail() {
           <>
             {/* Proactive greeting */}
             <div className="rounded-[14px] rounded-tl-md bg-surface-sunken px-3.5 py-3 text-sm leading-relaxed text-foreground">
-              {GREETING}
+              {greeting(session?.context.name)}
             </div>
 
             <RailSection label="Quick shortcuts">
@@ -182,22 +213,34 @@ export function AssistantRail() {
               </ul>
             </RailSection>
 
-            <RailSection label="Supporting documents">
-              <ul className="space-y-0.5">
-                {SUPPORTING_DOCS.map((doc) => (
-                  <li key={doc}>
-                    <button
-                      type="button"
-                      className="group flex w-full items-center gap-2 rounded-[10px] px-2 py-1.5 text-left transition-colors hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-                    >
+            {/*
+              Real documents, from `GET /api/documents`.
+
+              This list was three hard-coded filenames — "Q2 Financial Model.pdf",
+              "Board Meeting 13 — Minutes.pdf", "Pricing Model Comparison.xlsx". Two of
+              the three exist nowhere in the corpus, under a panel whose own footer
+              reads "Every answer cites its source". The July rewrite derived the
+              assistant's *answers* from the graph and left these static panels behind.
+
+              They are list items rather than buttons now: the buttons had no handler
+              and a chevron that implied a document viewer this product does not have.
+
+              Because the API filters by the caller's clearance, this list also shrinks
+              for a lower-cleared principal — without announcing that it did, which is
+              the same contract `/packs` keeps.
+            */}
+            {documents !== null && documents.length > 0 && (
+              <RailSection label="Supporting documents">
+                <ul className="space-y-0.5">
+                  {documents.map((doc) => (
+                    <li key={doc.id} className="flex items-center gap-2 px-2 py-1.5">
                       <FileText className="size-3.5 shrink-0 text-subtle-foreground" aria-hidden />
-                      <span className="flex-1 truncate text-[13px] text-muted-foreground group-hover:text-foreground">{doc}</span>
-                      <ChevronRight className="size-3.5 shrink-0 text-subtle-foreground opacity-0 transition-opacity group-hover:opacity-100" aria-hidden />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </RailSection>
+                      <span className="flex-1 truncate text-[13px] text-muted-foreground">{doc.title}</span>
+                    </li>
+                  ))}
+                </ul>
+              </RailSection>
+            )}
           </>
         ) : (
           <AnimatePresence initial={false}>
