@@ -104,6 +104,9 @@ Three steps, in order. Each is idempotent.
 # 3. Link Keycloak users to principals, then create the board data.
 .venv/bin/python scripts/seed_demo_identities.py
 .venv/bin/python scripts/seed_demo_board.py
+
+# 4. The unfinished business /prepare reads. Optional, and only for that surface.
+.venv/bin/python scripts/seed_demo_prep.py
 ```
 
 **What each seed does, and why it is separate:**
@@ -118,6 +121,13 @@ Three steps, in order. Each is idempotent.
   **through the domain modules**, so the status machines, version counters and audit
   events all hold — seeding by raw SQL would produce a state the application itself
   cannot reach.
+- `seed_demo_prep.py` adds two overdue commitments and one decision left `proposed`. It
+  is separate because `seed_demo_board.py` deliberately produces a board whose work is
+  *finished* — every decision approved, its one commitment on track — which is the right
+  shape for the decisions and withholding demos and the wrong one for `/prepare`, a
+  surface that reads exactly what a settled board does not have. Without it that page is
+  correct and nearly empty. Fixed dates, not offsets from today, so the seeded state does
+  not drift away from the screenshots.
 
 ---
 
