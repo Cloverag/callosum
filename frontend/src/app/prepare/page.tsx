@@ -5,8 +5,9 @@ import { ClipboardList } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { LoadFailed, asApiError } from "@/components/ui/load-failed";
-import type { ApiError } from "@/lib/http";
+import { ApiError } from "@/lib/http";
 import { cn } from "@/lib/utils";
 import { meetingsApi, type Meeting } from "@/lib/meetings";
 import { commitmentsApi, todayLocal, type Commitment } from "@/lib/commitments";
@@ -44,9 +45,12 @@ import { Stages } from "./stages";
  * prototype: this is a page read top to bottom in order, not a dashboard scanned in
  * parallel, and a long line is harder to resume after looking away.
  *
- * **Read-only for now.** Adding a suggestion to the agenda is a write, and `agendaApi`
- * exposes only `list` and `get` — the POST exists in the API and has no client. That is
- * the next commit, kept separate so this one is verifiable on its own.
+ * **One write.** A suggestion can be added to the agenda; nothing else on this page
+ * changes anything. Adding is per row rather than "add all", because each item is a
+ * separate judgement and a bulk button invites accepting the fourth without reading it.
+ * The suggestion then disappears from the list — `suggestAgenda` excludes what is
+ * already on the agenda, so the list shortening is the confirmation, and there is no
+ * success toast asserting something the screen has already shown.
  */
 
 type Loaded = {
@@ -95,6 +99,32 @@ export default function PreparePage() {
       stale = true;
     };
   }, []);
+
+  /**
+   * Puts a suggestion on the agenda.
+   *
+   * The created item is appended to local state rather than the page refetching. The
+   * server's response IS the record — it carries the real id, position and version —
+   * so re-reading would only confirm what it already told us, and would race with a
+   * second add. `suggestAgenda` then drops the suggestion on the next render because
+   * its title now matches an agenda item.
+   *
+   * Errors are deliberately re-thrown: the row that was clicked reports its own
+   * failure, and swallowing here would leave the reader with a button that did nothing
+   * and said nothing.
+   */
+  async function addToAgenda(suggestion: AgendaSuggestion) {
+    if (!data) return;
+    const created = await agendaApi.create({
+      meeting_id: data.meeting.id,
+      title: suggestion.title,
+      // The reason is stored as the description so the agenda item carries the
+      // provenance of its own existence. Without it, "why is this here?" is
+      // answerable on this page and nowhere else.
+      description: suggestion.reason,
+    });
+    setData((prev) => (prev ? { ...prev, agenda: [...prev.agenda, created] } : prev));
+  }
 
   if (error) {
     return (
@@ -178,7 +208,7 @@ export default function PreparePage() {
         ) : (
           <ul className="space-y-2">
             {suggestions.map((s) => (
-              <SuggestionRow key={s.id} suggestion={s} />
+              <SuggestionRow key={s.id} suggestion={s} onAdd={addToAgenda} />
             ))}
           </ul>
         )}
@@ -315,12 +345,62 @@ function SignalRow({ signal }: { signal: PrepSignal }) {
   );
 }
 
-function SuggestionRow({ suggestion }: { suggestion: AgendaSuggestion }) {
+/**
+ * A suggestion, and the one action this page takes.
+ *
+ * Adding is per row rather than "add all": each item is a separate judgement, and a
+ * bulk button would encourage accepting four suggestions without reading the fourth.
+ *
+ * Failure is reported **on the row that failed**, not as a page-level banner. Three of
+ * the four items may succeed, and a banner would make the reader guess which.
+ */
+function SuggestionRow({
+  suggestion,
+  onAdd,
+}: {
+  suggestion: AgendaSuggestion;
+  onAdd: (s: AgendaSuggestion) => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  async function add() {
+    setBusy(true);
+    setFailed(null);
+    try {
+      await onAdd(suggestion);
+      // No success state: the row leaves the list, because the suggestion is now on
+      // the agenda and `suggestAgenda` excludes what is already there. The list
+      // shortening IS the confirmation.
+    } catch (e) {
+      setFailed(
+        e instanceof ApiError
+          ? e.isUnretryableConflict
+            ? "The agenda is locked — the meeting has already started."
+            : e.message
+          : "Could not reach the server.",
+      );
+      setBusy(false);
+    }
+  }
+
   return (
     <li className="rounded-[12px] border border-border px-4 py-3">
-      <p className="text-sm font-medium text-foreground">{suggestion.title}</p>
-      <p className="mt-1 text-xs text-muted-foreground">{suggestion.reason}</p>
-      <SourceLine source={suggestion.source} />
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-foreground">{suggestion.title}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{suggestion.reason}</p>
+          <SourceLine source={suggestion.source} />
+        </div>
+        <Button variant="secondary" size="sm" onClick={add} loading={busy} className="shrink-0">
+          Add to agenda
+        </Button>
+      </div>
+      {failed && (
+        <p role="alert" className="mt-2 text-xs text-danger-emphasis">
+          {failed}
+        </p>
+      )}
     </li>
   );
 }
