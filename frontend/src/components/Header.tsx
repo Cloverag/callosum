@@ -1,28 +1,62 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Bell, Search } from "lucide-react";
-import { Input } from "./ui/input";
+import { useState } from "react";
 import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
+import { useSession } from "./session-gate";
 
+/**
+ * The application header: where you are, who you are, and the way out.
+ *
+ * ---------------------------------------------------------------------------
+ * WHAT WAS REMOVED, AND WHY
+ * ---------------------------------------------------------------------------
+ * This header used to carry a notification bell and a search box. Neither did
+ * anything.
+ *
+ * The bell had no handler and rendered a permanent blue dot — a standing claim that
+ * something was waiting for the reader. Nothing could be: **CP9 (notification) is
+ * deferred to P8 (#62)**, and the product contains no dispatcher, adapter, scheduler or
+ * trigger of any kind. An unread indicator for a subsystem that does not exist is the
+ * same class of defect as a count that was never measured.
+ *
+ * The search input had no `value`, no `onChange` and no submit path, but bound `⌘K` to
+ * focus itself — so it felt wired, invited typing, and could never answer. Search is
+ * not in this phase; the honest treatment is absence, not a disabled control, which
+ * would still promise the feature is coming.
+ *
+ * ---------------------------------------------------------------------------
+ * WHAT REPLACED THEM
+ * ---------------------------------------------------------------------------
+ * The signed-in principal, taken from `/auth/context` through `useSession()` — the
+ * single fetch the gate already makes. Name, role and clearance are read from the
+ * session; none of the three is hard-coded, and this component does not fetch for
+ * itself, because a header naming one principal above another's data is worse than a
+ * header naming nobody.
+ *
+ * **Clearance is shown deliberately.** It is the value that decides what every surface
+ * below returns — which documents load, which pack items survive filtering, which
+ * graph nodes are withheld. Printing it makes an authorization difference legible from
+ * a screenshot rather than requiring narration.
+ *
+ * The breadcrumb stays static demo copy. `/auth/context` returns a `workspace_id` and
+ * no name, so resolving one would mean inventing a lookup that does not exist; "Acme
+ * Corp" is the fictional company the seeded corpus is written about, used consistently
+ * across `/meetings` and `/calendar`.
+ */
 export default function Header() {
-  const searchRef = useRef<HTMLInputElement>(null);
-  const [modKey, setModKey] = useState("⌘");
+  const session = useSession();
+  const [signingOut, setSigningOut] = useState(false);
 
-  useEffect(() => {
-    // Show the platform-correct modifier (⌘ on macOS, Ctrl elsewhere).
-    const isMac = /mac/i.test(navigator.platform) || /mac/i.test(navigator.userAgent);
-    setModKey(isMac ? "⌘" : "Ctrl");
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() === "k" && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        searchRef.current?.focus();
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  async function signOut() {
+    if (!session) return;
+    setSigningOut(true);
+    try {
+      await session.signOut();
+    } finally {
+      setSigningOut(false);
+    }
+  }
 
   return (
     <header className="surface-glass-chrome flex h-16 shrink-0 items-center justify-between gap-4 border-b border-border px-6">
@@ -33,32 +67,25 @@ export default function Header() {
         <Badge tone="neutral">Series B</Badge>
       </nav>
 
-      <div className="flex items-center gap-2">
-        <div className="relative">
-          <Input
-            ref={searchRef}
-            icon={<Search />}
-            type="search"
-            placeholder="Search Meridian…"
-            aria-label="Search Meridian"
-            className="w-72 pr-16"
-          />
-          <kbd
-            aria-hidden
-            className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded-md border border-border bg-surface-sunken px-1.5 py-0.5 font-sans text-[10px] font-medium tabular-nums text-muted-foreground"
-          >
-            {modKey} K
-          </kbd>
+      {session && (
+        <div className="flex items-center gap-4">
+          <div className="text-right leading-tight">
+            <p className="text-sm font-medium text-foreground">{session.context.name}</p>
+            <p className="text-xs text-muted-foreground">
+              {session.context.role}
+              <span className="mx-1.5 text-border-strong" aria-hidden>·</span>
+              {/*
+                Spelled out rather than shown as a bare number. "Clearance 4" is a fact
+                about this session; a lone "4" beside a job title reads as a rank.
+              */}
+              Clearance {session.context.clearance}
+            </p>
+          </div>
+          <Button variant="secondary" size="sm" onClick={signOut} loading={signingOut}>
+            Sign out
+          </Button>
         </div>
-        <button
-          type="button"
-          aria-label="Notifications"
-          className="relative flex size-9 items-center justify-center rounded-[10px] text-muted-foreground transition-colors duration-150 hover:bg-surface-sunken hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-surface-elevated"
-        >
-          <Bell className="size-5" />
-          <span className="absolute right-2 top-2 size-2 rounded-full bg-accent ring-2 ring-surface-elevated" aria-hidden />
-        </button>
-      </div>
+      )}
     </header>
   );
 }
