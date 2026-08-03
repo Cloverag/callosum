@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { ScrollText } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
+import { LoadFailed, asApiError } from "@/components/ui/load-failed";
+import type { ApiError } from "@/lib/http";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import {
@@ -15,11 +17,6 @@ import {
 } from "@/lib/minutes";
 import { meetingsApi, type Meeting } from "@/lib/meetings";
 
-/**
- * Minutes belong to a meeting, so this surface names one — `list_minutes` requires it
- * and the mock only made it optional. A meeting picker is CP-F's job.
- */
-const MEETING_ID = "m-q3";
 import { MinutesCard } from "./minutes-card";
 
 /**
@@ -35,15 +32,38 @@ import { MinutesCard } from "./minutes-card";
  */
 export default function MinutesPage() {
   const [minutes, setMinutes] = useState<Minutes[] | null>(null);
+  const [error, setError] = useState<ApiError | null>(null);
   const [meetings, setMeetings] = useState<Meeting[] | null>(null);
   const [active, setActive] = useState<Set<MinutesStatus>>(new Set());
 
   useEffect(() => {
-    minutesApi
-      .list({ meeting_id: MEETING_ID })
-      .then(setMinutes)
-      .catch(() => setMinutes([]));
-    meetingsApi.list().then(setMeetings);
+    let stale = false;
+    // `MEETING_ID = "m-q3"` used to be hard-coded here — a mock identifier that no
+    // real meeting has, so against the live API this page asked for minutes of a
+    // meeting that does not exist and rendered nothing. `/packs` was fixed for this
+    // in 9d11390 and this page was missed. Minutes belong to a meeting, so the
+    // meetings are fetched first and every meeting's minutes are collected.
+    meetingsApi
+      .list()
+      .then(async (ms) => {
+        const perMeeting = await Promise.all(
+          ms.map((m) => minutesApi.list({ meeting_id: m.id })),
+        );
+        if (stale) return;
+        setMeetings(ms);
+        setMinutes(perMeeting.flat());
+      })
+      // Deliberately NOT `.catch(() => setMinutes([]))`, which is what this was. That
+      // renders "No minutes match these filters" — a confident statement about the
+      // data — when the truth is that we do not know what the data is. A failed
+      // request is not an empty result.
+      .catch((e) => {
+        if (stale) return;
+        setError(asApiError(e));
+      });
+    return () => {
+      stale = true;
+    };
   }, []);
 
   const meetingTitle = useMemo(() => {
@@ -121,7 +141,9 @@ export default function MinutesPage() {
       </div>
 
       <div className="mt-6 space-y-4">
-        {visible === null ? (
+        {error ? (
+          <LoadFailed what="Minutes" error={error} />
+        ) : visible === null ? (
           Array.from({ length: 3 }).map((_, i) => (
             <Card key={i} className="p-6">
               <div className="h-4 w-2/5 rounded bg-surface-sunken" />
