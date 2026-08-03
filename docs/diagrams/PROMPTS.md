@@ -244,7 +244,7 @@ on it. The boundary is the subject of the picture.
 
 TOP — a wide container with a VIOLET border, titled "meridian/ — product".
   Inside, three rows of small boxes:
-    row 1: "frontend/ — Next.js, 13 pages"
+    row 1: "frontend/ — Next.js, 12 pages"
     row 2: "meridian/api/ — FastAPI, 61 operations"
     row 3: "meridian/*.py — 10 domain modules"  and  "migrations/ — 17"
 

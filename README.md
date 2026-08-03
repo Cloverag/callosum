@@ -145,7 +145,7 @@ feature-complete at P3.
 | | |
 |---|---|
 | Backend tests | **612** passing |
-| Frontend tests | **168** passing, 10 suites |
+| Frontend tests | **176** passing, 11 suites |
 | API | **61 operations** across 44 paths, 10 routers |
 | Migrations | 17, forward and reverse tested |
 | Architecture decisions | 15 ADRs |
@@ -249,7 +249,7 @@ routes. Set `MERIDIAN_API_ORIGIN` if the API is not on `:8000`.
 docker compose up -d && docker compose ps               # all three healthy FIRST
 .venv/bin/callosum eval-mechanism                        # deterministic gate, no LLM
 CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 612 tests, real stores
-cd frontend && npx jest && npm run build                 # 168 tests, 10 suites
+cd frontend && npx jest && npm run build                 # 176 tests, 11 suites
 ```
 
 `CALLOSUM_RUN_INTEGRATION=1` runs against real Postgres and Neo4j, so the compose stack
@@ -287,7 +287,7 @@ Stated because a limitation a reader finds is worth less than one they are told.
 |---|---|
 | `src/callosum/` | the research engine — **frozen** at `eval-baseline-v3` |
 | `meridian/` | the product: domain modules, FastAPI, Alembic migrations |
-| `frontend/` | Next.js application, 13 pages |
+| `frontend/` | Next.js application, 12 pages |
 | `eval/` | gold questions, results, the deterministic gate log |
 | `docs/TECHNICAL_OVERVIEW.md` | the full engineering write-up |
 | `docs/findings.md` | the running research log — every experiment, including the failures |
