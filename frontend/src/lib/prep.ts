@@ -46,6 +46,34 @@ export type PrepSource =
   | { kind: "agenda_item"; id: string; label: string };
 
 /**
+ * The meeting `/prepare` is about: the earliest one not yet held.
+ *
+ * Extracted from the page because it was wrong there and inline logic cannot be
+ * regression-tested. It sorted with `(a.scheduled_start ?? "").localeCompare(...)`,
+ * and an empty string compares *below* every ISO timestamp — so an unscheduled draft
+ * sorted **first** and the page prepared it in preference to a meeting with a real
+ * date. The comment beside it asserted the opposite, which is how it passed review.
+ *
+ * Undated meetings sort last, explicitly: a meeting with no scheduled start cannot be
+ * "next". Falls back to the first meeting of any status so a workspace whose meetings
+ * are all completed still has something to show rather than an empty page.
+ */
+export function nextMeetingToPrepare<T extends { status: string; scheduled_start: string | null }>(
+  meetings: T[],
+): T | null {
+  const upcoming = meetings
+    .filter((m) => m.status === "draft" || m.status === "scheduled")
+    .slice()
+    .sort((a, b) => {
+      if (!a.scheduled_start) return 1;
+      if (!b.scheduled_start) return -1;
+      return a.scheduled_start.localeCompare(b.scheduled_start);
+    });
+
+  return upcoming[0] ?? meetings[0] ?? null;
+}
+
+/**
  * Where a reader goes to check a derived claim against the record behind it, or `null`
  * when this product has nowhere to send them.
  *
@@ -225,10 +253,20 @@ export function prepReadiness(
   today: string,
 ): PrepReadiness {
   const open = unresolvedCommitments(commitments, today);
-  const published = packs.filter((p) => p.status === "published");
   // Item counts come from the pack the reader can actually see. They are already
   // clearance-filtered server-side, so this counts what survived for THIS caller and
   // never implies anything about what did not.
+  //
+  // Sorted here rather than trusting the caller's order. This took
+  // `published[published.length - 1]`, which assumed ascending input — and
+  // `list_packs` returns `ORDER BY version_no DESC`, so it selected the OLDEST
+  // published pack and reported its item count as the current one. Sorting explicitly
+  // makes the function correct whatever order it is handed, which a read-only
+  // derivation should be.
+  const published = packs
+    .filter((p) => p.status === "published")
+    .slice()
+    .sort((a, b) => a.version_no - b.version_no);
   const newestPublished = published.length > 0 ? published[published.length - 1] : null;
 
   return {

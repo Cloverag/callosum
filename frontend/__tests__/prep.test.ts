@@ -1,4 +1,5 @@
 import {
+  nextMeetingToPrepare,
   openDecisions,
   prepReadiness,
   prepSignals,
@@ -232,5 +233,81 @@ describe('readiness reports counts, never a percentage', () => {
     expect(keys.some((k) => /percent|score|ready|pct/i.test(k) && k !== 'packPublished')).toBe(
       false,
     );
+  });
+});
+
+/**
+ * Regressions for Devguru's review of #109. Both were real, both latent under the
+ * demo corpus — the sort because every seeded meeting has a date, the pack selection
+ * because only one pack is ever published.
+ */
+describe('review findings, #109', () => {
+  it('picks the newest published pack even when handed them newest-first', () => {
+    // `list_packs` returns ORDER BY version_no DESC. The previous implementation took
+    // the last element and so reported the OLDEST published pack's item count.
+    const readiness = prepReadiness(
+      [],
+      [
+        pack({ id: 'p-v3', status: 'published', version_no: 3, items: [{}, {}, {}] as BoardPack['items'] }),
+        pack({ id: 'p-v2', status: 'published', version_no: 2, items: [{}] as BoardPack['items'] }),
+      ],
+      [],
+      [],
+      TODAY,
+    );
+
+    expect(readiness.packItems).toBe(3);
+  });
+
+  it('is order-independent: the same packs ascending give the same answer', () => {
+    const packs = [
+      pack({ id: 'p-v2', status: 'published', version_no: 2, items: [{}] as BoardPack['items'] }),
+      pack({ id: 'p-v3', status: 'published', version_no: 3, items: [{}, {}, {}] as BoardPack['items'] }),
+    ];
+
+    expect(prepReadiness([], packs, [], [], TODAY).packItems).toBe(3);
+  });
+});
+
+describe('nextMeetingToPrepare', () => {
+  const m = (title: string, status: string, scheduled_start: string | null) =>
+    ({ title, status, scheduled_start });
+
+  it('prefers a dated meeting over an undated draft', () => {
+    // The bug: "" compares below every ISO timestamp, so the undated draft sorted
+    // FIRST and the page prepared it instead of the meeting with a real date.
+    const chosen = nextMeetingToPrepare([
+      m('Unscheduled draft', 'draft', null),
+      m('Q3 Board Meeting', 'draft', '2026-08-08T03:30:00Z'),
+    ]);
+
+    expect(chosen?.title).toBe('Q3 Board Meeting');
+  });
+
+  it('takes the earliest of several dated meetings', () => {
+    const chosen = nextMeetingToPrepare([
+      m('Later', 'scheduled', '2026-11-18T10:00:00Z'),
+      m('Sooner', 'draft', '2026-08-08T03:30:00Z'),
+    ]);
+
+    expect(chosen?.title).toBe('Sooner');
+  });
+
+  it('ignores meetings that have already happened', () => {
+    const chosen = nextMeetingToPrepare([
+      m('Done', 'completed', '2026-03-11T10:00:00Z'),
+      m('Next', 'scheduled', '2026-11-18T10:00:00Z'),
+    ]);
+
+    expect(chosen?.title).toBe('Next');
+  });
+
+  it('falls back to any meeting rather than showing an empty page', () => {
+    const chosen = nextMeetingToPrepare([m('Done', 'completed', '2026-03-11T10:00:00Z')]);
+    expect(chosen?.title).toBe('Done');
+  });
+
+  it('returns null when there are no meetings at all', () => {
+    expect(nextMeetingToPrepare([])).toBeNull();
   });
 });
