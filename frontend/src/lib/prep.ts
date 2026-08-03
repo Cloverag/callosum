@@ -45,6 +45,31 @@ export type PrepSource =
   | { kind: "decision"; id: string; label: string }
   | { kind: "agenda_item"; id: string; label: string };
 
+/**
+ * Where a reader goes to check a derived claim against the record behind it, or `null`
+ * when this product has nowhere to send them.
+ *
+ * `/commitments`, `/decisions` and `/packs` each render their rows with `id={x.id}` and
+ * `scroll-mt-8`, so a fragment resolves to the record and scrolls it clear of the
+ * header. Those are real destinations that exist today.
+ *
+ * **`agenda_item` returns `null` deliberately.** Agenda items are rendered inside the
+ * calendar's meeting detail, not on a route that can resolve one by id, so there is no
+ * honest link to give. The caller renders the id as text instead. Inventing
+ * `/agenda#<id>` would produce a link that 404s — a worse failure than admitting the
+ * product cannot yet resolve it, because the reader only discovers it by clicking.
+ */
+export function sourceHref(source: PrepSource): string | null {
+  switch (source.kind) {
+    case "commitment":
+      return `/commitments#${source.id}`;
+    case "decision":
+      return `/decisions#${source.id}`;
+    case "agenda_item":
+      return null;
+  }
+}
+
 /** One observation about the state of the board, with the row it was read from. */
 export type PrepSignal = {
   id: string;

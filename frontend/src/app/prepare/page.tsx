@@ -16,10 +16,13 @@ import { packsApi, type BoardPack } from "@/lib/packs";
 import {
   prepReadiness,
   prepSignals,
+  sourceHref,
   suggestAgenda,
   type PrepSignal,
+  type PrepSource,
   type AgendaSuggestion,
 } from "@/lib/prep";
+import { Stages } from "./stages";
 
 /**
  * Prepare Meeting.
@@ -45,8 +48,6 @@ import {
  * exposes only `list` and `get` — the POST exists in the API and has no client. That is
  * the next commit, kept separate so this one is verifiable on its own.
  */
-
-const STEPS = ["Gathering", "Analysis", "Agenda", "Board pack", "Readiness"] as const;
 
 type Loaded = {
   meeting: Meeting;
@@ -123,9 +124,10 @@ export default function PreparePage() {
         icon={<ClipboardList />}
       />
 
-      <Stepper current={data ? 4 : 0} />
+      <Stages />
 
       <Section
+        id="gathering"
         step={1}
         title="Gathering"
         note="What was read to build this page. Each is a live request scoped to your clearance."
@@ -143,6 +145,7 @@ export default function PreparePage() {
       </Section>
 
       <Section
+        id="analysis"
         step={2}
         title="Analysis"
         note="Statements of fact, one per row. Nothing is summarised across rows, because a summary needs data this product does not hold."
@@ -161,6 +164,7 @@ export default function PreparePage() {
       </Section>
 
       <Section
+        id="agenda"
         step={3}
         title="Agenda"
         note="Proposed from unfinished business. Anything already on the agenda is left out."
@@ -181,6 +185,7 @@ export default function PreparePage() {
       </Section>
 
       <Section
+        id="board-pack"
         step={4}
         title="Board pack"
         note="Assembled from documents already in the workspace. Items are filtered at your clearance before they reach this page."
@@ -211,6 +216,7 @@ export default function PreparePage() {
       </Section>
 
       <Section
+        id="readiness"
         step={5}
         title="Readiness"
         note="Counts, not percentages. There is no defined total for a complete agenda, so a percentage would be a measurement nobody took."
@@ -241,53 +247,22 @@ export default function PreparePage() {
   );
 }
 
-function Stepper({ current }: { current: number }) {
-  return (
-    <ol className="mt-6 flex items-center gap-2" aria-label="Preparation steps">
-      {STEPS.map((label, i) => {
-        const done = i < current;
-        return (
-          <li key={label} className="flex flex-1 items-center gap-2">
-            <span
-              className={cn(
-                "grid size-5 shrink-0 place-items-center rounded-full text-[11px] font-semibold",
-                done
-                  ? "bg-accent text-accent-foreground"
-                  : "border border-border text-subtle-foreground",
-              )}
-              aria-hidden
-            >
-              {i + 1}
-            </span>
-            <span
-              className={cn(
-                "truncate text-xs",
-                done ? "text-foreground" : "text-muted-foreground",
-              )}
-            >
-              {label}
-            </span>
-            {i < STEPS.length - 1 && <span className="h-px flex-1 bg-border" aria-hidden />}
-          </li>
-        );
-      })}
-    </ol>
-  );
-}
 
 function Section({
+  id,
   step,
   title,
   note,
   children,
 }: {
+  id: string;
   step: number;
   title: string;
   note: string;
   children: React.ReactNode;
 }) {
   return (
-    <Card className="mt-6 p-6">
+    <Card id={id} className="mt-6 scroll-mt-8 p-6">
       <div className="flex items-baseline gap-2">
         <span className="text-xs font-medium tabular-nums text-subtle-foreground">{step}</span>
         <h2 className="text-sm font-semibold text-foreground">{title}</h2>
@@ -298,14 +273,44 @@ function Section({
   );
 }
 
+/**
+ * The source of a derived claim, made checkable.
+ *
+ * The source is the point of the row, not an ornament on it — so where the product can
+ * resolve the id, this is a link to the record itself. Where it cannot, the id is
+ * printed as text rather than dressed as a link that would 404. A reader who cannot
+ * reach the record can at least search for it.
+ */
+function SourceLine({ source }: { source: PrepSource }) {
+  const href = sourceHref(source);
+
+  return (
+    <p className="mt-1.5 text-xs text-muted-foreground">
+      Source:{" "}
+      {href ? (
+        <a
+          href={href}
+          className="text-accent-emphasis underline decoration-accent-border underline-offset-2 transition-colors hover:decoration-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+        >
+          {source.label}
+        </a>
+      ) : (
+        <>
+          {source.label}{" "}
+          <span className="font-mono text-subtle-foreground" title="No surface resolves this id yet">
+            {source.id}
+          </span>
+        </>
+      )}
+    </p>
+  );
+}
+
 function SignalRow({ signal }: { signal: PrepSignal }) {
   return (
     <li className="rounded-[12px] border border-border px-4 py-3">
       <p className="text-sm text-foreground">{signal.statement}</p>
-      <p className="mt-1.5 text-xs text-muted-foreground">
-        {/* The source is the point of the row, not an ornament on it. */}
-        Source: {signal.source.label}
-      </p>
+      <SourceLine source={signal.source} />
     </li>
   );
 }
@@ -315,7 +320,7 @@ function SuggestionRow({ suggestion }: { suggestion: AgendaSuggestion }) {
     <li className="rounded-[12px] border border-border px-4 py-3">
       <p className="text-sm font-medium text-foreground">{suggestion.title}</p>
       <p className="mt-1 text-xs text-muted-foreground">{suggestion.reason}</p>
-      <p className="mt-1.5 text-xs text-muted-foreground">Source: {suggestion.source.label}</p>
+      <SourceLine source={suggestion.source} />
     </li>
   );
 }
