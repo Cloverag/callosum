@@ -1,11 +1,14 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, CalendarDays, Users, FileText, Gavel, Scale, ClipboardCheck, Briefcase, ScrollText, Network, GitMerge, Settings } from "lucide-react";
+import { LayoutDashboard, CalendarDays, Users, FileText, Gavel, Scale, ClipboardCheck, ClipboardList, Briefcase, ScrollText, Network, GitMerge, Settings } from "lucide-react";
 import { NavItem } from "./ui/nav-item";
 
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: <LayoutDashboard /> },
+  // Directly after Dashboard: preparing the next meeting is the thing a founder
+  // arrives to do, and the dashboard's hero sends them here.
+  { href: "/prepare", label: "Prepare meeting", icon: <ClipboardList /> },
   { href: "/calendar", label: "Calendar", icon: <CalendarDays /> },
   { href: "/meetings", label: "Meetings", icon: <Users /> },
   // Decisions sits after Meetings because that is where they come from, and
