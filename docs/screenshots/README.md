@@ -3,12 +3,19 @@
 Referenced by the root `README.md`. Capture at **1440×900**, light theme, on seeded
 demo data — never on anything real.
 
-Run the app first:
+Run the app first — **two processes**, both must stay running. Starting only the second
+is the common mistake: every page loads and every panel shows an error, because `/api/*`
+resolves to the Next dev server, which has no such routes.
 
 ```bash
-docker compose up -d
-cd frontend && npm run dev        # http://localhost:3000
+docker compose up -d                                          # wait for all three healthy
+
+.venv/bin/uvicorn meridian.api.main:app --reload --port 8000   # terminal 1, repo root
+cd frontend && npm run dev                                     # terminal 2 → :3000
 ```
+
+Full setup, seeding and the demo logins are in [demo-setup.md](../demo-setup.md).
+Sign in as `raj` / `raj` for every shot except `memory-withheld.png`.
 
 | File | Route | What it has to show |
 |---|---|---|
