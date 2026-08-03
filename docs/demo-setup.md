@@ -184,6 +184,26 @@ The last accepted id is remembered in `localStorage`, so a returning demo is one
 That is a convenience on the device and never an assertion of access — the server
 re-verifies membership on selection, and again on every request after it.
 
+Once inside, the header names the signed-in principal, their role and their **clearance**
+— all from `GET /auth/context`, re-derived per request. That is what makes the RBAC
+comparison legible on screen: `Raj Malhotra · Founder · Clearance 4` beside 16 documents
+and 3 pack items, then `Marcus Webb · Investor · Clearance 1` beside 14 and 2.
+
+### Switching principals needs more than Sign out
+
+**Sign out ends the Meridian session only.** `POST /auth/logout` deliberately does not
+perform provider-side single logout — that would sign the user out of every application
+sharing the realm, and `auth.py` records it as a product decision it declined to make.
+
+Keycloak therefore still holds an authenticated session, and signing back in returns the
+**same** principal without prompting. To demo Raj and then Marcus, use either:
+
+```bash
+# a private/incognito window for the second principal, or
+# end the Keycloak session directly:
+open http://localhost:8080/realms/meridian/protocol/openid-connect/logout
+```
+
 ---
 
 ## Troubleshooting

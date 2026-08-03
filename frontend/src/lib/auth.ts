@@ -73,6 +73,22 @@ export const authApi = {
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({ workspace_id: workspaceId }),
     }),
+
+  /**
+   * Ends the Meridian session.
+   *
+   * **This is a local logout only.** `POST /auth/logout` clears this application's
+   * session and deliberately does not perform provider-side single logout — ending the
+   * Keycloak SSO session would sign the user out of every application sharing that
+   * realm, and auth.py records that as a product decision it declined to make.
+   *
+   * The consequence, worth stating because it surprises: signing out and signing back
+   * in returns the *same* principal, because Keycloak still holds an authenticated
+   * session and answers the next authorization request without prompting. Switching
+   * demo principals needs a private window or the realm's own logout URL. See
+   * `docs/demo-setup.md`.
+   */
+  logout: () => authFetch<{ status: string }>("/logout", { method: "POST" }),
 };
 
 /** Where the browser goes to start the OIDC flow. Not a fetch — a full navigation. */

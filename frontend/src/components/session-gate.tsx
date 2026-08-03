@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -46,6 +46,26 @@ type State =
 
 const WORKSPACE_STORAGE_KEY = "meridian.workspace_id";
 
+/**
+ * The authenticated session, for the shell that renders inside the gate.
+ *
+ * There is deliberately **one** fetch of `/auth/context` in the application. `Header`
+ * consumes this rather than fetching for itself: two components asking independently
+ * is how a header ends up naming one principal while the page below it renders
+ * another's data.
+ *
+ * `null` outside the provider rather than a throw, so a component can be rendered in a
+ * test without standing up the whole gate.
+ */
+type Session = { context: AuthContext; signOut: () => Promise<void> };
+
+const SessionContext = createContext<Session | null>(null);
+
+/** The signed-in principal, or `null` when rendered outside an authenticated shell. */
+export function useSession(): Session | null {
+  return useContext(SessionContext);
+}
+
 /** Matches `needs-you.tsx`, which set the house curve. Mirrors `--ease-out-quart`. */
 const EASE = [0.22, 1, 0.36, 1] as const;
 
@@ -69,6 +89,32 @@ export function SessionGate({ children }: { children: ReactNode }) {
     void check();
   }, [check]);
 
+  /**
+   * Ends the session and returns to the signed-out screen.
+   *
+   * The gate's own state is reset rather than the page reloaded: the shell unmounts,
+   * so every surface inside it drops the data it fetched under the previous identity.
+   * A reload would achieve the same thing more slowly and with a white flash.
+   *
+   * The remembered workspace id is deliberately kept. It is a device convenience, not
+   * session state — it records which workspace this browser last used, never who may
+   * enter it, and the server re-verifies membership on the next selection regardless.
+   */
+  const signOut = useCallback(async () => {
+    try {
+      await authApi.logout();
+    } catch {
+      // Swallowed on purpose, and `catch` rather than `finally` because `finally` sets
+      // the state and then re-throws — which surfaces as an unhandled rejection in the
+      // click handler while the screen behaves correctly. A test caught exactly that.
+      //
+      // Either way the browser returns to the signed-out screen: the cookie may or may
+      // not have been cleared, the next request settles it, and leaving someone staring
+      // at a shell they have asked to leave is the worse of the two outcomes.
+    }
+    setState({ phase: "signed-out" });
+  }, []);
+
   // Deliberately renders nothing but a line of text while checking. A full-screen
   // sign-in panel that flashes for 80ms and disappears is worse than a brief blank,
   // and a spinner would be looping motion for a wait that is normally imperceptible.
@@ -82,7 +128,13 @@ export function SessionGate({ children }: { children: ReactNode }) {
     );
   }
 
-  if (state.phase === "ready") return <>{children}</>;
+  if (state.phase === "ready") {
+    return (
+      <SessionContext.Provider value={{ context: state.context, signOut }}>
+        {children}
+      </SessionContext.Provider>
+    );
+  }
 
   return (
     <div className="grid h-screen place-items-center bg-surface px-6">
