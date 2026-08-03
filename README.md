@@ -49,30 +49,26 @@ Source: [`eval/results.md`](eval/results.md) · run 2026-07-20.
 
 ## Screenshots
 
-<!--
-SLOT — not yet captured. See docs/screenshots/README.md for the capture list,
-resolution and what each image has to show. Delete this comment once filled.
--->
-
-**The knowledge graph, with evidence.** Select a node and the panel shows the verbatim
-quote and the document it was located in.
-
-![Knowledge graph with evidence panel](docs/screenshots/memory-graph.png)
-
-**Withholding, disclosed as a count.** Toggle clearance and restricted content is
-excluded — with the number stated and never the content.
-
-![Graph with withheld count](docs/screenshots/memory-withheld.png)
-
 **The board home.** Note the em dashes: figures that were never measured render as "—",
 not as a plausible zero.
 
 ![Dashboard](docs/screenshots/dashboard.png)
 
-**Optimistic concurrency, made actionable.** A 409 is a decision the user makes, not a
-toast that says "error".
+**Access control, before retrieval.** A board pack as its author sees it. Items are
+filtered server-side at the caller's own clearance and the survivors are renumbered from
+1 — so a lower-cleared reader sees a shorter list with no gap in the numbering, and no
+count of what was removed. The notice states that filtering applies; it never says how
+much.
 
-![Edit conflict dialog](docs/screenshots/meeting-conflict.png)
+![Board pack with clearance-filtered items](docs/screenshots/packs.png)
+
+<!--
+INCOMPLETE — two of the five specified captures. `memory-graph.png`,
+`memory-withheld.png` and `meeting-conflict.png` are not taken; see
+docs/screenshots/README.md. Both images above also predate the assistant-rail
+fixes of 2026-08-03, so the right-hand rail in them still shows the old greeting
+and the old document list.
+-->
 
 ---
 
