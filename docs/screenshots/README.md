@@ -17,6 +17,26 @@ cd frontend && npm run dev                                     # terminal 2 → 
 Full setup, seeding and the demo logins are in [demo-setup.md](../demo-setup.md).
 Sign in as `raj` / `raj` for every shot except `memory-withheld.png`.
 
+## Status — 2026-08-03
+
+**Two of five captured.** `dashboard.png` and `packs.png` are in the repository and
+embedded in the root `README.md`. The three below marked ⬜ are outstanding.
+
+Both captured images **predate the assistant-rail fixes of 2026-08-03**, so the rail in
+them still shows the old greeting and the old hard-coded document list. Recorded here
+rather than left for a reader to notice: the images are honest about the product's
+*state*, they are simply a version behind it.
+
+| File | Route | Status |
+|---|---|---|
+| `dashboard.png` | `/dashboard` | ✅ captured |
+| `packs.png` | `/packs` | ✅ captured |
+| `memory-graph.png` | `/memory` | ⬜ needs a node selected so the evidence panel is open |
+| `memory-withheld.png` | `/memory` | ⬜ needs clearance toggled to Investor |
+| `meeting-conflict.png` | `/calendar` | ⬜ needs the 409 dialog, which two tabs produce |
+
+## The full specification
+
 | File | Route | What it has to show |
 |---|---|---|
 | `dashboard.png` | `/dashboard` | The board home. Note the em dashes on unmeasured counts — that is the data-honesty rule visible in the product, and it is worth the screenshot. |
