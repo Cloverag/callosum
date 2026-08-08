@@ -137,7 +137,7 @@ components:
 
 Meridian is the software a founder, chief of staff, or director opens the hour before a board meeting and instantly trusts. The interface is a calm, well-lit desk: a soft neutral page, white cards that sit like physical sheets, hairline structure, and exactly one trustworthy blue that appears only where it means *do this*. Dense governance information — decisions, evidence, provenance, readiness, access — sits legibly side by side without shouting. The system's job is to disappear into the task and make the *record* the hero.
 
-This is a **light-mode-first** product (a single, deliberately tuned light palette). The palette explicitly rejects what this product is not: the dated weight of enterprise board portals (Diligent, Boardvantage), the gradient hero-metric tiles and identical card grids of generic SaaS dashboards, crypto/fintech neon, and decoration-over-density productivity apps with oversized cards and wasted whitespace. Trust here is legibility under scrutiny, not atmosphere.
+This is a **light-first** product: the light palette is the tuned one, and the one every screenshot and review is judged against. **A dark theme was added 2026-08-09** (owner's decision, recorded in `rules.md` §4) — generated the same way, not inverted from it, and held to the same AA floor. The palette explicitly rejects what this product is not: the dated weight of enterprise board portals (Diligent, Boardvantage), the gradient hero-metric tiles and identical card grids of generic SaaS dashboards, crypto/fintech neon, and decoration-over-density productivity apps with oversized cards and wasted whitespace. Trust here is legibility under scrutiny, not atmosphere.
 
 **Key characteristics**
 - **95% neutral, 5% semantic color.** Every color carries one meaning; color is never decoration.
@@ -196,6 +196,20 @@ Tonal elevation, base upward, on **one hue anchor** and steps that clear the jus
 - **Subtle / `subtle-foreground`** `#647489`: large or decorative text only — never body.
 - **Border** `#E3E7EC`, **Border-strong** `#CDD3DC`: hairline separators. Never a heavy or colored stripe.
 - **Focus** `#2C70E5`: the focus-ring color; a 2px ring, ≥3:1 against its surface.
+
+### Dark theme
+
+Delivered **entirely by re-pointing the semantic tokens** — not one component changed, because none of them names a colour. That is the payoff of the Semantic-Only rule, and the audit that proved it: zero `bg-white`, zero `text-white`, zero raw hex across every `.tsx` in the app.
+
+Three things are deliberately *not* mirror images of the light theme:
+
+- **Elevation runs the other way.** On a dark ground a raised surface is *lighter* and an inset well is *darker*, so the ladder reverses: sunken L\* 17 → surface 20.5 → raised 24.5 → alt 28.5.
+- **Chroma comes down.** Saturated colour on a dark ground muddies rather than enriches, so the neutrals carry less chroma and the inks get *lighter* rather than more saturated.
+- **Fills carry a dark label.** An accent light enough to read on this ground cannot also hold white text — `accent-foreground` inverts.
+
+Each coloured ink is solved for ≥5.5:1 against `surface-alt`, the **lightest** surface it can sit on and so the worst case here — the mirror of the light theme, where the darkest surface was. **Zero failures across 7 inks × 9 surfaces; worst pairing 5.14:1.**
+
+The theme marker is **`data-theme` on `<html>`**, never a `.dark` class. Tailwind's `dark:` variant stays bound to a `.dark` we never apply, so vendored registry components cannot apply a *second*, uncoordinated adjustment on top of the token flip. `color-scheme` is set per theme at the root, so native date pickers, spinners and scrollbars follow without per-control classes. The default is **system**; a choice is stored under `meridian.theme` and applied by an inline pre-paint script, because a deferred one runs after the document has already painted the wrong theme.
 
 ### Named rules
 - **The Semantic-Only Rule.** Components consume semantic tokens exclusively. A raw hex, a `blue-600`, or a `slate-100` inside a component is a bug — it breaks theming and AA at once.

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { useSession } from "./session-gate";
+import { ThemeToggle } from "./theme";
 
 /**
  * The application header: where you are, who you are, and the way out.
@@ -69,6 +70,7 @@ export default function Header() {
 
       {session && (
         <div className="flex items-center gap-4">
+          <ThemeToggle />
           <div className="text-right leading-tight">
             <p className="text-sm font-medium text-foreground">{session.context.name}</p>
             <p className="text-xs text-muted-foreground">
