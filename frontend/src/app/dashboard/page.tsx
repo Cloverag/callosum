@@ -126,19 +126,27 @@ export default function DashboardPage() {
         <DailyBrief brief={brief} />
       </div>
 
-      {/* Band A — operational: what needs me now */}
-      <div className="mt-8 grid gap-6 lg:grid-cols-3">
-        <div className="flex flex-col gap-6 lg:col-span-2">
-          <MeetingHero meeting={nextMeeting} loading={meetings === null} />
+      {/* Band A — operational: what needs me now.
+          The hero spans the full width and the two supporting cards sit beneath
+          it at equal weight. Previously all three shared a 2:1 split, which gave
+          the next board meeting the same visual weight as a progress card and
+          left the hero's own content cramped into two thirds. One focal surface,
+          then its supports — hierarchy from size and position, not more colour. */}
+      <div className="mt-8 flex flex-col gap-6">
+        <MeetingHero meeting={nextMeeting} loading={meetings === null} />
+        <div className="grid gap-6 lg:grid-cols-2">
+          <NeedsYou counts={counts} />
           <BoardReadiness readiness={insights?.readiness ?? null} />
         </div>
-        <NeedsYou counts={counts} />
       </div>
 
-      {/* Band B — system health: can I trust the memory? */}
-      <div className="mt-12">
+      {/* Band B — system health: can I trust the memory?
+          Band separation is 40px (the `2xl` step). It was 48px, which is not a
+          step on the scale DESIGN.md declares — the page was the only thing
+          deciding how far apart its own bands sat. */}
+      <div className="mt-10">
         <h2 className="text-[10px] font-semibold uppercase tracking-[0.1em] text-subtle-foreground">Institutional memory</h2>
-        <div className="mt-4 space-y-8">
+        <div className="mt-4 flex flex-col gap-8">
           <MemoryHealth
             memory={insights?.memory ?? null}
             reviewVelocity={insights?.reviewVelocity ?? null}
