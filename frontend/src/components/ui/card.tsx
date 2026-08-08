@@ -16,28 +16,15 @@ export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   variant?: CardVariant;
 }
 
+/**
+ * `Card` is the whole component. It shipped with the usual
+ * Header/Title/Description/Content/Footer set, and across 79 call sites not one
+ * of them was ever used — every surface composes its own header row, because
+ * the headers here differ too much (a badge and a count, a tooltip trigger, a
+ * live value) for one slot to have described them. Removed rather than left as
+ * an API nobody chose, and `CardTitle` was the only `h3` the design system
+ * emitted, so it was also a heading level waiting to be used by mistake.
+ */
 export function Card({ className, variant = "default", ...props }: CardProps) {
   return <div className={cn("rounded-[16px]", surfaces[variant], className)} {...props} />;
-}
-
-export function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("flex flex-col gap-1 px-5 py-4 border-b border-border", className)} {...props} />;
-}
-
-export function CardTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
-  return <h3 className={cn("text-base font-semibold tracking-tight text-foreground", className)} {...props} />;
-}
-
-export function CardDescription({ className, ...props }: React.HTMLAttributes<HTMLParagraphElement>) {
-  return <p className={cn("text-sm text-muted-foreground", className)} {...props} />;
-}
-
-export function CardContent({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("px-5 py-4", className)} {...props} />;
-}
-
-export function CardFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return (
-    <div className={cn("flex items-center gap-3 px-5 py-4 border-t border-border", className)} {...props} />
-  );
 }
