@@ -5,6 +5,7 @@ import Sidebar from '@/components/Sidebar';
 import Header from '@/components/Header';
 import { AssistantRail } from '@/components/AssistantRail';
 import { SessionGate } from '@/components/session-gate';
+import { TooltipProvider } from '@/components/vendor/tooltip';
 
 const inter = Inter({ subsets: ['latin'], display: 'swap' });
 
@@ -28,16 +29,25 @@ export default function RootLayout({
           `children` stays a Server Component: it is passed through as rendered output,
           not imported into the gate's module graph.
         */}
-        <SessionGate>
-          <div className="flex h-screen overflow-hidden bg-surface text-foreground">
-            <Sidebar />
-            <div className="flex min-w-0 flex-1 flex-col">
-              <Header />
-              <main className="flex-1 overflow-y-auto">{children}</main>
+        {/*
+          Base UI's tooltip reads its delay from a provider, where the Animate UI
+          component it replaced wrapped each `<Tooltip>` in its own. One provider
+          at the root is the same behaviour with one instance instead of N.
+          `children` still passes through as rendered output, so it stays a
+          Server Component across both client boundaries.
+        */}
+        <TooltipProvider>
+          <SessionGate>
+            <div className="flex h-screen overflow-hidden bg-surface text-foreground">
+              <Sidebar />
+              <div className="flex min-w-0 flex-1 flex-col">
+                <Header />
+                <main className="flex-1 overflow-y-auto">{children}</main>
+              </div>
+              <AssistantRail />
             </div>
-            <AssistantRail />
-          </div>
-        </SessionGate>
+          </SessionGate>
+        </TooltipProvider>
       </body>
     </html>
   );
