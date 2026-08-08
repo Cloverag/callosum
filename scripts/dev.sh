@@ -66,6 +66,33 @@ else
   say "→ compose stack ${DIM}(skipped)${OFF}"
 fi
 
+# ----------------------------------------------------------------- schema --
+# An unmigrated database does not fail loudly. `/auth/context` resolves a
+# principal by JOINing an ACTIVE MEMBERSHIP, so a missing `membership` relation
+# raises a driver error rather than PrincipalNotFound -- which escapes as a 500
+# on a page that otherwise renders. Checked here so it reads as the setup step
+# it is, instead of as a broken application.
+if (( ! SKIP_DOCKER )) || port_busy 5433; then
+  schema_missing=$(docker compose exec -T postgres psql -U callosum -d callosum -tAc \
+    "select to_regclass('public.membership') is null;" 2>/dev/null | tr -d '[:space:]')
+  if [[ "$schema_missing" == "t" ]]; then
+    printf '\n%s\n' "${RED}✗  the database has no product schema — migrations have not been run${OFF}"
+    printf '%s\n'   "   Sign-in will fail with a 500 on /auth/context until you do:"
+    printf '%s\n\n' "     ${BLD}.venv/bin/alembic upgrade head${OFF}   ${DIM}then see docs/demo-setup.md §4 for the seeds${OFF}"
+    exit 1
+  fi
+  # Provisioned identities are a separate step from `callosum init`, and their
+  # absence produces the same 500 for a different reason.
+  if [[ "$schema_missing" == "f" ]]; then
+    ids=$(docker compose exec -T postgres psql -U callosum -d callosum -tAc \
+      "select count(*) from principal_identity;" 2>/dev/null | tr -d '[:space:]')
+    if [[ "$ids" == "0" ]]; then
+      warn "no principal_identity rows — Keycloak users are not linked to principals yet."
+      warn "  sign-in will authenticate and then fail: .venv/bin/python scripts/seed_demo_identities.py"
+    fi
+  fi
+fi
+
 # ------------------------------------------------------------------ cleanup --
 API_PID=""; WEB_PID=""
 
