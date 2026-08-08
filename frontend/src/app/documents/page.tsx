@@ -17,7 +17,8 @@ export default function DocumentsPage() {
             <FileText className="size-6" />
           </span>
           <div>
-            <h3 className="text-sm font-medium text-foreground">No documents yet</h3>
+            {/* h2: the page's only heading below the h1, so h3 skipped a level. */}
+            <h2 className="text-sm font-medium text-foreground">No documents yet</h2>
             <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
               Ingest a board pack, transcript, or PDF to build institutional memory. Every source stays
               attributable and permission-scoped.
