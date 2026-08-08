@@ -6,6 +6,7 @@ import Header from '@/components/Header';
 import { AssistantRail } from '@/components/AssistantRail';
 import { SessionGate } from '@/components/session-gate';
 import { TooltipProvider } from '@/components/vendor/tooltip';
+import { THEME_SCRIPT } from '@/components/theme';
 
 const inter = Inter({ subsets: ['latin'], display: 'swap' });
 
@@ -21,6 +22,15 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        {/*
+          Resolves the stored theme before first paint. Inline and synchronous
+          on purpose: anything deferred runs after the document has already
+          painted with the light tokens, which is the flash of wrong theme.
+          It only ever writes an attribute this app defines.
+        */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       <body className={`${inter.className} h-full antialiased`} suppressHydrationWarning>
         {/*
           The shell renders only for a session that has a principal AND a workspace.
