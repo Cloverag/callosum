@@ -4,16 +4,19 @@
    Meridian design language unedited. Read that file before adding a registry. */
 @import "./shadcn-compat.css";
 
-/* Added by `shadcn add`, and KEPT deliberately. Meridian is light-only (the v2
-   pivot removed next-themes entirely), but vendored registry components still
-   ship `dark:` classes. Tailwind v4 defaults `dark:` to prefers-color-scheme,
-   so without this a viewer whose OS is in dark mode would see those components
-   go half-dark inside a light app. Binding the variant to a `.dark` class we
-   never apply means `dark:` can never fire. Do not remove. */
+/* Added by `shadcn add`, and KEPT deliberately — and it matters MORE now that a
+   dark theme exists, not less. Vendored registry components ship their own
+   `dark:` classes. Tailwind v4 defaults that variant to prefers-color-scheme,
+   so without this binding those components would adjust themselves on a dark OS
+   *on top of* the token layer below, which already flipped underneath them —
+   two uncoordinated corrections to the same colour.
+   This app's dark theme is delivered entirely by re-pointing the semantic
+   tokens, so `dark:` must stay inert: it is bound to a `.dark` class we never
+   apply. The theme marker is `data-theme` instead. Do not remove. */
 @custom-variant dark (&:is(.dark *));
 
 /* ============================================================================
-   Meridian Board OS — semantic token layer (v2: blue-on-neutral, light-only)
+   Meridian Board OS — semantic token layer (blue-on-neutral; light + dark)
    The single source of truth for color, radius, elevation, and motion.
    Components consume ONLY these semantic tokens — never a raw hex, never a
    palette step (no `blue-600`, no `slate-100`).
@@ -90,9 +93,12 @@
 
   /* Elevation — three levels; cards are sheets on a desk, not floating glass.
      L1 default card · L2 important card (hero / AI panel) · L3 floating (blur). */
-  --shadow-card: 0 1px 2px 0 rgba(15, 25, 38,0.05);
-  --shadow-raised: 0 1px 2px 0 rgba(15, 25, 38,0.05), 0 6px 16px -6px rgba(15, 25, 38,0.12), 0 12px 32px -12px rgba(15, 25, 38,0.10);
-  --shadow-overlay: 0 16px 48px -12px rgba(15, 25, 38,0.24), 0 4px 12px -4px rgba(15, 25, 38,0.12);
+  /* Aliased to per-theme values below rather than written literally here: a
+     shadow tuned for ink on white is nearly invisible on a dark ground, so the
+     dark theme raises the alphas rather than reusing these. */
+  --shadow-card: var(--sh-card);
+  --shadow-raised: var(--sh-raised);
+  --shadow-overlay: var(--sh-overlay);
 
   /* Motion — L1 hover / L2 state (see DESIGN.md motion hierarchy) ---------- */
   --ease-out-quart: cubic-bezier(0.16, 1, 0.3, 1);
@@ -135,6 +141,13 @@
 
 @layer base {
   :root {
+    /* Tells the browser which way to render native chrome — date and time
+       pickers, scrollbars, spinners. Set once here rather than per-control:
+       `meeting-form.tsx` used to carry `[color-scheme:light]` with a `dark:`
+       counterpart that could never fire, because that variant is bound to a
+       class this app never applies. */
+    color-scheme: light;
+
     /* Action (blue, H 260.5) ---------------------------------------------- */
     --accent: #2c70e5;                 /* white label 4.61:1 */
     --accent-foreground: #ffffff;
@@ -191,6 +204,141 @@
        ambient ground wash rather than as flat white. */
     --surface-glass: rgba(255, 255, 255, 0.72);
     --surface-glass-border: rgba(15, 25, 38, 0.08);
+
+    --sh-card: 0 1px 2px 0 rgba(15, 25, 38, 0.05);
+    --sh-raised: 0 1px 2px 0 rgba(15, 25, 38, 0.05), 0 6px 16px -6px rgba(15, 25, 38, 0.12), 0 12px 32px -12px rgba(15, 25, 38, 0.10);
+    --sh-overlay: 0 16px 48px -12px rgba(15, 25, 38, 0.24), 0 4px 12px -4px rgba(15, 25, 38, 0.12);
+
+    /* Ambient ground wash, per theme (see body::before). */
+    --wash-a: rgba(133, 91, 220, 0.05);
+    --wash-b: rgba(44, 112, 229, 0.045);
+  }
+
+  /* ==========================================================================
+     DARK THEME — added 2026-08-09 (owner's decision, recorded in rules.md §4).
+
+     Generated the same way as the light palette, not inverted from it. Three
+     things differ on purpose:
+
+     · ELEVATION RUNS THE OTHER WAY. On a dark ground a raised surface is
+       LIGHTER, and an inset well is DARKER, so the ladder reverses:
+       sunken L* 17 < surface 20.5 < raised 24.5 < alt 28.5.
+     · CHROMA COMES DOWN. Saturated colour on a dark ground muddies rather than
+       enriches, so the neutrals carry slightly less chroma than their light
+       counterparts and the inks are lighter rather than more saturated.
+     · FILLS CARRY A DARK LABEL. An accent light enough to read on this ground
+       cannot also hold white text.
+
+     Each coloured ink is solved for >= 5.5:1 against `surface-alt`, the
+     LIGHTEST surface it can sit on and therefore the worst case here — the
+     mirror of the light theme, where the darkest surface was. Zero failures
+     across 7 inks x 9 surfaces; worst pairing 5.14:1 against a 4.5 floor.
+
+     Components need no change at all: they consume semantic tokens, so the
+     theme is entirely a matter of what those tokens resolve to. Note that
+     Tailwind's `dark:` variant stays bound to a `.dark` class we never apply
+     (see the top of this file) — vendored registry components must NOT get a
+     second, uncoordinated adjustment on top of this one.
+     ========================================================================== */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+
+      --accent: #4c81dc;                 --accent-foreground: #050911;
+      --accent-hover: #6695e5;           --accent-emphasis: #73a3f4;
+      --accent-subtle: #1f2e47;          --accent-border: #354d76;
+
+      --success: #21954a;                --success-foreground: #040b05;
+      --success-emphasis: #5ab371;       --success-subtle: #1a3520;
+      --warning: #b57301;                --warning-foreground: #0e0802;
+      --warning-emphasis: #d6933b;       --warning-subtle: #3e290f;
+      --danger: #d35e56;                 --danger-foreground: #100605;
+      --danger-emphasis: #ed847b;        --danger-subtle: #442320;
+      --info: #4c81dc;                   --info-foreground: #050911;
+      --info-emphasis: #73a3f4;          --info-subtle: #1f2e47;
+
+      --memory: #8e71d6;                 --memory-foreground: #0a0811;
+      --memory-emphasis: #ab93ed;        --memory-soft: #9d85de;
+      --memory-subtle: #302844;
+
+      --chart-1: #ab93ed;                --chart-2: #9d85de;
+      --chart-3: #8e71d6;                --chart-4: #7358c4;
+      --chart-5: #7b8491;
+
+      --foreground: #e3e8f0;
+      --muted-foreground: #a3acb6;
+      --subtle-foreground: #7b8491;
+
+      --border: #30363e;
+      --border-strong: #49515b;
+      --focus: #73a3f4;
+
+      --surface: #13181d;
+      --surface-elevated: #1c2127;
+      --surface-raised: #1c2127;
+      --surface-alt: #252b32;
+      --surface-sunken: #0c1015;
+      --surface-glass: rgba(28, 33, 39, 0.72);
+      --surface-glass-border: rgba(255, 255, 255, 0.08);
+
+      /* Deeper and wider than the light theme's: a shadow tuned for white
+         surfaces disappears entirely against a dark ground. */
+      --sh-card: 0 1px 2px 0 rgba(0, 0, 0, 0.5);
+      --sh-raised: 0 1px 2px 0 rgba(0, 0, 0, 0.5), 0 6px 16px -6px rgba(0, 0, 0, 0.6), 0 12px 32px -12px rgba(0, 0, 0, 0.5);
+      --sh-overlay: 0 16px 48px -12px rgba(0, 0, 0, 0.7), 0 4px 12px -4px rgba(0, 0, 0, 0.5);
+
+      --wash-a: rgba(142, 113, 214, 0.08);
+      --wash-b: rgba(76, 129, 220, 0.07);
+    }
+  }
+
+  /* The explicit choice wins in both directions. */
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+
+    --accent: #4c81dc;                 --accent-foreground: #050911;
+    --accent-hover: #6695e5;           --accent-emphasis: #73a3f4;
+    --accent-subtle: #1f2e47;          --accent-border: #354d76;
+
+    --success: #21954a;                --success-foreground: #040b05;
+    --success-emphasis: #5ab371;       --success-subtle: #1a3520;
+    --warning: #b57301;                --warning-foreground: #0e0802;
+    --warning-emphasis: #d6933b;       --warning-subtle: #3e290f;
+    --danger: #d35e56;                 --danger-foreground: #100605;
+    --danger-emphasis: #ed847b;        --danger-subtle: #442320;
+    --info: #4c81dc;                   --info-foreground: #050911;
+    --info-emphasis: #73a3f4;          --info-subtle: #1f2e47;
+
+    --memory: #8e71d6;                 --memory-foreground: #0a0811;
+    --memory-emphasis: #ab93ed;        --memory-soft: #9d85de;
+    --memory-subtle: #302844;
+
+    --chart-1: #ab93ed;                --chart-2: #9d85de;
+    --chart-3: #8e71d6;                --chart-4: #7358c4;
+    --chart-5: #7b8491;
+
+    --foreground: #e3e8f0;
+    --muted-foreground: #a3acb6;
+    --subtle-foreground: #7b8491;
+
+    --border: #30363e;
+    --border-strong: #49515b;
+    --focus: #73a3f4;
+
+    --surface: #13181d;
+    --surface-elevated: #1c2127;
+    --surface-raised: #1c2127;
+    --surface-alt: #252b32;
+    --surface-sunken: #0c1015;
+    --surface-glass: rgba(28, 33, 39, 0.72);
+    --surface-glass-border: rgba(255, 255, 255, 0.08);
+
+    --sh-card: 0 1px 2px 0 rgba(0, 0, 0, 0.5);
+    --sh-raised: 0 1px 2px 0 rgba(0, 0, 0, 0.5), 0 6px 16px -6px rgba(0, 0, 0, 0.6), 0 12px 32px -12px rgba(0, 0, 0, 0.5);
+    --sh-overlay: 0 16px 48px -12px rgba(0, 0, 0, 0.7), 0 4px 12px -4px rgba(0, 0, 0, 0.5);
+
+    --wash-a: rgba(142, 113, 214, 0.08);
+    --wash-b: rgba(76, 129, 220, 0.07);
   }
 }
 
@@ -219,8 +367,8 @@
     z-index: -1;
     pointer-events: none;
     background:
-      radial-gradient(60rem 40rem at 12% -8%, rgba(133, 91, 220, 0.05), transparent 60%),
-      radial-gradient(52rem 36rem at 92% 4%, rgba(44, 112, 229, 0.045), transparent 62%);
+      radial-gradient(60rem 40rem at 12% -8%, var(--wash-a), transparent 60%),
+      radial-gradient(52rem 36rem at 92% 4%, var(--wash-b), transparent 62%);
   }
 
   /* One consistent focus treatment across the app: a 2px blue ring, never

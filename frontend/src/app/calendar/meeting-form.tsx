@@ -44,7 +44,6 @@ type Conflict = {
 // radius is 12px (DESIGN.md — Radius).
 const field =
   "h-10 w-full rounded-[12px] border border-border bg-surface-raised px-3 text-sm text-foreground " +
-  "[color-scheme:light] dark:[color-scheme:dark] " +
   "transition-colors duration-[--duration-hover] " +
   "focus-visible:outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-focus/40 " +
   "disabled:opacity-50";
