@@ -10,7 +10,7 @@ import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
-} from "@/components/animate-ui/components/radix/tooltip";
+} from "@/components/vendor/tooltip";
 import type { MemoryHealth as MemoryHealthData } from "@/lib/insights";
 
 /**

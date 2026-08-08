@@ -14,27 +14,24 @@ if (typeof globalThis.structuredClone !== 'function') {
   globalThis.structuredClone = <T>(value: T): T => deserialize(serialize(value)) as T;
 }
 
-// jsdom parses <dialog> but does not implement its methods, so `showModal()` is
-// undefined and `components/ui/dialog.tsx` throws the moment a modal opens. That
-// component is built on the native element deliberately — the platform gives it
-// focus trapping, Escape-to-close and an inert background for free — so the gap
-// is in the test environment, not in the code.
+// The <dialog> polyfill that stood here was removed with the native-element
+// dialog it existed for (2026-08-09). `components/ui/dialog.tsx` is now built on
+// Base UI, which renders an ordinary div through a portal, so jsdom's missing
+// `showModal()` no longer sits on any code path.
 //
-// This models the observable contract the component relies on: `open` reflects
-// state, and `close()` fires a `close` event (the component wires `onClose` to
-// it). The top layer, the ::backdrop and real focus trapping are not modelled —
-// jsdom has no concept of them, so assertions must not depend on them.
-const dialogProto = globalThis.HTMLDialogElement?.prototype;
-if (dialogProto && typeof dialogProto.showModal !== 'function') {
-  dialogProto.showModal = function showModal(this: HTMLDialogElement) {
-    this.open = true;
-  };
-  dialogProto.show = function show(this: HTMLDialogElement) {
-    this.open = true;
-  };
-  dialogProto.close = function close(this: HTMLDialogElement, returnValue?: string) {
-    this.open = false;
-    if (returnValue !== undefined) this.returnValue = returnValue;
-    this.dispatchEvent(new Event('close'));
+// jsdom does not implement ResizeObserver, and every Base UI component that
+// positions a floating element against an anchor — Select, Popover, Tooltip,
+// DropdownMenu — observes its anchor with one. Without this they throw on the
+// first open. The calendar's meeting form is the live case: its status Select
+// renders inside the detail dialog that `CalendarPage.test.tsx` opens.
+//
+// A no-op is the honest model here: jsdom has no layout engine, so every box it
+// could report would be 0×0 anyway. Assertions must not depend on measured size
+// or on which side a popup was placed.
+if (typeof globalThis.ResizeObserver !== 'function') {
+  globalThis.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
   };
 }

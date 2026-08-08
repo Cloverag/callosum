@@ -5,7 +5,7 @@ import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
-} from "@/components/animate-ui/components/radix/tooltip";
+} from "@/components/vendor/tooltip";
 import type { Distribution } from "@/lib/graph-stats";
 
 /**
@@ -109,7 +109,7 @@ export function OntologyBars({
             <li key={item.key}>
               {item.hint ? (
                 <Tooltip>
-                  <TooltipTrigger asChild>{row}</TooltipTrigger>
+                  <TooltipTrigger render={row} />
                   <TooltipContent side="right" className="max-w-[18rem]">
                     {item.hint}
                   </TooltipContent>
