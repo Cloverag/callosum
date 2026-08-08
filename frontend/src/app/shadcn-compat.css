@@ -80,12 +80,16 @@
 
      OPEN DECISION: a categorical palette for NON-memory charts (e.g. meeting
      mix by status) is not settled. Use the status tokens directly for those —
-     they already carry the right meaning — and do not reach for chart-N. */
-  --color-chart-1: var(--memory);        /* violet-700 */
-  --color-chart-2: var(--memory-soft);   /* violet-500 */
-  --color-chart-3: #a78bfa;              /* violet-400 */
-  --color-chart-4: #c4b5fd;              /* violet-300 */
-  --color-chart-5: var(--subtle-foreground); /* neutral "other" */
+     they already carry the right meaning — and do not reach for chart-N.
+
+     The ramp itself now lives in `globals.css` on even L* steps. Two of these
+     were raw hex here (violet-400/300) directly under a header claiming this
+     file contains none — aliases only, now actually true. */
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
 }
 
 @layer base {

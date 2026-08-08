@@ -2,33 +2,33 @@
 name: Meridian Board OS
 description: Calm, provenance-first board operating system — neutral light surface, one blue action color, violet reserved for institutional memory.
 colors:
-  accent: "#2563eb"
+  accent: "#2c70e5"
   accent-foreground: "#ffffff"
-  accent-hover: "#1d4ed8"
-  accent-emphasis: "#1d4ed8"
-  accent-subtle: "#eff6ff"
-  accent-border: "#bfdbfe"
-  success: "#16a34a"
-  success-emphasis: "#15803d"
-  warning: "#f59e0b"
-  warning-emphasis: "#b45309"
-  danger: "#ef4444"
-  danger-emphasis: "#dc2626"
-  info: "#2563eb"
-  memory: "#6d28d9"
-  memory-emphasis: "#6d28d9"
-  memory-soft: "#8b5cf6"
-  foreground: "#111827"
-  muted-foreground: "#475569"
-  subtle-foreground: "#64748b"
-  border: "#e5e7eb"
-  border-strong: "#cbd5e1"
-  focus: "#2563eb"
-  surface: "#f7f8fa"
+  accent-hover: "#1b57bb"
+  accent-emphasis: "#245bb9"
+  accent-subtle: "#eef4ff"
+  accent-border: "#c7dcff"
+  success: "#00873c"
+  success-emphasis: "#016e30"
+  warning: "#f5a32f"
+  warning-emphasis: "#865400"
+  danger: "#d53d3a"
+  danger-emphasis: "#ad3230"
+  info: "#2c70e5"
+  memory: "#855bdc"
+  memory-emphasis: "#6c4ab3"
+  memory-soft: "#8f6ce0"
+  foreground: "#0f1926"
+  muted-foreground: "#475567"
+  subtle-foreground: "#647489"
+  border: "#e3e7ec"
+  border-strong: "#cdd3dc"
+  focus: "#2c70e5"
+  surface: "#f6f8fa"
   surface-elevated: "#ffffff"
   surface-raised: "#ffffff"
-  surface-alt: "#f8fafc"
-  surface-sunken: "#f1f5f9"
+  surface-alt: "#f1f3f6"
+  surface-sunken: "#ebeff3"
 typography:
   display:
     fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif"
@@ -157,28 +157,45 @@ This is a **light-mode-first** product (a single, deliberately tuned light palet
 
 ## 2. Colors
 
-A restrained light palette expressed as **semantic tokens, not palette steps** — components reference roles (`accent`, `surface-raised`, `muted-foreground`, `memory-emphasis`), never a raw hex or a `blue-600`. Every pairing below is verified to WCAG 2.2 AA.
+A restrained light palette expressed as **semantic tokens, not palette steps** — components reference roles (`accent`, `surface-raised`, `muted-foreground`, `memory-emphasis`), never a raw hex or a `blue-600`.
 
-### Action — Blue (`#2563EB`)
-The one interactive color. `accent` fills the primary button and selected state; `accent-hover` (`#1D4ED8`) is the hovered fill; `accent-emphasis` (`#1D4ED8`) writes accent-as-text and icons (AA on white and on the soft-blue wash); `accent-subtle` (`#EFF6FF`) is the active-nav / selected-row wash; `accent-border` (`#BFDBFE`) its hairline. **Used only for action** — buttons, active navigation, links, focus rings, selected tabs, checkboxes, calendar events. Never for success/warning, never decoration.
+**Rebuilt 2026-08-09 in OKLCH (owner's decision, recorded in `rules.md` §4).** Three
+things were measured wrong in the palette this replaces: the neutrals were drawn
+from two Tailwind families (`gray` + `slate`) and spread **16.8° of hue**;
+`surface-alt` sat **ΔL\* 0.52** from `surface`, below the ~1.0 just-noticeable
+difference, so one rung of the tonal ladder was invisible; and `danger-emphasis`
+**failed AA at 4.41:1** on `surface-sunken` while this section claimed every
+pairing was verified.
+
+The replacement holds **one neutral hue anchor (H=255)**, puts surfaces on
+visible L\* steps (100 / 97.8 / 96.4 / 95.0), and **solves** each semantic ink
+for ≥5.5:1 against the darkest surface it can sit on instead of choosing it by
+eye. Solving every ink to one target is why they read as one family: each
+`-emphasis` lands in a **5.5–6.4** band, so no status colour shouts louder than
+another for a reason nobody chose. **Worst pairing in the system is 5.54:1**
+against a 4.5 floor — the figures below are generated, and reproducible from the
+token values.
+
+### Action — Blue (`#2C70E5`)
+The one interactive color. `accent` fills the primary button and selected state (white label **4.61:1**); `accent-hover` (`#1B57BB`) is the hovered fill; `accent-emphasis` (`#245BB9`) writes accent-as-text and icons (**6.42:1** on white, **5.55:1** on the darkest surface); `accent-subtle` (`#EEF4FF`) is the active-nav / selected-row wash; `accent-border` (`#C7DCFF`) its hairline. **Used only for action** — buttons, active navigation, links, focus rings, selected tabs, checkboxes, calendar events. Never for success/warning, never decoration.
 
 ### Status
-Each ships a solid (fills/dots), a `-foreground` (label on the solid), an `-emphasis` (AA text/icon on a surface), and a `-subtle` (wash).
-- **Success — Green `#16A34A`** (emphasis `#15803D`): verified, completed, approved, healthy.
-- **Warning — Amber `#F59E0B`** (foreground `#78350F` on the amber fill; emphasis `#B45309`): pending review, draft, awaiting approval.
-- **Danger — Red `#EF4444`** (emphasis `#DC2626`): errors, overdue, failed, quarantined, destructive actions.
+Each ships a solid (fills/dots), a `-foreground` (label on the solid), an `-emphasis` (AA text/icon on a surface), and a `-subtle` (wash). **The `-subtle` washes are solid colors, not alpha** — as `rgba()` they took their value from whatever sat behind them, so the same badge was not the same colour on a white card and in a sunken well.
+- **Success — Green `#00873C`** (emphasis `#016E30`): verified, completed, approved, healthy.
+- **Warning — Amber `#F5A32F`** (foreground `#422700` on the amber fill, **6.68:1**; emphasis `#865400`): pending review, draft, awaiting approval. Amber is the one fill carrying a *dark* label, because an amber dark enough to hold white text has stopped being amber.
+- **Danger — Red `#D53D3A`** (emphasis `#AD3230`): errors, overdue, failed, quarantined, destructive actions.
 - **Info** maps to the action blue — informational status shares the one blue.
 
-### Institutional Memory — Violet (`#6D28D9`)
-The product's identity color, **reserved for institutional-memory surfaces only**: graph health, the verified-share gauge, provenance, memory metrics, and memory trend charts. `memory-emphasis` (`#6D28D9`, ~6.6:1 on white) writes text/icons and draws the gauge/sparkline; `memory-soft` (`#8B5CF6`) is for large/secondary graph elements; `memory-subtle` a faint wash. **Never a button, never navigation** — that is what makes it read as *memory* and gives Meridian a unique identity.
+### Institutional Memory — Violet (`#855BDC`)
+The product's identity color, **reserved for institutional-memory surfaces only**: graph health, the verified-share gauge, provenance, memory metrics, and memory trend charts. `memory-emphasis` (`#6C4AB3`, **6.43:1** on white) writes text/icons and draws the gauge/sparkline; `memory-soft` (`#8F6CE0`, **3.90:1** — above the 3.0 graphic floor, never body text) is for large/secondary graph elements; `memory-subtle` a faint wash. **Never a button, never navigation** — that is what makes it read as *memory* and gives Meridian a unique identity.
 
 ### Neutral
-Tonal elevation, base upward: **Surface** (page base `#F7F8FA`), **Surface-elevated** (sidebar, header, AI rail, panels — `#FFFFFF`), **Surface-raised** (cards, dialogs, popovers — `#FFFFFF`), **Surface-alt** (secondary/nested panel `#F8FAFC`), **Surface-sunken** (inset wells, quote blocks, input fill — `#F1F5F9`).
-- **Text / `foreground`** `#111827`: primary text and headings.
-- **Text-muted / `muted-foreground`** `#475569` (slate-600): secondary text, labels, timestamps. AA on every surface.
-- **Subtle / `subtle-foreground`** `#64748b` (slate-500): large or decorative text only — never body.
-- **Border** `#E5E7EB`, **Border-strong** `#CBD5E1`: hairline separators. Never a heavy or colored stripe.
-- **Focus** `#2563EB`: the focus-ring color; a 2px ring, ≥3:1 against its surface.
+Tonal elevation, base upward, on **one hue anchor** and steps that clear the just-noticeable difference: **Surface** (page base `#F6F8FA`, L\* 97.8), **Surface-elevated** (sidebar, header, AI rail, panels — `#FFFFFF`), **Surface-raised** (cards, dialogs, popovers — `#FFFFFF`, L\* 100), **Surface-alt** (secondary/nested panel `#F1F3F6`, L\* 96.4), **Surface-sunken** (inset wells, quote blocks — `#EBEFF3`, L\* 95.0).
+- **Text / `foreground`** `#0F1926`: primary text and headings. **17.69:1** on white.
+- **Text-muted / `muted-foreground`** `#475567`: secondary text, labels, timestamps. **7.60:1** — AA on every surface.
+- **Subtle / `subtle-foreground`** `#647489`: large or decorative text only — never body.
+- **Border** `#E3E7EC`, **Border-strong** `#CDD3DC`: hairline separators. Never a heavy or colored stripe.
+- **Focus** `#2C70E5`: the focus-ring color; a 2px ring, ≥3:1 against its surface.
 
 ### Named rules
 - **The Semantic-Only Rule.** Components consume semantic tokens exclusively. A raw hex, a `blue-600`, or a `slate-100` inside a component is a bug — it breaks theming and AA at once.
@@ -229,9 +246,41 @@ Hairline borders, `control` (12px) / `card` (16px) radii, pill badges, quiet def
 - **Institutional Memory (violet zone).** The graph-health gauge and review-throughput sparkline render in `memory-emphasis` violet — the only place violet appears. Quality rows keep status dots (green/amber/red).
 - **Approved-facts card.** Each fact shows its plain statement, the verbatim source quote in a sunken well, a **blue source link**, and a **green Verified** marker — evidence, not summaries.
 
+### Primitives — Base UI
+
+**Amended 2026-08-09 (owner's decision, recorded in `rules.md` §4).** The primitive
+library is [Base UI](https://base-ui.com); `components.json` carries it as the
+`base-` prefix on `style` (`base-nova`), which is where shadcn encodes the base —
+there is no separate `base` key. Radix is gone: it was a whole umbrella package
+serving one tooltip.
+
+`ui/button.tsx`, `ui/input.tsx` and `ui/dialog.tsx` are built on Base UI
+primitives. The **variant vocabulary stays Meridian's** — `primary | secondary |
+ghost | danger`, not shadcn's `default | outline | destructive` — because this is
+the design system and 45 call sites already speak it.
+
+The dialog is the reason this was worth doing. It was built on the native
+`<dialog>` element, which handled focus correctly but hardcoded
+`id="dialog-title"`; the calendar mounts two dialogs, so the id was not unique
+and the accessible name could resolve to the wrong heading. Base UI generates
+those ids, so the defect is now structurally impossible rather than fixed by
+hand.
+
+**`Card` and `Badge` are deliberately NOT on a primitive.** Base UI has none for
+them, and shadcn's are plain `div`/`span`. Rewriting 79 + 27 call sites to reach
+the same DOM is churn, not a migration.
+
 ### Registry components
 
-Third-party shadcn registries are available — **KokonutUI** (`@kokonutui`), **Animate UI** (`@animate-ui`), and **Bklit UI** (`@bklit`) for charts. They are configured in `components.json` and install into `src/components/vendor/`, never into `ui/`: `ui/` is the design system and the CLI must not be able to overwrite it.
+Third-party shadcn registries are available — **KokonutUI** (`@kokonutui`) and
+**Bklit UI** (`@bklit`) for charts — alongside the default `@shadcn` registry.
+*(Animate UI (`@animate-ui`) supplied the tooltip until 2026-08-09; that tooltip
+was the last Radix consumer and now comes from `@shadcn` on Base UI.)* They are
+configured in `components.json` and install into `src/components/vendor/`, never
+into `ui/`: `ui/` is the design system and the CLI must not be able to overwrite
+it. **That rule survives the Base UI move** — `ui/` consumes primitives from
+`node_modules`, not generated files, so `retoken.mjs`'s refusal to rewrite
+`src/components/ui` still holds.
 
 Registry source is written in shadcn's token vocabulary, not ours. `src/app/shadcn-compat.css` maps that vocabulary onto our semantic tokens (`background`→`surface`, `card`→`surface-raised`, `primary`→`accent`, `muted`→`surface-sunken`, `ring`→`focus`, …), so a vendored component inherits Meridian colour without edits. This does not weaken the Semantic-Only rule — the bridge contains no hex and no palette steps, only aliases to tokens `globals.css` already owns.
 
