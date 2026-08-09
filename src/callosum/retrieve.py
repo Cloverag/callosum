@@ -604,11 +604,12 @@ def _log(conn: psycopg.Connection, question: str, principal: Principal, answer: 
 
     conn.execute(
         """
-        INSERT INTO query_log (principal_id, question, plan, graph_hits, vector_hits,
+        INSERT INTO query_log (workspace_id, principal_id, question, plan, graph_hits, vector_hits,
                                denied_count, answer, latency_ms)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
         (
+            principal.workspace_id,
             principal.id,
             question,
             json.dumps(answer.plan),

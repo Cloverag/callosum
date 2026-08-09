@@ -131,6 +131,7 @@ def queue_proposals(
     chunk_text: str,
     verified,  # extract.VerifiedExtraction
     stamp: dict[str, str],
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
 ) -> tuple[int, int]:
     """Park verified claims in the approval queue and quarantine the rejects.
 
@@ -146,11 +147,12 @@ def queue_proposals(
         conn.execute(
             """
             INSERT INTO proposed_change
-                (document_id, chunk_id, kind, payload, confidence,
+                (workspace_id, document_id, chunk_id, kind, payload, confidence,
                  provider, extractor_model, prompt_version, ontology_version)
-            VALUES (%s, %s, 'add_entity', %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, 'add_entity', %s, %s, %s, %s, %s, %s)
             """,
             (
+                workspace_id,
                 document_id,
                 chunk_id,
                 json.dumps({
@@ -176,12 +178,13 @@ def queue_proposals(
         conn.execute(
             """
             INSERT INTO proposed_change
-                (document_id, chunk_id, kind, payload, confidence,
+                (workspace_id, document_id, chunk_id, kind, payload, confidence,
                  quote, quote_start, quote_end,
                  provider, extractor_model, prompt_version, ontology_version)
-            VALUES (%s, %s, 'add_relationship', %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, 'add_relationship', %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
+                workspace_id,
                 document_id,
                 chunk_id,
                 json.dumps({
@@ -205,12 +208,13 @@ def queue_proposals(
         conn.execute(
             """
             INSERT INTO extraction_failure
-                (document_id, chunk_id, source, relation, target, quote, confidence,
+                (workspace_id, document_id, chunk_id, source, relation, target, quote, confidence,
                  reason, detail, provider, extractor_model, prompt_version,
                  ontology_version, chunk_chars)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
+                workspace_id,
                 document_id, chunk_id,
                 failure.source, failure.relation, failure.target,
                 failure.quote, failure.confidence,
@@ -398,14 +402,14 @@ def upsert_chunk_node(driver: Driver, *, chunk_id: uuid.UUID, document_id: uuid.
         )
 
 
-def apply_entity(driver: Driver, payload: dict[str, Any]) -> None:
+def apply_entity(driver: Driver, payload: dict[str, Any], workspace_id: str = DEFAULT_WORKSPACE_ID) -> None:
     """Commit an approved entity, and wire it to the chunk that mentions it.
 
     workspace_id (from the payload, default Default Workspace) is part of the entity's
     identity — this is what partitions the graph per tenant (Meridian P1, Brick 3). The
     MENTIONS edge is attached only to a chunk in the same workspace.
     """
-    workspace_id = payload.get("workspace_id", DEFAULT_WORKSPACE_ID)
+    ws_id = workspace_id if workspace_id != DEFAULT_WORKSPACE_ID else payload.get("workspace_id", DEFAULT_WORKSPACE_ID)
     with driver.session() as session:
         session.run(
             """
@@ -417,13 +421,13 @@ def apply_entity(driver: Driver, payload: dict[str, Any]) -> None:
             """,
             name=payload["name"],
             type=payload["type"],
-            workspace_id=workspace_id,
+            workspace_id=ws_id,
             attributes=payload.get("attributes", {}),
             chunk_id=payload["chunk_id"],
         )
 
 
-def apply_relationship(driver: Driver, payload: dict[str, Any]) -> None:
+def apply_relationship(driver: Driver, payload: dict[str, Any], workspace_id: str = DEFAULT_WORKSPACE_ID) -> None:
     """Commit an approved relationship.
 
     The edge type is interpolated into the Cypher string because Neo4j does not
@@ -437,7 +441,7 @@ def apply_relationship(driver: Driver, payload: dict[str, Any]) -> None:
     if rel_type not in RelationType.__members__.values():
         raise ValueError(f"Refusing to write unknown relationship type: {rel_type!r}")
 
-    workspace_id = payload.get("workspace_id", DEFAULT_WORKSPACE_ID)
+    ws_id = workspace_id if workspace_id != DEFAULT_WORKSPACE_ID else payload.get("workspace_id", DEFAULT_WORKSPACE_ID)
     with driver.session() as session:
         session.run(
             f"""
@@ -448,7 +452,7 @@ def apply_relationship(driver: Driver, payload: dict[str, Any]) -> None:
             """,
             source=payload["source"],
             target=payload["target"],
-            workspace_id=workspace_id,
+            workspace_id=ws_id,
             quote=payload.get("quote", ""),
             chunk_id=payload["chunk_id"],
         )
@@ -465,16 +469,18 @@ def approve(conn: psycopg.Connection, driver: Driver, change_id: uuid.UUID,
     never written, which is the failure we cannot detect later.
     """
     row = conn.execute(
-        "SELECT kind, payload FROM proposed_change WHERE id = %s AND status = 'pending'",
+        "SELECT kind, payload, workspace_id FROM proposed_change WHERE id = %s AND status = 'pending'",
         (change_id,),
     ).fetchone()
     if not row:
         raise ValueError(f"No pending change {change_id}")
 
+    ws_id = row["workspace_id"] if row["workspace_id"] else DEFAULT_WORKSPACE_ID
+
     if row["kind"] == "add_entity":
-        apply_entity(driver, row["payload"])
+        apply_entity(driver, row["payload"], workspace_id=ws_id)
     elif row["kind"] == "add_relationship":
-        apply_relationship(driver, row["payload"])
+        apply_relationship(driver, row["payload"], workspace_id=ws_id)
     else:
         raise ValueError(f"Unknown change kind: {row['kind']}")
 
@@ -489,10 +495,10 @@ def approve(conn: psycopg.Connection, driver: Driver, change_id: uuid.UUID,
 
     conn.execute(
         """
-        INSERT INTO node_version (node_id, node_label, version, properties, change_reason, created_by)
-        VALUES (%s, %s,
+        INSERT INTO node_version (workspace_id, node_id, node_label, version, properties, change_reason, created_by)
+        VALUES (%s, %s, %s,
                 COALESCE((SELECT MAX(version) + 1 FROM node_version WHERE node_id = %s), 1),
                 %s, 'approved from extraction', %s)
         """,
-        (change_id, row["kind"], change_id, json.dumps(row["payload"]), reviewer_id),
+        (ws_id, change_id, row["kind"], change_id, json.dumps(row["payload"]), reviewer_id),
     )
