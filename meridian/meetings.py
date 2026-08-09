@@ -73,6 +73,14 @@ class MeetingValidationError(MeetingError):
     """The requested change violates a domain invariant (e.g. empty title)."""
 
 
+# Importance levels (Issue #108, Meridian P6)
+CRITICAL_IMPORTANCE = "critical"
+HIGH_IMPORTANCE = "high"
+ROUTINE_IMPORTANCE = "routine"
+LOW_IMPORTANCE = "low"
+IMPORTANCE_LEVELS = frozenset({CRITICAL_IMPORTANCE, HIGH_IMPORTANCE, ROUTINE_IMPORTANCE, LOW_IMPORTANCE})
+
+
 # ---------------------------------------------------------------------------
 # Read model
 # ---------------------------------------------------------------------------
@@ -90,6 +98,7 @@ class Meeting:
     created_by: str | None
     created_at: datetime
     updated_at: datetime
+    importance: str = ROUTINE_IMPORTANCE
 
 
 def _row_to_meeting(row: dict) -> Meeting:
@@ -105,6 +114,7 @@ def _row_to_meeting(row: dict) -> Meeting:
         created_by=str(row["created_by"]) if row["created_by"] else None,
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+        importance=row.get("importance", ROUTINE_IMPORTANCE),
     )
 
 
@@ -124,10 +134,13 @@ def create_meeting(
     scheduled_end: datetime | None = None,
     location: str | None = None,
     created_by: str | None = None,
+    importance: str = ROUTINE_IMPORTANCE,
 ) -> Meeting:
     """Create a meeting in `draft` status (version 1)."""
     if not title or not title.strip():
         raise MeetingValidationError("title must not be empty")
+    if importance not in IMPORTANCE_LEVELS:
+        raise MeetingValidationError(f"unknown importance: {importance!r}")
     if scheduled_start is not None and scheduled_end is not None:
         if scheduled_end <= scheduled_start:
             raise MeetingValidationError("scheduled_end must be after scheduled_start")
@@ -135,11 +148,11 @@ def create_meeting(
         row = conn.execute(
             """
             INSERT INTO meeting
-                (title, scheduled_start, scheduled_end, location, created_by, workspace_id)
-            VALUES (%s, %s, %s, %s, %s, %s)
+                (title, scheduled_start, scheduled_end, location, created_by, workspace_id, importance)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING *
             """,
-            (title.strip(), scheduled_start, scheduled_end, location, created_by, workspace_id),
+            (title.strip(), scheduled_start, scheduled_end, location, created_by, workspace_id, importance),
         ).fetchone()
     return _row_to_meeting(row)
 
@@ -183,6 +196,7 @@ def update_meeting(
     scheduled_start=_UNSET,
     scheduled_end=_UNSET,
     location=_UNSET,
+    importance=_UNSET,
 ) -> Meeting:
     """Update mutable fields under optimistic concurrency.
 
@@ -205,6 +219,11 @@ def update_meeting(
     if location is not _UNSET:
         sets.append("location = %s")
         params.append(location)
+    if importance is not _UNSET:
+        if importance not in IMPORTANCE_LEVELS:
+            raise MeetingValidationError(f"unknown importance: {importance!r}")
+        sets.append("importance = %s")
+        params.append(importance)
     if not sets:
         raise MeetingValidationError("no fields to update")
 
