@@ -41,7 +41,13 @@ type State =
   | { phase: "checking" }
   | { phase: "ready"; context: AuthContext }
   | { phase: "signed-out" }
-  | { phase: "needs-workspace" }
+  /**
+   * `stale` marks the case where a workspace WAS selected and the server has
+   * since refused it (403). The distinction only changes the copy — the remedy
+   * is identical, because re-selecting is the one action that can overwrite the
+   * workspace held in the session cookie.
+   */
+  | { phase: "needs-workspace"; stale?: boolean }
   | { phase: "failed"; error: ApiError };
 
 const WORKSPACE_STORAGE_KEY = "meridian.workspace_id";
@@ -81,6 +87,15 @@ export function SessionGate({ children }: { children: ReactNode }) {
         e instanceof ApiError ? e : new ApiError(0, "network", "Could not reach the server.");
       if (error.isUnauthenticated) setState({ phase: "signed-out" });
       else if (error.needsWorkspace) setState({ phase: "needs-workspace" });
+      /**
+       * 403 used to fall through to `failed`, whose only affordance is "Try
+       * again" — which re-issues the identical request and gets the identical
+       * 403. That is a dead end, not a retry: the workspace is held in the
+       * httpOnly session cookie, so nothing the client can clear will change
+       * the outcome, and only a fresh `POST /auth/workspace` overwrites it.
+       * Selection is therefore the remedy, and it is the screen we already have.
+       */
+      else if (error.isForbidden) setState({ phase: "needs-workspace", stale: true });
       else setState({ phase: "failed", error });
     }
   }, []);
@@ -142,7 +157,7 @@ export function SessionGate({ children }: { children: ReactNode }) {
         {state.phase === "signed-out" ? (
           <SignedOut />
         ) : state.phase === "needs-workspace" ? (
-          <ChooseWorkspace onSelected={check} />
+          <ChooseWorkspace onSelected={check} stale={state.stale} />
         ) : (
           <Failed error={state.error} onRetry={check} />
         )}
@@ -205,7 +220,7 @@ function SignedOut() {
  * It is a convenience on this device, never an assertion of access — the server
  * re-verifies membership on selection and again on every subsequent request.
  */
-function ChooseWorkspace({ onSelected }: { onSelected: () => void }) {
+function ChooseWorkspace({ onSelected, stale }: { onSelected: () => void; stale?: boolean }) {
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -238,9 +253,17 @@ function ChooseWorkspace({ onSelected }: { onSelected: () => void }) {
   return (
     <form onSubmit={submit}>
       <h1 className="text-lg font-semibold text-foreground">Choose a workspace</h1>
+      {/*
+        The `stale` copy says the selection is no longer available and stops
+        there. It does not say whether the membership was revoked, was never
+        held, or the workspace does not exist — the server refuses to
+        distinguish those (a membership oracle), and a client that guessed would
+        leak exactly what the API withholds.
+      */}
       <p className="mt-1 text-sm text-muted-foreground">
-        You are signed in. Meridian acts inside one workspace at a time, so this session
-        needs one before it can read anything.
+        {stale
+          ? "The workspace this session was using is no longer available to you. Choose one to continue."
+          : "You are signed in. Meridian acts inside one workspace at a time, so this session needs one before it can read anything."}
       </p>
 
       <label htmlFor="workspace-id" className="mt-6 block text-sm font-medium text-foreground">
