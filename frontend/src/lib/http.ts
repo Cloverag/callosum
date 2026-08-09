@@ -132,6 +132,15 @@ export async function toApiError(response: Response): Promise<ApiError> {
     const error = body?.error;
     if (error?.code) return new ApiError(response.status, error.code, error.detail ?? response.statusText);
     if (body?.detail?.code) return new ApiError(response.status, body.detail.code, body.detail.detail ?? "");
+    // A THIRD shape: FastAPI's own `HTTPException(detail="some string")`, which the
+    // taxonomy does not wrap. `/auth/callback` uses it for an unprovisioned identity
+    // (ADR-011), where the message is deliberately specific — "Ask an administrator"
+    // is the only instruction that path can give. Without this branch it fell through
+    // to the generic case below and the user was told "Forbidden", which is true and
+    // useless. Reported as the client half of #111 C-1.
+    if (typeof body?.detail === "string" && body.detail) {
+      return new ApiError(response.status, "http_error", body.detail);
+    }
   } catch {
     /* fall through to the generic shape */
   }
