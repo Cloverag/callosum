@@ -91,7 +91,7 @@ export function ThemeToggle({ className }: { className?: string }) {
             onClick={() => choose(value)}
             className={cn(
               "flex size-7 items-center justify-center rounded-full transition-colors duration-[--duration-hover]",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-1 focus-visible:ring-offset-surface-elevated",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-surface-elevated",
               active
                 ? "bg-surface-raised text-foreground shadow-card"
                 : "text-subtle-foreground hover:text-foreground"

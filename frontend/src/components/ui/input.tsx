@@ -21,7 +21,10 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
         className={cn(
           "h-10 w-full rounded-[12px] border bg-surface-raised text-sm text-foreground",
           "placeholder:text-muted-foreground transition-colors duration-[--duration-hover]",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus/40",
+          // Full-strength ring, matching Button and NavItem. It was `focus-focus/40`,
+          // the only 40%-alpha focus ring in the app — thinner-looking than every
+          // other control and closer to the 3:1 floor than it needed to be.
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
           "disabled:pointer-events-none disabled:opacity-50",
           icon ? "pl-9 pr-3" : "px-3.5",
           error
