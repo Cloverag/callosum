@@ -1,4 +1,4 @@
-import { apiGet, apiGetOrNull } from "@/lib/http";
+import { apiGet, apiGetOrNull, apiPost } from "@/lib/http";
 
 /**
  * Agenda items — what a meeting will actually work through.
@@ -46,6 +46,29 @@ export function withPresenter(items: AgendaItem[]): AgendaItem[] {
   return items.filter((item) => item.presenter !== null && item.presenter.trim() !== "");
 }
 
+/**
+ * A new agenda item.
+ *
+ * Mirrors `AgendaItemCreate` in `meridian/api/agenda.py`, which sets
+ * `extra="forbid"` — an unrecognised field is a 422, not a silently dropped one, so
+ * this type has to stay honest rather than merely close.
+ *
+ * `position` is omitted to append. Supplying one *inserts* and shifts everything after
+ * it, which is why the API takes it at create rather than as a later PATCH: an insert
+ * is a reordering of the whole tail.
+ *
+ * There is no `workspace_id`. The API derives it from the session (ADR-013) and
+ * `tests/test_openapi_input_guard.py` fails the build if an endpoint ever accepts one.
+ */
+export type AgendaItemCreate = {
+  meeting_id: string;
+  title: string;
+  description?: string | null;
+  duration_minutes?: number | null;
+  presenter?: string | null;
+  position?: number | null;
+};
+
 export const agendaApi = {
   /** A meeting's agenda, in the server's `position ASC` order. */
   async list(meetingId: string): Promise<AgendaItem[]> {
@@ -54,5 +77,17 @@ export const agendaApi = {
 
   async get(id: string): Promise<AgendaItem | null> {
     return apiGetOrNull<AgendaItem>(`/agenda/${encodeURIComponent(id)}`);
+  },
+
+  /**
+   * Appends an item to a meeting's agenda.
+   *
+   * No `expected_version`, and that is the contract rather than an omission: a create
+   * has no prior version to be stale against. The 409s this can raise are about the
+   * *meeting* — `agenda.py` freezes an agenda once the meeting starts — not about a
+   * concurrent edit to the item, which does not exist yet.
+   */
+  async create(input: AgendaItemCreate): Promise<AgendaItem> {
+    return apiPost<AgendaItem>("/agenda", input);
   },
 };

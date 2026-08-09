@@ -38,7 +38,7 @@ def main() -> int:
             continue
 
         revision = match.group(1)
-        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        digest = hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
 
         if revision not in recorded:
             recorded[revision] = digest

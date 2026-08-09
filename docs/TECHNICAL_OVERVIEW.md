@@ -186,9 +186,9 @@ boundary is real: the product never edits the engine.
 | Layer | Contents |
 |---|---|
 | `meridian/*.py` | 10 domain modules — meetings, agenda, decisions, packs, minutes, resolutions, commitments, board members, audit, documents |
-| `meridian/api/` | 9 routers, **61 operations** across 44 paths |
+| `meridian/api/` | 10 routers (9 domain + `auth`), **61 operations** across 44 paths |
 | `meridian/migrations/` | **17** Alembic migrations, `0001`–`0017` |
-| `frontend/` | Next.js 16 + React 19 + Tailwind v4, 15 routes |
+| `frontend/` | Next.js 16 + React 19 + Tailwind v4, **12 pages** (the build reports 14 routes, counting `/_not-found` and `/icon.svg`; `/` is a config redirect, not a page) |
 
 Aggregates were delivered one per checkpoint, each with its own migration, domain module
 and tests. Every mutable aggregate carries a `version` column and optimistic concurrency.
