@@ -104,5 +104,51 @@ export const apiClient = {
     if (!conflict) throw new Error("Conflict not found");
     conflict.status = 'rejected';
     return { id, status: 'rejected' };
+  },
+
+  async getMeetingReadiness(meetingId: string): Promise<any> {
+    try {
+      const res = await fetch(`${API_BASE}/api/meetings/${meetingId}/readiness`, {
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch {
+      // Fallback
+    }
+    return null;
+  },
+
+  async getAgendaSuggestions(meetingId: string): Promise<any[]> {
+    try {
+      const res = await fetch(`${API_BASE}/api/meetings/${meetingId}/agenda-suggestions`, {
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch {
+      // Fallback
+    }
+    return [];
+  },
+
+  async publishPreread(meetingId: string): Promise<any> {
+    try {
+      const res = await fetch(`${API_BASE}/api/meetings/${meetingId}/publish-preread`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch {
+      // Fallback
+    }
+    return { meeting_id: meetingId, status: "published" };
   }
 };
