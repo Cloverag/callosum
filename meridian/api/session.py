@@ -24,6 +24,7 @@ The rule in one line: the session says *who you claim to be*, the database says 
 that lets you do*. Anything cached in the cookie is a fact that cannot be revoked.
 """
 
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -33,6 +34,10 @@ PRINCIPAL_ID = "principal_id"
 PROVIDER = "auth_provider"
 SUBJECT = "auth_subject"
 WORKSPACE_ID = "workspace_id"
+CREATED_AT = "auth_created_at"
+
+#: Maximum session lifetime (24 hours in seconds).
+MAX_SESSION_LIFETIME_SECONDS = 86400.0
 
 
 @dataclass(frozen=True)
@@ -64,6 +69,7 @@ def establish(session: dict[str, Any], *, principal_id: str, provider: str, subj
     session[PRINCIPAL_ID] = str(principal_id)
     session[PROVIDER] = provider
     session[SUBJECT] = subject
+    session[CREATED_AT] = time.time()
     session.pop(WORKSPACE_ID, None)
 
 
@@ -77,8 +83,14 @@ def read(session: dict[str, Any]) -> AuthenticatedSession | None:
     principal_id = session.get(PRINCIPAL_ID)
     provider = session.get(PROVIDER)
     subject = session.get(SUBJECT)
+    created_at = session.get(CREATED_AT)
 
     if not principal_id or not provider or not subject:
+        return None
+
+    # Enforce absolute session expiry (H-8)
+    if created_at is not None and (time.time() - float(created_at)) > MAX_SESSION_LIFETIME_SECONDS:
+        session.clear()
         return None
 
     return AuthenticatedSession(

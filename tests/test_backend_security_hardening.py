@@ -94,3 +94,23 @@ def test_acl_grant_query_structure():
     retrieve.fetch_chunks(conn, [uuid.uuid4()], principal)
     assert any("acl_grant" in q[0] for q in conn.queries)
 
+
+def test_session_absolute_expiration():
+    """H-8: Sessions older than 24 hours must expire and return None."""
+    from meridian.api import session as sess
+
+    s = {}
+    sess.establish(s, principal_id=str(uuid.uuid4()), provider="test", subject="test_sub")
+    assert sess.read(s) is not None
+
+    # Artificially age the session past 24 hours
+    s[sess.CREATED_AT] = s[sess.CREATED_AT] - 90000.0
+    assert sess.read(s) is None
+
+
+def test_conflicts_api_router_registered():
+    """H-15: /api/conflicts route must be registered in meridian.api.main."""
+    from meridian.api import main
+    paths = main.app.openapi()["paths"]
+    assert any("/api/conflicts" in p for p in paths)
+
