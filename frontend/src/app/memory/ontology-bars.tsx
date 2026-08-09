@@ -20,7 +20,17 @@ import type { Distribution } from "@/lib/graph-stats";
  * exactly the comparison a reader is making.
  *
  * COLOUR is not the encoding here, so 14 rows is fine — a single memory violet
- * throughout, length carrying the value, and blue only for the active filter.
+ * throughout, with length carrying the value.
+ *
+ * The active row used to switch its bar to ACTION BLUE. That put blue on the
+ * value-bearing mark, which DESIGN.md reserves for action, and the row is
+ * already unmistakably active from its wash, its label colour and `aria-pressed`
+ * — the hue was a fourth signal for a state three others already carried.
+ * Emphasis now moves within the memory ramp instead. It also replaces an
+ * `opacity: 0.55` recession that measured ~2.0:1 against the track, under the
+ * 3:1 floor for a non-text mark; `memory-soft` is a real token at 3.37:1 light
+ * and 6.22:1 dark, and — unlike a fixed alpha — its ordering against
+ * `memory-emphasis` survives the dark theme's inverted elevation.
  *
  * INTERACTIVE by design: each row filters the canvas above, because "11 Persons"
  * is a fact and "show me the 11" is the question that follows it.
@@ -97,8 +107,7 @@ export function OntologyBars({
                   className="h-full rounded-full"
                   style={{
                     width: `${(item.count / max) * 100}%`,
-                    background: active ? "var(--accent)" : "var(--memory)",
-                    opacity: active ? 1 : 0.55,
+                    background: active ? "var(--memory-emphasis)" : "var(--memory-soft)",
                   }}
                 />
               </div>
