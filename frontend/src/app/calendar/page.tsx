@@ -170,7 +170,7 @@ export default function CalendarPage() {
     <div className="p-6">
       <PageHeader
         title="Calendar"
-        description="Board meetings across the Acme Corp workspace."
+        description="Board meetings in this workspace."
         icon={<CalendarDays />}
         actions={
           <>
