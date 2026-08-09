@@ -114,3 +114,32 @@ def test_conflicts_api_router_registered():
     paths = main.app.openapi()["paths"]
     assert any("/api/conflicts" in p for p in paths)
 
+
+def test_composite_tenant_foreign_key_constraint():
+    """Issue #41: Cross-tenant foreign key reference must fail composite FK constraint."""
+    w1 = str(uuid.uuid4())
+    w2 = str(uuid.uuid4())
+    meeting_id = uuid.uuid4()
+    item_id = uuid.uuid4()
+
+    with store.pg() as conn:
+        # Create meeting in workspace w1
+        conn.execute(
+            """
+            INSERT INTO meeting (id, title, scheduled_start, workspace_id)
+            VALUES (%s, 'Meeting W1', now(), %s)
+            """,
+            (meeting_id, w1),
+        )
+
+        # Attempt to insert agenda item referencing meeting_id but workspace w2
+        with pytest.raises(psycopg.errors.ForeignKeyViolation):
+            conn.execute(
+                """
+                INSERT INTO agenda_item (id, meeting_id, title, ordinal, workspace_id)
+                VALUES (%s, %s, 'Cross-Tenant Item', 1, %s)
+                """,
+                (item_id, meeting_id, w2),
+            )
+
+
