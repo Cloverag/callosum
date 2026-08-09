@@ -92,7 +92,7 @@ def init() -> None:
     """Create graph constraints and seed the demo principals and memberships."""
     driver = store.neo()
     store.ensure_constraints(driver)
-    console.print("[green]✓[/] Neo4j constraints applied")
+    console.print("[green]OK[/] Neo4j constraints applied")
 
     # Bootstrap runs on the ADMIN connection, not `store.pg()`.
     #
@@ -132,9 +132,9 @@ def init() -> None:
         ).fetchall()
         conn.commit()
 
-    console.print(f"[green]✓[/] {len(DEMO_PRINCIPALS)} principals seeded")
+    console.print(f"[green]OK[/] {len(DEMO_PRINCIPALS)} principals seeded")
     console.print(
-        f"[green]✓[/] {len(seeded)} membership(s) granted in the Default Workspace"
+        f"[green]OK[/] {len(seeded)} membership(s) granted in the Default Workspace"
     )
     driver.close()
 
