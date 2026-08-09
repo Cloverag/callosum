@@ -531,6 +531,16 @@ def record_update(
         if row is None:
             raise StaleCommitmentError(f"commitment {commitment_id}: concurrent modification")
 
+        from meridian import audit
+        audit.record_audit_event(
+            conn,
+            aggregate_type="commitment",
+            aggregate_id=c_uuid,
+            action="status_changed" if new_status is not None else "updated",
+            payload={"new_status": new_status, "note": note.strip()},
+            workspace_id=workspace_id,
+        )
+
         updates = _fetch_updates(conn, [c_uuid]).get(str(c_uuid), [])
 
     return _row_to_commitment(row, updates=updates)
