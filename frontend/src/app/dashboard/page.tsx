@@ -62,12 +62,12 @@ export default function DashboardPage() {
   const counts: ActionCounts | null = useMemo(() => {
     if (!meetings || !conflicts || !insights) return null;
     return {
-      decisions: insights.pending.decisionsToSign,
+      decisions: decisions !== null ? decisions.filter((d) => d.status === "proposed").length : insights.pending.decisionsToSign,
       conflicts: conflicts.length,
       meetings: upcoming.filter((m) => m.status === "draft" || m.status === "scheduled").length,
       docs: insights.pending.docsToIngest,
     };
-  }, [meetings, conflicts, insights, upcoming]);
+  }, [meetings, conflicts, insights, decisions, upcoming]);
 
   /**
    * The orientation line, assembled here rather than stored as prose.
