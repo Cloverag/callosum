@@ -32,8 +32,9 @@ def test_notification_dispatch_flow():
     d_id = str(uuid.uuid4())
     member_id = str(uuid.uuid4())
 
-    with commitments.store.admin_pg() as conn:
-        conn.execute("INSERT INTO workspace (id, name, slug) VALUES (%s, 'Test W', %s)", (w_id, f"slug-{w_id[:8]}"))
+    import psycopg
+    with psycopg.connect(commitments.store.settings().postgres_dsn, row_factory=commitments.store.dict_row) as conn:
+        conn.execute("INSERT INTO workspace (id, name) VALUES (%s, 'Test W')", (w_id,))
         conn.execute("INSERT INTO board_member (id, workspace_id, name, email, role) VALUES (%s, %s, 'Director', 'dir@test.com', 'director')", (member_id, w_id))
         conn.execute("INSERT INTO meeting (id, workspace_id, title, scheduled_start) VALUES (%s, %s, 'Meeting', now())", (m_id, w_id))
         conn.execute("INSERT INTO decision (id, workspace_id, meeting_id, title) VALUES (%s, %s, %s, 'Decision')", (d_id, w_id, m_id))
