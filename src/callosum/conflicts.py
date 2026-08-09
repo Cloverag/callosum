@@ -240,13 +240,14 @@ def approve_conflict(
     change_row = conn.execute(
         """
         INSERT INTO proposed_change
-            (chunk_id, kind, payload, confidence,
+            (workspace_id, chunk_id, kind, payload, confidence,
              provider, extractor_model, prompt_version, ontology_version)
-        VALUES (%s, 'add_relationship', %s, 1.0,
+        VALUES (%s, %s, 'add_relationship', %s, 1.0,
                 'human', 'human-review', 'conflict-review-v1', %s)
         RETURNING id
         """,
         (
+            row["workspace_id"],
             uuid.UUID(chunk_id),   # always a valid UUID string here (uuid4() fallback above)
             json.dumps(payload),
             ONTOLOGY_VERSION,
