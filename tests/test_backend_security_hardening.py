@@ -65,3 +65,32 @@ def test_query_log_workspace_scoping():
 
     assert "workspace_id" in conn.last_query
     assert conn.last_params[0] == "11111111-1111-1111-1111-111111111111"
+
+
+def test_acl_grant_query_structure():
+    """H-1: vector_search and fetch_chunks SQL queries must check acl_grant."""
+    principal = retrieve.Principal(
+        id=uuid.uuid4(),
+        name="Advisor",
+        role="advisor",
+        clearance=1,  # Low clearance
+    )
+
+    class FakeConn:
+        def __init__(self):
+            self.queries = []
+
+        def execute(self, query, params):
+            self.queries.append((query, params))
+            return self
+
+        def fetchall(self):
+            return []
+
+        def fetchone(self):
+            return {"n": 0}
+
+    conn = FakeConn()
+    retrieve.fetch_chunks(conn, [uuid.uuid4()], principal)
+    assert any("acl_grant" in q[0] for q in conn.queries)
+

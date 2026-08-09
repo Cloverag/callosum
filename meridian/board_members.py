@@ -143,6 +143,17 @@ def create_member(
     _validate(full_name, role, voting)
 
     with store.pg(workspace_id) as conn:
+        p_uuid = uuid.UUID(str(principal_id)) if principal_id else None
+        if p_uuid:
+            mem = conn.execute(
+                "SELECT 1 FROM membership WHERE principal_id = %s AND workspace_id = %s",
+                (p_uuid, workspace_id),
+            ).fetchone()
+            if not mem:
+                raise BoardMemberValidationError(
+                    f"Principal {principal_id} does not have membership in workspace {workspace_id}"
+                )
+
         row = conn.execute(
             """
             INSERT INTO board_member
@@ -152,7 +163,7 @@ def create_member(
             """,
             (
                 workspace_id,
-                uuid.UUID(str(principal_id)) if principal_id else None,
+                p_uuid,
                 full_name.strip(),
                 organization.strip() if organization and organization.strip() else None,
                 role,
