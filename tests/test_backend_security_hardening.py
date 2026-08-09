@@ -122,8 +122,8 @@ def test_composite_tenant_foreign_key_constraint():
     meeting_id = uuid.uuid4()
     item_id = uuid.uuid4()
 
-    with store.pg() as conn:
-        # Create meeting in workspace w1
+    with psycopg.connect(store.settings().postgres_dsn, row_factory=store.dict_row) as conn:
+        # Create meeting in workspace w1 (bypassing RLS as superuser to test FK constraint)
         conn.execute(
             """
             INSERT INTO meeting (id, title, scheduled_start, workspace_id)
