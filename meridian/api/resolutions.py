@@ -188,3 +188,45 @@ def supersede_resolution(
         workspace_id=principal.workspace_id,
     )
     return ResolutionSupersession(superseded=old, replacement=new)
+
+
+class BridgeCommitmentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    owner_board_member_id: uuid.UUID
+    due_date: uuid.UUID | str | None = None
+
+
+@router.get("/{resolution_id}/policy-check")
+def check_resolution_policy(
+    resolution_id: uuid.UUID,
+    total_voting_members: int = 5,
+    policy_type: str = domain.POLICY_SIMPLE_MAJORITY,
+    quorum_percent: float = 50.0,
+    principal: CurrentPrincipal = None,
+) -> dict:
+    """Evaluates voting quorum and policy thresholds for a resolution."""
+    ws_id = principal.workspace_id if principal else domain.DEFAULT_WORKSPACE_ID
+    res = domain.get_resolution(str(resolution_id), workspace_id=ws_id)
+    return domain.evaluate_resolution_policy(
+        res,
+        total_voting_members=total_voting_members,
+        policy_type=policy_type,
+        quorum_percent=quorum_percent,
+    )
+
+
+@router.post("/{resolution_id}/bridge-commitment", status_code=status.HTTP_201_CREATED)
+def bridge_resolution_to_commitment(
+    resolution_id: uuid.UUID,
+    payload: BridgeCommitmentRequest,
+    principal: CurrentPrincipal,
+) -> dict:
+    """Converts an ADOPTED resolution into an actionable Commitment."""
+    c = domain.bridge_resolution_to_commitment(
+        str(resolution_id),
+        owner_board_member_id=str(payload.owner_board_member_id),
+        workspace_id=principal.workspace_id,
+    )
+    return {"status": "ok", "commitment_id": c.id}
+
