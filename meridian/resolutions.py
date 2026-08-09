@@ -462,6 +462,16 @@ def record_vote(
             (res_uuid,),
         )
 
+        from meridian import audit
+        audit.record_audit_event(
+            conn,
+            aggregate_type="resolution",
+            aggregate_id=res_uuid,
+            action="voted",
+            payload={"board_member_id": str(member_uuid), "vote": vote},
+            workspace_id=workspace_id,
+        )
+
     return _row_to_vote(row)
 
 
