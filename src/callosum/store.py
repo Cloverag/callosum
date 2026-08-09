@@ -469,7 +469,7 @@ def approve(conn: psycopg.Connection, driver: Driver, change_id: uuid.UUID,
     never written, which is the failure we cannot detect later.
     """
     row = conn.execute(
-        "SELECT kind, payload, workspace_id FROM proposed_change WHERE id = %s AND status = 'pending'",
+        "SELECT kind, payload, workspace_id FROM proposed_change WHERE id = %s AND status = 'pending' FOR UPDATE",
         (change_id,),
     ).fetchone()
     if not row:
@@ -492,6 +492,9 @@ def approve(conn: psycopg.Connection, driver: Driver, change_id: uuid.UUID,
         """,
         (reviewer_id, change_id),
     )
+
+    # Lock existing version rows for this node_id to eliminate MAX(version)+1 race conditions
+    conn.execute("SELECT version FROM node_version WHERE node_id = %s FOR UPDATE", (change_id,))
 
     conn.execute(
         """

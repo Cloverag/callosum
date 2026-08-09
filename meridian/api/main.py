@@ -11,6 +11,7 @@ Then open http://localhost:8000/health  and  http://localhost:8000/health/engine
 """
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 # The proof of separation: Meridian depends ON Callosum, as an ordinary import.
@@ -35,6 +36,15 @@ app = FastAPI(
 )
 
 _settings = api_settings()
+
+# --- CORS Configuration (M-14) ---------------------------------------------
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # --- Session (ADR-009) -----------------------------------------------------
 #
