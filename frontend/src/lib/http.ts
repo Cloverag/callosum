@@ -92,6 +92,20 @@ export class ApiError extends Error {
   get needsWorkspace(): boolean {
     return this.status === 409 && this.code === "workspace_not_selected";
   }
+
+  /**
+   * True when the session is valid but the workspace it selected is not (or no
+   * longer) available to this principal.
+   *
+   * The API returns one uniform 403 for "never a member", "membership revoked"
+   * and "that workspace is not yours" — it will not say which, because
+   * distinguishing them confirms to a stranger that a workspace id is real.
+   * The client cannot tell them apart either, which is exactly why the only
+   * sound response is to offer workspace selection again rather than to guess.
+   */
+  get isForbidden(): boolean {
+    return this.status === 403;
+  }
 }
 
 type Params = Record<string, string | undefined>;
