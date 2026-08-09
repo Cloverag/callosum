@@ -49,30 +49,26 @@ Source: [`eval/results.md`](eval/results.md) · run 2026-07-20.
 
 ## Screenshots
 
-<!--
-SLOT — not yet captured. See docs/screenshots/README.md for the capture list,
-resolution and what each image has to show. Delete this comment once filled.
--->
-
-**The knowledge graph, with evidence.** Select a node and the panel shows the verbatim
-quote and the document it was located in.
-
-![Knowledge graph with evidence panel](docs/screenshots/memory-graph.png)
-
-**Withholding, disclosed as a count.** Toggle clearance and restricted content is
-excluded — with the number stated and never the content.
-
-![Graph with withheld count](docs/screenshots/memory-withheld.png)
-
 **The board home.** Note the em dashes: figures that were never measured render as "—",
 not as a plausible zero.
 
 ![Dashboard](docs/screenshots/dashboard.png)
 
-**Optimistic concurrency, made actionable.** A 409 is a decision the user makes, not a
-toast that says "error".
+**Access control, before retrieval.** A board pack as its author sees it. Items are
+filtered server-side at the caller's own clearance and the survivors are renumbered from
+1 — so a lower-cleared reader sees a shorter list with no gap in the numbering, and no
+count of what was removed. The notice states that filtering applies; it never says how
+much.
 
-![Edit conflict dialog](docs/screenshots/meeting-conflict.png)
+![Board pack with clearance-filtered items](docs/screenshots/packs.png)
+
+<!--
+INCOMPLETE — two of the five specified captures. `memory-graph.png`,
+`memory-withheld.png` and `meeting-conflict.png` are not taken; see
+docs/screenshots/README.md. Both images above also predate the assistant-rail
+fixes of 2026-08-03, so the right-hand rail in them still shows the old greeting
+and the old document list.
+-->
 
 ---
 
@@ -144,12 +140,12 @@ feature-complete at P3.
 
 | | |
 |---|---|
-| Backend tests | **610** passing |
-| Frontend tests | **180** passing |
-| API | **61 operations** across 44 paths, 9 routers |
+| Backend tests | **612** passing |
+| Frontend tests | **176** passing, 11 suites |
+| API | **61 operations** across 44 paths, 10 routers |
 | Migrations | 17, forward and reverse tested |
 | Architecture decisions | 15 ADRs |
-| Commits | 305 |
+| Commits | 315 (`git rev-list --count master`) |
 
 **P3 is frozen, not accepted** — of its three exit criteria one is met, one is partial and
 one is not met, because the accessibility and error-state checkpoints were deliberately
@@ -246,10 +242,15 @@ routes. Set `MERIDIAN_API_ORIGIN` if the API is not on `:8000`.
 **Verification:**
 
 ```bash
+docker compose up -d && docker compose ps               # all three healthy FIRST
 .venv/bin/callosum eval-mechanism                        # deterministic gate, no LLM
-CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 610 tests, real stores
-cd frontend && npx jest && npm run build                 # 180 tests
+CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 612 tests, real stores
+cd frontend && npx jest && npm run build                 # 176 tests, 11 suites
 ```
+
+`CALLOSUM_RUN_INTEGRATION=1` runs against real Postgres and Neo4j, so the compose stack
+must be up. Run it with the containers stopped and roughly 395 tests fail on connection
+errors — the failure looks like a broken build and is a missing database.
 
 ---
 
@@ -282,7 +283,7 @@ Stated because a limitation a reader finds is worth less than one they are told.
 |---|---|
 | `src/callosum/` | the research engine — **frozen** at `eval-baseline-v3` |
 | `meridian/` | the product: domain modules, FastAPI, Alembic migrations |
-| `frontend/` | Next.js application, 15 routes |
+| `frontend/` | Next.js application, 12 pages |
 | `eval/` | gold questions, results, the deterministic gate log |
 | `docs/TECHNICAL_OVERVIEW.md` | the full engineering write-up |
 | `docs/findings.md` | the running research log — every experiment, including the failures |

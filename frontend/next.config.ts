@@ -38,6 +38,22 @@ const nextConfig: NextConfig = {
       { source: "/health/:path*", destination: `${API_ORIGIN}/health/:path*` },
     ];
   },
+
+  /**
+   * `/` goes to the dashboard.
+   *
+   * This used to be `redirect("/dashboard")` inside `app/page.tsx` — a Server Component
+   * that threw during render instead of returning markup. Once the shell moved inside
+   * `SessionGate`, React's dev-mode render timing measured a component that never
+   * rendered and reported `'Home' cannot have a negative time stamp`.
+   *
+   * Resolving the route before anything renders is both the fix and the more honest
+   * shape: `/` is not a page that decides to go elsewhere, it is an alias. Permanent is
+   * false because this is an application route, not a moved resource.
+   */
+  async redirects() {
+    return [{ source: "/", destination: "/dashboard", permanent: false }];
+  },
 };
 
 export default nextConfig;

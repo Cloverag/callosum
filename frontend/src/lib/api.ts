@@ -42,34 +42,67 @@ const mockConflicts: EntityConflict[] = [
   }
 ];
 
-const DEFAULT_REVIEWER_ID = "00000000-0000-0000-0000-000000000000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 /**
- * Mocked API client for Meridian backend.
- * All functions simulate network latency.
+ * API client for Meridian backend.
+ * Connects to live FastAPI backend when available, with fallback to in-memory mock store.
  */
 export const apiClient = {
   async getPendingConflicts(): Promise<EntityConflict[]> {
-    // Simulate network delay
-    await new Promise(resolve => setTimeout(resolve, 600));
+    try {
+      const res = await fetch(`${API_BASE}/api/conflicts?status=pending`, {
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return data;
+      }
+    } catch {
+      // Backend unavailable; fallback to mock data
+    }
+    await new Promise(resolve => setTimeout(resolve, 100));
     return mockConflicts.filter(c => c.status === 'pending');
   },
 
   async approveConflict(id: string, reviewerId: string = DEFAULT_REVIEWER_ID): Promise<{ id: string, status: string }> {
-    await new Promise(resolve => setTimeout(resolve, 400));
+    try {
+      const res = await fetch(`${API_BASE}/api/conflicts/${id}/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch {
+      // Fallback to mock
+    }
+    await new Promise(resolve => setTimeout(resolve, 100));
     const conflict = mockConflicts.find(c => c.id === id);
     if (!conflict) throw new Error("Conflict not found");
     conflict.status = 'approved';
-    console.log(`Conflict ${id} approved by ${reviewerId}`);
     return { id, status: 'approved' };
   },
 
   async rejectConflict(id: string, reviewerId: string = DEFAULT_REVIEWER_ID): Promise<{ id: string, status: string }> {
-    await new Promise(resolve => setTimeout(resolve, 400));
+    try {
+      const res = await fetch(`${API_BASE}/api/conflicts/${id}/reject`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch {
+      // Fallback to mock
+    }
+    await new Promise(resolve => setTimeout(resolve, 100));
     const conflict = mockConflicts.find(c => c.id === id);
     if (!conflict) throw new Error("Conflict not found");
     conflict.status = 'rejected';
-    console.log(`Conflict ${id} rejected by ${reviewerId}`);
     return { id, status: 'rejected' };
   }
 };

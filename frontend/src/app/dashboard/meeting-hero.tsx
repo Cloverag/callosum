@@ -104,7 +104,9 @@ export function MeetingHero({ meeting, loading }: { meeting: Meeting | null; loa
       </dl>
 
       <div className="mt-auto flex flex-wrap items-center gap-3 pt-6">
-        <Button size="md" className="px-6" onClick={() => router.push("/calendar")}>
+        {/* Went to /calendar, which is where meetings are listed rather than where one
+            is prepared. The prepare flow now exists, so the button leads to it. */}
+        <Button size="md" className="px-6" onClick={() => router.push("/prepare")}>
           Prepare meeting
           <ArrowRight className="size-4" />
         </Button>

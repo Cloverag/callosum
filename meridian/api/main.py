@@ -11,6 +11,7 @@ Then open http://localhost:8000/health  and  http://localhost:8000/health/engine
 """
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 # The proof of separation: Meridian depends ON Callosum, as an ordinary import.
@@ -19,6 +20,7 @@ from meridian.api import auth, errors
 from meridian.api import agenda as agenda_api
 from meridian.api import board_members as board_members_api
 from meridian.api import commitments as commitments_api
+from meridian.api import conflicts as conflicts_api
 from meridian.api import decisions as decisions_api
 from meridian.api import documents as documents_api
 from meridian.api import meetings as meetings_api
@@ -34,6 +36,15 @@ app = FastAPI(
 )
 
 _settings = api_settings()
+
+# --- CORS Configuration (M-14) ---------------------------------------------
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # --- Session (ADR-009) -----------------------------------------------------
 #
@@ -74,6 +85,7 @@ app.include_router(minutes_api.router)
 app.include_router(decisions_api.router)
 app.include_router(commitments_api.router)
 app.include_router(documents_api.router)
+app.include_router(conflicts_api.router)
 
 # Domain exceptions map to HTTP centrally (P3 §5.3). Registered once here rather than
 # caught in each route, so a new endpoint inherits the right statuses — a 409 for a

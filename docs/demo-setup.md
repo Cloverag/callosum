@@ -104,6 +104,9 @@ Three steps, in order. Each is idempotent.
 # 3. Link Keycloak users to principals, then create the board data.
 .venv/bin/python scripts/seed_demo_identities.py
 .venv/bin/python scripts/seed_demo_board.py
+
+# 4. The unfinished business /prepare reads. Optional, and only for that surface.
+.venv/bin/python scripts/seed_demo_prep.py
 ```
 
 **What each seed does, and why it is separate:**
@@ -118,6 +121,13 @@ Three steps, in order. Each is idempotent.
   **through the domain modules**, so the status machines, version counters and audit
   events all hold — seeding by raw SQL would produce a state the application itself
   cannot reach.
+- `seed_demo_prep.py` adds two overdue commitments and one decision left `proposed`. It
+  is separate because `seed_demo_board.py` deliberately produces a board whose work is
+  *finished* — every decision approved, its one commitment on track — which is the right
+  shape for the decisions and withholding demos and the wrong one for `/prepare`, a
+  surface that reads exactly what a settled board does not have. Without it that page is
+  correct and nearly empty. Fixed dates, not offsets from today, so the seeded state does
+  not drift away from the screenshots.
 
 ---
 
@@ -149,7 +159,15 @@ A **404** there means the proxy is not working. A **000** means the API is not r
 
 ## 6. Log in
 
-Open <http://localhost:3000>, which redirects to Keycloak.
+Open <http://localhost:3000>. You are met by a sign-in card; **Sign in** starts the OIDC
+flow at `/auth/login` and hands you to Keycloak.
+
+> **Corrected 2026-08-03.** This step previously read "Open http://localhost:3000, which
+> redirects to Keycloak." It did not. The root route redirected to `/dashboard`, nothing
+> in the frontend linked to `/auth/login`, and no surface could select a workspace — so a
+> browser could complete neither half of the flow, and every request answered `401` and
+> then `409 workspace_not_selected` forever. The curl walkthrough below passed throughout,
+> which is why it went unnoticed. `SessionGate` now renders both screens.
 
 | User | Password | Clearance | Sees |
 |---|---|---|---|
@@ -160,6 +178,41 @@ Open <http://localhost:3000>, which redirects to Keycloak.
 
 After sign-in you must select a workspace — that is ADR-012, not a bug. Until you do,
 API calls answer `409 workspace_not_selected`.
+
+The gate asks for a **workspace ID** rather than offering a list, and the absence of a
+list is the design: `membership` and `workspace` are both RLS-scoped, so no endpoint can
+answer "which workspaces does this person belong to" without becoming the membership
+oracle CP5b refused to build. Selection is verification, not enumeration.
+
+For the demo, the Default Workspace is:
+
+```
+00000000-0000-0000-0000-000000000001
+```
+
+The last accepted id is remembered in `localStorage`, so a returning demo is one click.
+That is a convenience on the device and never an assertion of access — the server
+re-verifies membership on selection, and again on every request after it.
+
+Once inside, the header names the signed-in principal, their role and their **clearance**
+— all from `GET /auth/context`, re-derived per request. That is what makes the RBAC
+comparison legible on screen: `Raj Malhotra · Founder · Clearance 4` beside 16 documents
+and 3 pack items, then `Marcus Webb · Investor · Clearance 1` beside 14 and 2.
+
+### Switching principals needs more than Sign out
+
+**Sign out ends the Meridian session only.** `POST /auth/logout` deliberately does not
+perform provider-side single logout — that would sign the user out of every application
+sharing the realm, and `auth.py` records it as a product decision it declined to make.
+
+Keycloak therefore still holds an authenticated session, and signing back in returns the
+**same** principal without prompting. To demo Raj and then Marcus, use either:
+
+```bash
+# a private/incognito window for the second principal, or
+# end the Keycloak session directly:
+open http://localhost:8080/realms/meridian/protocol/openid-connect/logout
+```
 
 ---
 

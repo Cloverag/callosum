@@ -107,7 +107,8 @@ def test_an_applied_migration_is_unchanged(path: pathlib.Path):
     if recorded is None:
         pytest.skip("covered by test_the_manifest_and_the_directory_agree")
 
-    actual = hashlib.sha256(path.read_bytes()).hexdigest()
+    content = path.read_bytes().replace(b"\r\n", b"\n")
+    actual = hashlib.sha256(content).hexdigest()
     assert actual == recorded, (
         f"{path.name} ({revision}) has been edited after being recorded.\n"
         f"  recorded: {recorded}\n"

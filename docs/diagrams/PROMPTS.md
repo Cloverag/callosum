@@ -200,10 +200,10 @@ DIAGRAM: layered, top to bottom, showing one request passing through the API.
 FOUR horizontal bands, each a wide rounded box, stacked with arrows pointing downward
 between them:
 
-BAND 1, BLUE border, titled "9 routers".
+BAND 1, BLUE border, titled "10 routers".
   Inside, a single row of small pills, evenly spaced:
   "meetings" "agenda" "decisions" "packs" "minutes" "resolutions" "commitments"
-  "board-members" "documents"
+  "board-members" "documents" "auth"
 
 BAND 2, neutral, titled "deps.current_principal".
   Sub-label: "resolves workspace and clearance from the session, per request"
@@ -227,6 +227,11 @@ At the bottom, centred, 13px italic grey text, exactly:
 "61 operations. The scope of a request is never something the request can choose."
 ```
 
+*Corrected 2026-08-03: band 1 first read “9 routers” with nine pills, which paired a
+whole-application operation count with a partial router count. `main.py` registers ten
+routers; `auth` was the missing one. 55 of the 61 operations belong to the nine domain
+routers, 6 to `auth`. Verified from `app.openapi()`.*
+
 ---
 
 ## 6 — Product architecture
@@ -239,7 +244,7 @@ on it. The boundary is the subject of the picture.
 
 TOP — a wide container with a VIOLET border, titled "meridian/ — product".
   Inside, three rows of small boxes:
-    row 1: "frontend/ — Next.js, 15 routes"
+    row 1: "frontend/ — Next.js, 12 pages"
     row 2: "meridian/api/ — FastAPI, 61 operations"
     row 3: "meridian/*.py — 10 domain modules"  and  "migrations/ — 17"
 
