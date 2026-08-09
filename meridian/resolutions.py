@@ -25,6 +25,7 @@ are P8.
 """
 
 import uuid
+from typing import Any
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -635,3 +636,108 @@ def supersede_resolution(
         _row_to_resolution(new_row, votes=[]),
         _row_to_resolution(updated_old, votes=old_votes),
     )
+
+
+# ---------------------------------------------------------------------------
+# Policy Evaluation Engine & Commitment Bridge (Issue #93, Meridian P3 CP-F/G/H)
+# ---------------------------------------------------------------------------
+
+POLICY_SIMPLE_MAJORITY = "simple_majority"
+POLICY_SUPERMAJORITY_TWOTHIRDS = "supermajority_twothirds"
+POLICY_UNANIMOUS = "unanimous"
+
+SUPPORTED_POLICIES = frozenset({
+    POLICY_SIMPLE_MAJORITY,
+    POLICY_SUPERMAJORITY_TWOTHIRDS,
+    POLICY_UNANIMOUS,
+})
+
+
+def evaluate_resolution_policy(
+    resolution: Resolution,
+    total_voting_members: int,
+    *,
+    policy_type: str = POLICY_SIMPLE_MAJORITY,
+    quorum_percent: float = 50.0,
+) -> dict[str, Any]:
+    """Evaluates voting quorum and policy thresholds for a resolution motion."""
+    if policy_type not in SUPPORTED_POLICIES:
+        raise ResolutionValidationError(f"unknown policy_type: {policy_type!r}")
+    if total_voting_members <= 0:
+        raise ResolutionValidationError("total_voting_members must be > 0")
+
+    t = tally(resolution)
+    total_participants = t.for_ + t.against + t.abstain + t.recused
+    actual_quorum_pct = (total_participants / float(total_voting_members)) * 100.0
+    quorum_met = actual_quorum_pct >= quorum_percent
+
+    threshold_passed = False
+    if policy_type == POLICY_SIMPLE_MAJORITY:
+        threshold_passed = t.for_ > t.against
+    elif policy_type == POLICY_SUPERMAJORITY_TWOTHIRDS:
+        threshold_passed = t.counted > 0 and ((t.for_ / float(t.counted)) >= (2.0 / 3.0))
+    elif policy_type == POLICY_UNANIMOUS:
+        threshold_passed = t.for_ > 0 and t.against == 0 and t.abstain == 0
+
+    return {
+        "resolution_id": resolution.id,
+        "policy_type": policy_type,
+        "quorum_percent_required": quorum_percent,
+        "quorum_percent_actual": round(actual_quorum_pct, 2),
+        "quorum_met": quorum_met,
+        "threshold_passed": threshold_passed,
+        "passed": quorum_met and threshold_passed,
+        "tally": {
+            "for": t.for_,
+            "against": t.against,
+            "abstain": t.abstain,
+            "recused": t.recused,
+            "counted": t.counted,
+        },
+    }
+
+
+def bridge_resolution_to_commitment(
+    resolution_id: str,
+    owner_board_member_id: str,
+    *,
+    due_date: datetime | None = None,
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
+) -> Any:
+    """Converts an ADOPTED resolution into an actionable Commitment linked to the Decision."""
+    res_uuid = uuid.UUID(str(resolution_id))
+    with store.pg(workspace_id) as conn:
+        res = conn.execute(
+            "SELECT decision_id, title, status FROM resolution WHERE id = %s",
+            (res_uuid,),
+        ).fetchone()
+        if res is None:
+            raise ResolutionNotFound(str(resolution_id))
+        if res["status"] != ADOPTED:
+            raise ResolutionValidationError(
+                f"only ADOPTED resolutions can be converted into commitments; current status is {res['status']!r}"
+            )
+        decision_id = str(res["decision_id"])
+
+    from meridian import commitments
+    commitment = commitments.create_commitment(
+        title=res["title"],
+        owner_board_member_id=owner_board_member_id,
+        decision_id=decision_id,
+        due_date=due_date,
+        workspace_id=workspace_id,
+    )
+
+    with store.pg(workspace_id) as conn:
+        from meridian import audit
+        audit.record_audit_event(
+            conn,
+            aggregate_type="resolution",
+            aggregate_id=res_uuid,
+            action="resolution_bridged_to_commitment",
+            payload={"commitment_id": commitment.id, "owner_id": owner_board_member_id},
+            workspace_id=workspace_id,
+        )
+
+    return commitment
+
