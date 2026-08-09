@@ -185,11 +185,30 @@ def install_exception_handlers(app) -> None:
     handler and `IdentityNotProvisioned` by the `PrincipalNotFound` one — subclasses
     added later are covered without being registered.
     """
+    from fastapi.exceptions import HTTPException
     from fastapi.responses import JSONResponse
 
     async def handle(_request, exc: BaseException):
         mapped = classify(exc)
         return JSONResponse(status_code=mapped.status, content=mapped.as_response())
+
+    async def handle_http_exception(_request, exc: HTTPException):
+        if isinstance(exc.detail, dict) and "code" in exc.detail:
+            code = exc.detail["code"]
+            detail = exc.detail.get("detail", str(exc.detail))
+        else:
+            code = (
+                FORBIDDEN if exc.status_code == 403
+                else "unauthorized" if exc.status_code == 401
+                else BAD_WORKSPACE if exc.status_code == 409
+                else INVALID if exc.status_code == 422
+                else INTERNAL
+            )
+            detail = str(exc.detail) if exc.detail else "An error occurred."
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"error": {"code": code, "detail": detail}},
+        )
 
     bases: list[type[BaseException]] = [
         agenda.AgendaItemError,
@@ -207,3 +226,5 @@ def install_exception_handlers(app) -> None:
     ]
     for base in bases:
         app.add_exception_handler(base, handle)
+
+    app.add_exception_handler(HTTPException, handle_http_exception)

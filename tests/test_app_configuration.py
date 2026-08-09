@@ -55,8 +55,10 @@ def test_an_unconfigured_session_is_503_not_500():
 
     response = TestClient(app, raise_server_exceptions=False).get("/api/documents")
 
+    body = response.json()
+    err_data = body.get("error", body.get("detail", {}))
     assert response.status_code == 503, "an unconfigured session must not be a 500"
-    assert response.json()["detail"]["code"] == "session_not_configured"
+    assert err_data["code"] == "session_not_configured"
     # The message has to name the fix. "Service Unavailable" alone sends an operator
     # looking at the database.
-    assert "MERIDIAN_SESSION_SECRET" in response.json()["detail"]["detail"]
+    assert "MERIDIAN_SESSION_SECRET" in err_data["detail"]

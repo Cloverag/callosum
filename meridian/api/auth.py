@@ -203,7 +203,7 @@ class WorkspaceSelection(BaseModel):
 
 #: Floor that both outcomes of a workspace selection are padded up to, in seconds.
 #: Chosen to sit well above a local membership round trip without being perceptible.
-_SELECTION_FLOOR_SECONDS = 0.05
+_SELECTION_FLOOR_SECONDS = 0.2
 
 
 async def _pad_to_floor(started: float) -> None:
@@ -255,6 +255,7 @@ async def select_workspace(request: Request, selection: WorkspaceSelection):
     try:
         principal = deps.verify_membership(current.principal_id, selection.workspace_id)
     except WorkspaceRequired as exc:
+        await _pad_to_floor(started)
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail={"code": "invalid", "detail": str(exc)},
