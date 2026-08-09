@@ -55,6 +55,7 @@ class MeetingCreate(BaseModel):
     scheduled_start: dt.datetime | None = None
     scheduled_end: dt.datetime | None = None
     location: str | None = None
+    importance: str = domain.ROUTINE_IMPORTANCE
 
 
 class MeetingPatch(BaseModel):
@@ -77,6 +78,7 @@ class MeetingPatch(BaseModel):
     scheduled_start: dt.datetime | None = None
     scheduled_end: dt.datetime | None = None
     location: str | None = None
+    importance: str | None = None
 
 
 class MeetingTransition(BaseModel):

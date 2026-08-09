@@ -17,5 +17,6 @@
   "0016_audit_event": "1cd1499fe794655cb79b4e70002b46a0ae22b2cf1edd3c1b565ac759bc263568",
   "0017_principal_identity": "2bba6289c2749073a873ba4c6bf6f77c9e89b8a019efd65c6eb9a3650efd8031",
   "0018_principal_identity_multi_tenant": "f7a1bb692038fbff7df689cbe6081e0895a933c1da90df1a8cc5af516aca2ea8",
-  "0019_composite_tenant_foreign_keys": "41876c132dbd982913e0fa194b121770a050e9be2cc17401d6b1a34cdd1f09f0"
+  "0019_composite_tenant_foreign_keys": "41876c132dbd982913e0fa194b121770a050e9be2cc17401d6b1a34cdd1f09f0",
+  "0020_meeting_importance": "bfc735edddf72b51b91ce2922475ef87dcf2c1c08fd684ad556eac595b53d1e1"
 }
