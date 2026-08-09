@@ -295,23 +295,29 @@ def vector_search(
         SELECT c.id, c.text, d.title, 1 - (c.embedding <=> %s::vector) AS score
         FROM chunk c
         JOIN document d ON d.id = c.document_id
-        WHERE c.sensitivity <= %s
+        WHERE (c.sensitivity <= %s OR EXISTS (
+            SELECT 1 FROM acl_grant ag
+            WHERE ag.principal_id = %s AND (ag.object_id = c.document_id OR ag.object_id = c.id)
+        ))
         ORDER BY c.embedding <=> %s::vector
         LIMIT %s
         """,
-        (vector, principal.clearance, vector, k),
+        (vector, principal.clearance, principal.id, vector, k),
     ).fetchall()
 
     blocked = conn.execute(
         """
         SELECT count(*) AS n FROM (
             SELECT c.id FROM chunk c
-            WHERE c.sensitivity > %s
+            WHERE NOT (c.sensitivity <= %s OR EXISTS (
+                SELECT 1 FROM acl_grant ag
+                WHERE ag.principal_id = %s AND (ag.object_id = c.document_id OR ag.object_id = c.id)
+            ))
             ORDER BY c.embedding <=> %s::vector
             LIMIT %s
         ) t
         """,
-        (principal.clearance, vector, k),
+        (principal.clearance, principal.id, vector, k),
     ).fetchone()
 
     evidence = [
@@ -460,9 +466,12 @@ def fetch_chunks(
         SELECT c.id, c.text, d.title
         FROM chunk c
         JOIN document d ON d.id = c.document_id
-        WHERE c.id = ANY(%s) AND c.sensitivity <= %s
+        WHERE c.id = ANY(%s) AND (c.sensitivity <= %s OR EXISTS (
+            SELECT 1 FROM acl_grant ag
+            WHERE ag.principal_id = %s AND (ag.object_id = c.document_id OR ag.object_id = c.id)
+        ))
         """,
-        (list(set(chunk_ids)), principal.clearance),
+        (list(set(chunk_ids)), principal.clearance, principal.id),
     ).fetchall()
 
     return [
