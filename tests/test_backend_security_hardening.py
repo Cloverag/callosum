@@ -123,8 +123,8 @@ def test_composite_tenant_foreign_key_constraint():
     item_id = uuid.uuid4()
 
     with psycopg.connect(store.settings().postgres_dsn, row_factory=store.dict_row) as conn:
-        conn.execute("INSERT INTO workspace (id, name, slug) VALUES (%s, 'W1', %s)", (w1, f"slug-{w1[:8]}"))
-        conn.execute("INSERT INTO workspace (id, name, slug) VALUES (%s, 'W2', %s)", (w2, f"slug-{w2[:8]}"))
+        conn.execute("INSERT INTO workspace (id, name) VALUES (%s, 'W1')", (w1,))
+        conn.execute("INSERT INTO workspace (id, name) VALUES (%s, 'W2')", (w2,))
 
         # Create meeting in workspace w1 (bypassing RLS as superuser to test FK constraint)
         conn.execute(
