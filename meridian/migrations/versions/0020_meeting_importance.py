@@ -1,7 +1,7 @@
 """meeting_importance — domain importance classification field (Meridian P6, Issue #108)
 
 Revision ID: 0020_meeting_importance
-Revises: 0019_composite_tenant_foreign_keys
+Revises: 0019_composite_tenant_fks
 Create Date: 2026-08-10 04:30:00.000000
 
 """
@@ -10,7 +10,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "0020_meeting_importance"
-down_revision = "0019_composite_tenant_foreign_keys"
+down_revision = "0019_composite_tenant_fks"
 branch_labels = None
 depends_on = None
 

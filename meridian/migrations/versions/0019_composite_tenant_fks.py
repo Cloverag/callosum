@@ -1,6 +1,6 @@
 """composite_tenant_foreign_keys — unbypassable tenant isolation at database schema level (Issue #41)
 
-Revision ID: 0019_composite_tenant_foreign_keys
+Revision ID: 0019_composite_tenant_fks
 Revises: 0018_identity_multi_tenant
 Create Date: 2026-08-10 03:58:00.000000
 
@@ -9,7 +9,7 @@ Create Date: 2026-08-10 03:58:00.000000
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "0019_composite_tenant_foreign_keys"
+revision = "0019_composite_tenant_fks"
 down_revision = "0018_identity_multi_tenant"
 branch_labels = None
 depends_on = None
