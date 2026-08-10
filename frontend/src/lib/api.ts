@@ -12,6 +12,8 @@ export type EntityConflict = {
   created_at: string;
 };
 
+const DEFAULT_REVIEWER_ID = "00000000-0000-0000-0000-000000000001";
+
 // In-memory mock data store to allow interactive testing of Approve/Reject
 const mockConflicts: EntityConflict[] = [
   {
