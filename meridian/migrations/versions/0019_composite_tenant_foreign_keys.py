@@ -18,30 +18,34 @@ depends_on = None
 def upgrade() -> None:
     op.execute(
         """
-        -- Step 1: Add UNIQUE (id, workspace_id) constraints on parent tables
-        ALTER TABLE document DROP CONSTRAINT IF EXISTS document_id_workspace_uq;
-        ALTER TABLE document ADD CONSTRAINT document_id_workspace_uq UNIQUE (id, workspace_id);
-
-        ALTER TABLE chunk DROP CONSTRAINT IF EXISTS chunk_id_workspace_uq;
-        ALTER TABLE chunk ADD CONSTRAINT chunk_id_workspace_uq UNIQUE (id, workspace_id);
-
-        ALTER TABLE meeting DROP CONSTRAINT IF EXISTS meeting_id_workspace_uq;
-        ALTER TABLE meeting ADD CONSTRAINT meeting_id_workspace_uq UNIQUE (id, workspace_id);
-
-        ALTER TABLE decision DROP CONSTRAINT IF EXISTS decision_id_workspace_uq;
-        ALTER TABLE decision ADD CONSTRAINT decision_id_workspace_uq UNIQUE (id, workspace_id);
-
-        ALTER TABLE resolution DROP CONSTRAINT IF EXISTS resolution_id_workspace_uq;
-        ALTER TABLE resolution ADD CONSTRAINT resolution_id_workspace_uq UNIQUE (id, workspace_id);
-
-        ALTER TABLE commitment DROP CONSTRAINT IF EXISTS commitment_id_workspace_uq;
-        ALTER TABLE commitment ADD CONSTRAINT commitment_id_workspace_uq UNIQUE (id, workspace_id);
-
-        ALTER TABLE board_member DROP CONSTRAINT IF EXISTS board_member_id_workspace_uq;
-        ALTER TABLE board_member ADD CONSTRAINT board_member_id_workspace_uq UNIQUE (id, workspace_id);
-
-        ALTER TABLE board_pack DROP CONSTRAINT IF EXISTS board_pack_id_workspace_uq;
-        ALTER TABLE board_pack ADD CONSTRAINT board_pack_id_workspace_uq UNIQUE (id, workspace_id);
+        -- Step 1: Add UNIQUE (id, workspace_id) constraints on parent tables (if not already existing)
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'document_id_workspace_uq') THEN
+                ALTER TABLE document ADD CONSTRAINT document_id_workspace_uq UNIQUE (id, workspace_id);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chunk_id_workspace_uq') THEN
+                ALTER TABLE chunk ADD CONSTRAINT chunk_id_workspace_uq UNIQUE (id, workspace_id);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'meeting_id_workspace_uq') THEN
+                ALTER TABLE meeting ADD CONSTRAINT meeting_id_workspace_uq UNIQUE (id, workspace_id);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'decision_id_workspace_uq') THEN
+                ALTER TABLE decision ADD CONSTRAINT decision_id_workspace_uq UNIQUE (id, workspace_id);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'resolution_id_workspace_uq') THEN
+                ALTER TABLE resolution ADD CONSTRAINT resolution_id_workspace_uq UNIQUE (id, workspace_id);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'commitment_id_workspace_uq') THEN
+                ALTER TABLE commitment ADD CONSTRAINT commitment_id_workspace_uq UNIQUE (id, workspace_id);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'board_member_id_workspace_uq') THEN
+                ALTER TABLE board_member ADD CONSTRAINT board_member_id_workspace_uq UNIQUE (id, workspace_id);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'board_pack_id_workspace_uq') THEN
+                ALTER TABLE board_pack ADD CONSTRAINT board_pack_id_workspace_uq UNIQUE (id, workspace_id);
+            END IF;
+        END $$;
 
         -- Step 2: Add composite foreign keys (parent_id, workspace_id)
         ALTER TABLE chunk
