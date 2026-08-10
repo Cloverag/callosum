@@ -69,6 +69,7 @@ ACTIONS = frozenset(
         "item_added",
         "item_removed",
         "recorded",
+        "resolution_bridged_to_commitment",
     }
 )
 
