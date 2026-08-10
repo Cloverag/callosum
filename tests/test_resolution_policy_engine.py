@@ -56,7 +56,7 @@ def test_bridge_adopted_resolution_to_commitment():
 
     with psycopg.connect(store.settings().postgres_dsn, row_factory=store.dict_row) as conn:
         conn.execute("INSERT INTO workspace (id, name) VALUES (%s, 'W')", (w_id,))
-        conn.execute("INSERT INTO board_member (id, workspace_id, role) VALUES (%s, %s, 'director')", (member_id, w_id))
+        conn.execute("INSERT INTO board_member (id, workspace_id, full_name, role) VALUES (%s, %s, 'Director', 'director')", (member_id, w_id))
         conn.execute("INSERT INTO meeting (id, workspace_id, title, scheduled_start) VALUES (%s, %s, 'M', now())", (m_id, w_id))
         conn.execute("INSERT INTO decision (id, workspace_id, meeting_id, title) VALUES (%s, %s, %s, 'D')", (d_id, w_id, m_id))
 
