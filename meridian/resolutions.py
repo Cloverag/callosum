@@ -734,8 +734,8 @@ def bridge_resolution_to_commitment(
             conn,
             aggregate_type="resolution",
             aggregate_id=res_uuid,
-            action="resolution_bridged_to_commitment",
-            payload={"commitment_id": commitment.id, "owner_id": owner_board_member_id},
+            action="status_changed",
+            payload={"commitment_id": commitment.id, "owner_id": owner_board_member_id, "detail": "resolution_bridged_to_commitment"},
             workspace_id=workspace_id,
         )
 
