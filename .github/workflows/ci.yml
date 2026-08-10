@@ -15,9 +15,9 @@ jobs:
       postgres:
         image: pgvector/pgvector:pg16
         env:
-          POSTGRES_USER: callosum_app
-          POSTGRES_PASSWORD: callosum_password
-          POSTGRES_DB: callosum_test
+          POSTGRES_USER: callosum
+          POSTGRES_PASSWORD: callosum
+          POSTGRES_DB: callosum
         ports:
           - 5432:5432
         options: >-
@@ -39,25 +39,19 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .
 
-      - name: Initialize Database Schema
+      - name: Initialize Database Schema & Roles
         run: |
           callosum init
         env:
-          CALLOSUM_POSTGRES_HOST: localhost
-          CALLOSUM_POSTGRES_PORT: 5432
-          CALLOSUM_POSTGRES_USER: callosum_app
-          CALLOSUM_POSTGRES_PASSWORD: callosum_password
-          CALLOSUM_POSTGRES_DB: callosum_test
+          CALLOSUM_POSTGRES_DSN: postgresql://callosum:callosum@localhost:5432/callosum
+          CALLOSUM_POSTGRES_APP_DSN: postgresql://callosum_app:callosum_app@localhost:5432/callosum
 
       - name: Run Pytest Suite
         run: |
           pytest -m "not llm" -q
         env:
-          CALLOSUM_POSTGRES_HOST: localhost
-          CALLOSUM_POSTGRES_PORT: 5432
-          CALLOSUM_POSTGRES_USER: callosum_app
-          CALLOSUM_POSTGRES_PASSWORD: callosum_password
-          CALLOSUM_POSTGRES_DB: callosum_test
+          CALLOSUM_POSTGRES_DSN: postgresql://callosum:callosum@localhost:5432/callosum
+          CALLOSUM_POSTGRES_APP_DSN: postgresql://callosum_app:callosum_app@localhost:5432/callosum
 
   frontend-ci:
     name: Frontend CI (Next.js & Jest)
@@ -80,7 +74,13 @@ jobs:
       - name: Run Jest Test Suite
         working-directory: ./frontend
         run: npm test
+        env:
+          CI: true
 
-      - name: Build Next.js Bundle
+      - name: Clean & Build Next.js Bundle
         working-directory: ./frontend
-        run: npm run build
+        run: |
+          rm -rf .next
+          npm run build
+        env:
+          CI: true
