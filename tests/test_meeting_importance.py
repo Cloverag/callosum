@@ -10,6 +10,11 @@ client = TestClient(main.app)
 def test_meeting_default_importance():
     """Verify meeting defaults to 'routine' importance."""
     w_id = str(uuid.uuid4())
+    import psycopg
+    from meridian import store
+    with psycopg.connect(store.settings().postgres_dsn, row_factory=store.dict_row) as conn:
+        conn.execute("INSERT INTO workspace (id, name) VALUES (%s, 'W') ON CONFLICT DO NOTHING", (w_id,))
+        conn.commit()
     m = meetings.create_meeting("Default Importance Meeting", workspace_id=w_id)
     assert m.importance == "routine"
 
@@ -17,6 +22,11 @@ def test_meeting_default_importance():
 def test_meeting_custom_importance():
     """Verify custom importance levels ('critical', 'high', 'low')."""
     w_id = str(uuid.uuid4())
+    import psycopg
+    from meridian import store
+    with psycopg.connect(store.settings().postgres_dsn, row_factory=store.dict_row) as conn:
+        conn.execute("INSERT INTO workspace (id, name) VALUES (%s, 'W') ON CONFLICT DO NOTHING", (w_id,))
+        conn.commit()
     m_critical = meetings.create_meeting("Critical Meeting", workspace_id=w_id, importance="critical")
     assert m_critical.importance == "critical"
 
