@@ -1,7 +1,7 @@
 """composite_tenant_foreign_keys — unbypassable tenant isolation at database schema level (Issue #41)
 
-Revision ID: 0019_composite_tenant_foreign_keys
-Revises: 0018_principal_identity_multi_tenant
+Revision ID: 0019_composite_tenant_fks
+Revises: 0018_identity_multi_tenant
 Create Date: 2026-08-10 03:58:00.000000
 
 """
@@ -9,8 +9,8 @@ Create Date: 2026-08-10 03:58:00.000000
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "0019_composite_tenant_foreign_keys"
-down_revision = "0018_principal_identity_multi_tenant"
+revision = "0019_composite_tenant_fks"
+down_revision = "0018_identity_multi_tenant"
 branch_labels = None
 depends_on = None
 
@@ -18,15 +18,34 @@ depends_on = None
 def upgrade() -> None:
     op.execute(
         """
-        -- Step 1: Add UNIQUE (id, workspace_id) constraints on parent tables
-        ALTER TABLE document ADD CONSTRAINT document_id_workspace_uq UNIQUE (id, workspace_id);
-        ALTER TABLE chunk ADD CONSTRAINT chunk_id_workspace_uq UNIQUE (id, workspace_id);
-        ALTER TABLE meeting ADD CONSTRAINT meeting_id_workspace_uq UNIQUE (id, workspace_id);
-        ALTER TABLE decision ADD CONSTRAINT decision_id_workspace_uq UNIQUE (id, workspace_id);
-        ALTER TABLE resolution ADD CONSTRAINT resolution_id_workspace_uq UNIQUE (id, workspace_id);
-        ALTER TABLE commitment ADD CONSTRAINT commitment_id_workspace_uq UNIQUE (id, workspace_id);
-        ALTER TABLE board_member ADD CONSTRAINT board_member_id_workspace_uq UNIQUE (id, workspace_id);
-        ALTER TABLE board_pack ADD CONSTRAINT board_pack_id_workspace_uq UNIQUE (id, workspace_id);
+        -- Step 1: Add UNIQUE (id, workspace_id) constraints on parent tables (if not already existing)
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'document_id_workspace_uq') THEN
+                ALTER TABLE document ADD CONSTRAINT document_id_workspace_uq UNIQUE (id, workspace_id);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chunk_id_workspace_uq') THEN
+                ALTER TABLE chunk ADD CONSTRAINT chunk_id_workspace_uq UNIQUE (id, workspace_id);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'meeting_id_workspace_uq') THEN
+                ALTER TABLE meeting ADD CONSTRAINT meeting_id_workspace_uq UNIQUE (id, workspace_id);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'decision_id_workspace_uq') THEN
+                ALTER TABLE decision ADD CONSTRAINT decision_id_workspace_uq UNIQUE (id, workspace_id);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'resolution_id_workspace_uq') THEN
+                ALTER TABLE resolution ADD CONSTRAINT resolution_id_workspace_uq UNIQUE (id, workspace_id);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'commitment_id_workspace_uq') THEN
+                ALTER TABLE commitment ADD CONSTRAINT commitment_id_workspace_uq UNIQUE (id, workspace_id);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'board_member_id_workspace_uq') THEN
+                ALTER TABLE board_member ADD CONSTRAINT board_member_id_workspace_uq UNIQUE (id, workspace_id);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'board_pack_id_workspace_uq') THEN
+                ALTER TABLE board_pack ADD CONSTRAINT board_pack_id_workspace_uq UNIQUE (id, workspace_id);
+            END IF;
+        END $$;
 
         -- Step 2: Add composite foreign keys (parent_id, workspace_id)
         ALTER TABLE chunk

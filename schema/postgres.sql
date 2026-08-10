@@ -59,8 +59,7 @@ CREATE TABLE document (
     authored_by  UUID REFERENCES principal(id),
     authored_at  TIMESTAMPTZ,       -- when the doc was written, not when ingested
     ingested_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    metadata     JSONB NOT NULL DEFAULT '{}'::jsonb,
-    CONSTRAINT document_id_workspace_uq UNIQUE (id, workspace_id)
+    metadata     JSONB NOT NULL DEFAULT '{}'::jsonb
 );
 CREATE INDEX ON document (doc_type);
 CREATE INDEX ON document (sensitivity);

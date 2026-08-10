@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  backend-ci:
+    name: Backend CI (Python 3.12 + Postgres & Neo4j)
+    runs-on: ubuntu-latest
+
+    env:
+      CALLOSUM_POSTGRES_DSN: postgresql://callosum:callosum@localhost:5432/callosum
+      CALLOSUM_POSTGRES_APP_DSN: postgresql://callosum_app:callosum_app@localhost:5432/callosum
+      CALLOSUM_NEO4J_URI: bolt://localhost:7687
+      CALLOSUM_NEO4J_USER: neo4j
+      CALLOSUM_NEO4J_PASSWORD: callosum123
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: callosum
+          POSTGRES_PASSWORD: callosum
+          POSTGRES_DB: callosum
+        ports:
+          - 5432:5432
+          - 5433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      neo4j:
+        image: neo4j:5-community
+        env:
+          NEO4J_AUTH: neo4j/callosum123
+        ports:
+          - 7687:7687
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Initialize Base Schema, Migrations & Constraints
+        run: |
+          PGPASSWORD=callosum psql -h localhost -U callosum -d callosum -f schema/postgres.sql
+          alembic upgrade head
+          callosum init
+
+      - name: Run Pytest Suite
+        run: |
+          pytest -m "not llm" -q
+
+  frontend-ci:
+    name: Frontend CI (Next.js & Jest)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Run Jest Test Suite
+        working-directory: ./frontend
+        run: npm test
+        env:
+          CI: true
+
+      - name: Clean & Build Next.js Bundle
+        working-directory: ./frontend
+        run: |
+          rm -rf .next
+          npm run build
+        env:
+          CI: true

@@ -35,13 +35,19 @@ def test_notification_dispatch_flow():
     import psycopg
     with psycopg.connect(commitments.store.settings().postgres_dsn, row_factory=commitments.store.dict_row) as conn:
         conn.execute("INSERT INTO workspace (id, name) VALUES (%s, 'Test W')", (w_id,))
-        conn.execute("INSERT INTO board_member (id, workspace_id, name, email, role) VALUES (%s, %s, 'Director', 'dir@test.com', 'director')", (member_id, w_id))
+        conn.execute("INSERT INTO board_member (id, workspace_id, full_name, contact_email, role) VALUES (%s, %s, 'Director', 'dir@test.com', 'director')", (member_id, w_id))
         conn.execute("INSERT INTO meeting (id, workspace_id, title, scheduled_start) VALUES (%s, %s, 'Meeting', now())", (m_id, w_id))
         conn.execute("INSERT INTO decision (id, workspace_id, meeting_id, title) VALUES (%s, %s, %s, 'Decision')", (d_id, w_id, m_id))
+        conn.commit()
 
     # Create a commitment
-    c = commitments.create_commitment("Decision title", owner_board_member_id=member_id, decision_id=d_id, workspace_id=w_id)
-    assert c.delivery_status == commitments.PENDING
+    c = commitments.create_commitment(d_id, "Decision title", owner_board_member_id=member_id, workspace_id=w_id)
+    assert c.delivery_status == commitments.NOT_DISPATCHED
+
+    # Queue commitment for notification dispatch
+    with psycopg.connect(commitments.store.settings().postgres_dsn) as conn:
+        conn.execute("UPDATE commitment SET delivery_status = 'pending' WHERE id = %s", (c.id,))
+        conn.commit()
 
     # Dispatch pending notifications
     res = notifications.dispatch_pending_notifications(workspace_id=w_id)
