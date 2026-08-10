@@ -89,16 +89,18 @@ def dispatch_pending_notifications(
                     workspace_id=workspace_id,
                     external_system=ext_system,
                     external_task_id=ext_task_id,
+                    conn=conn,
                 )
                 audit.record_audit_event(
                     conn,
                     aggregate_type="commitment",
                     aggregate_id=uuid.UUID(c_id),
-                    action="notification_delivered",
+                    action="status_changed",
                     payload={
                         "external_system": ext_system,
                         "external_task_id": ext_task_id,
                         "attempt": attempts + 1,
+                        "detail": "notification_delivered",
                     },
                     workspace_id=workspace_id,
                 )
@@ -111,6 +113,7 @@ def dispatch_pending_notifications(
                         commitments.FAILED,
                         expected_version=version,
                         workspace_id=workspace_id,
+                        conn=conn,
                     )
                 except Exception:
                     pass

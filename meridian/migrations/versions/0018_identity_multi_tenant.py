@@ -1,6 +1,6 @@
 """principal_identity_multi_tenant — scope OIDC unique constraint to allow multi-workspace provisioning (Meridian P3, H-13)
 
-Revision ID: 0018_principal_identity_multi_tenant
+Revision ID: 0018_identity_multi_tenant
 Revises: 0017_principal_identity
 Create Date: 2026-08-10 02:20:00.000000
 
@@ -9,7 +9,7 @@ Create Date: 2026-08-10 02:20:00.000000
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "0018_principal_identity_multi_tenant"
+revision = "0018_identity_multi_tenant"
 down_revision = "0017_principal_identity"
 branch_labels = None
 depends_on = None

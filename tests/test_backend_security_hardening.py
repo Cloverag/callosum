@@ -139,7 +139,7 @@ def test_composite_tenant_foreign_key_constraint():
         with pytest.raises(psycopg.errors.ForeignKeyViolation):
             conn.execute(
                 """
-                INSERT INTO agenda_item (id, meeting_id, title, ordinal, workspace_id)
+                INSERT INTO agenda_item (id, meeting_id, title, position, workspace_id)
                 VALUES (%s, %s, 'Cross-Tenant Item', 1, %s)
                 """,
                 (item_id, meeting_id, w2),
