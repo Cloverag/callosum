@@ -11,7 +11,7 @@ def test_meeting_default_importance():
     """Verify meeting defaults to 'routine' importance."""
     w_id = str(uuid.uuid4())
     import psycopg
-    from meridian import store
+    from callosum import store
     with psycopg.connect(store.settings().postgres_dsn, row_factory=store.dict_row) as conn:
         conn.execute("INSERT INTO workspace (id, name) VALUES (%s, 'W') ON CONFLICT DO NOTHING", (w_id,))
         conn.commit()
@@ -23,7 +23,7 @@ def test_meeting_custom_importance():
     """Verify custom importance levels ('critical', 'high', 'low')."""
     w_id = str(uuid.uuid4())
     import psycopg
-    from meridian import store
+    from callosum import store
     with psycopg.connect(store.settings().postgres_dsn, row_factory=store.dict_row) as conn:
         conn.execute("INSERT INTO workspace (id, name) VALUES (%s, 'W') ON CONFLICT DO NOTHING", (w_id,))
         conn.commit()
