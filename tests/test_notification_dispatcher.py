@@ -46,6 +46,7 @@ def test_notification_dispatch_flow():
     # Queue commitment for notification dispatch
     with psycopg.connect(commitments.store.settings().postgres_dsn) as conn:
         conn.execute("UPDATE commitment SET delivery_status = 'pending' WHERE id = %s", (c.id,))
+        conn.commit()
 
     # Dispatch pending notifications
     res = notifications.dispatch_pending_notifications(workspace_id=w_id)
