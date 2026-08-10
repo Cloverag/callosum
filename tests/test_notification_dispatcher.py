@@ -40,7 +40,7 @@ def test_notification_dispatch_flow():
         conn.execute("INSERT INTO decision (id, workspace_id, meeting_id, title) VALUES (%s, %s, %s, 'Decision')", (d_id, w_id, m_id))
 
     # Create a commitment
-    c = commitments.create_commitment("Decision title", owner_board_member_id=member_id, decision_id=d_id, workspace_id=w_id)
+    c = commitments.create_commitment(d_id, "Decision title", owner_board_member_id=member_id, workspace_id=w_id)
     assert c.delivery_status == commitments.PENDING
 
     # Dispatch pending notifications
