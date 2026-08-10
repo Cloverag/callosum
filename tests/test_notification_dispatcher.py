@@ -41,7 +41,11 @@ def test_notification_dispatch_flow():
 
     # Create a commitment
     c = commitments.create_commitment(d_id, "Decision title", owner_board_member_id=member_id, workspace_id=w_id)
-    assert c.delivery_status == commitments.PENDING
+    assert c.delivery_status == commitments.NOT_DISPATCHED
+
+    # Queue commitment for notification dispatch
+    with psycopg.connect(commitments.store.settings().postgres_dsn) as conn:
+        conn.execute("UPDATE commitment SET delivery_status = 'pending' WHERE id = %s", (c.id,))
 
     # Dispatch pending notifications
     res = notifications.dispatch_pending_notifications(workspace_id=w_id)
