@@ -89,6 +89,7 @@ def dispatch_pending_notifications(
                     workspace_id=workspace_id,
                     external_system=ext_system,
                     external_task_id=ext_task_id,
+                    conn=conn,
                 )
                 audit.record_audit_event(
                     conn,
@@ -111,6 +112,7 @@ def dispatch_pending_notifications(
                         commitments.FAILED,
                         expected_version=version,
                         workspace_id=workspace_id,
+                        conn=conn,
                     )
                 except Exception:
                     pass

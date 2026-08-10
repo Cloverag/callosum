@@ -554,6 +554,7 @@ def record_delivery_attempt(
     workspace_id: str = DEFAULT_WORKSPACE_ID,
     external_system: str | None = None,
     external_task_id: str | None = None,
+    conn: store.psycopg.Connection | None = None,
 ) -> Commitment:
     """Records the outcome of an external dispatch. Retry STATE only — P2 dispatches nothing.
 
@@ -570,8 +571,8 @@ def record_delivery_attempt(
 
     c_uuid = uuid.UUID(str(commitment_id))
 
-    with store.pg(workspace_id) as conn:
-        current = conn.execute(
+    def _do_record(active_conn):
+        current = active_conn.execute(
             """
             SELECT version, external_system, external_task_id
               FROM commitment WHERE id = %s FOR UPDATE
@@ -596,7 +597,7 @@ def record_delivery_attempt(
                 "external_task_id; a delivery that cannot be reconciled is not a delivery"
             )
 
-        row = conn.execute(
+        row = active_conn.execute(
             """
             UPDATE commitment
                SET delivery_status = %s,
@@ -614,6 +615,11 @@ def record_delivery_attempt(
         if row is None:
             raise StaleCommitmentError(f"commitment {commitment_id}: concurrent modification")
 
-        updates = _fetch_updates(conn, [c_uuid]).get(str(c_uuid), [])
+        updates = _fetch_updates(active_conn, [c_uuid]).get(str(c_uuid), [])
+        return _row_to_commitment(row, updates=updates)
 
-    return _row_to_commitment(row, updates=updates)
+    if conn is not None:
+        return _do_record(conn)
+    else:
+        with store.pg(workspace_id) as active_conn:
+            return _do_record(active_conn)
