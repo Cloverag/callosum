@@ -95,11 +95,12 @@ def dispatch_pending_notifications(
                     conn,
                     aggregate_type="commitment",
                     aggregate_id=uuid.UUID(c_id),
-                    action="notification_delivered",
+                    action="status_changed",
                     payload={
                         "external_system": ext_system,
                         "external_task_id": ext_task_id,
                         "attempt": attempts + 1,
+                        "detail": "notification_delivered",
                     },
                     workspace_id=workspace_id,
                 )
