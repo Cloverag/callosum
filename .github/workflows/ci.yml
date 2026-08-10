@@ -11,6 +11,13 @@ jobs:
     name: Backend CI (Python 3.12 + Postgres & Neo4j)
     runs-on: ubuntu-latest
 
+    env:
+      CALLOSUM_POSTGRES_DSN: postgresql://callosum:callosum@localhost:5432/callosum
+      CALLOSUM_POSTGRES_APP_DSN: postgresql://callosum_app:callosum_app@localhost:5432/callosum
+      CALLOSUM_NEO4J_URI: bolt://localhost:7687
+      CALLOSUM_NEO4J_USER: neo4j
+      CALLOSUM_NEO4J_PASSWORD: callosum123
+
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -20,6 +27,7 @@ jobs:
           POSTGRES_DB: callosum
         ports:
           - 5432:5432
+          - 5433:5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -49,22 +57,10 @@ jobs:
       - name: Initialize Database Schema & Neo4j Constraints
         run: |
           callosum init
-        env:
-          CALLOSUM_POSTGRES_DSN: postgresql://callosum:callosum@localhost:5432/callosum
-          CALLOSUM_POSTGRES_APP_DSN: postgresql://callosum_app:callosum_app@localhost:5432/callosum
-          CALLOSUM_NEO4J_URI: bolt://localhost:7687
-          CALLOSUM_NEO4J_USER: neo4j
-          CALLOSUM_NEO4J_PASSWORD: callosum123
 
       - name: Run Pytest Suite
         run: |
           pytest -m "not llm" -q
-        env:
-          CALLOSUM_POSTGRES_DSN: postgresql://callosum:callosum@localhost:5432/callosum
-          CALLOSUM_POSTGRES_APP_DSN: postgresql://callosum_app:callosum_app@localhost:5432/callosum
-          CALLOSUM_NEO4J_URI: bolt://localhost:7687
-          CALLOSUM_NEO4J_USER: neo4j
-          CALLOSUM_NEO4J_PASSWORD: callosum123
 
   frontend-ci:
     name: Frontend CI (Next.js & Jest)
