@@ -54,8 +54,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .
 
-      - name: Initialize Database Schema & Neo4j Constraints
+      - name: Initialize Base Schema, Migrations & Constraints
         run: |
+          PGPASSWORD=callosum psql -h localhost -U callosum -d callosum -f schema/postgres.sql
+          alembic upgrade head
           callosum init
 
       - name: Run Pytest Suite
