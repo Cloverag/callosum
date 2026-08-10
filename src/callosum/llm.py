@@ -22,7 +22,7 @@ from callosum.config import Provider, settings
 
 T = TypeVar("T", bound=BaseModel)
 
-OLLAMA_TIMEOUT = 300.0  # cloud models think for a while on a dense transcript chunk
+OLLAMA_TIMEOUT = httpx.Timeout(300.0, connect=5.0)  # cloud models think for a while on dense chunks; 5s connect timeout prevents CI hangs when Ollama is uninstalled
 
 
 # ---------------------------------------------------------------------------
