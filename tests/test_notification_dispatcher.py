@@ -38,6 +38,7 @@ def test_notification_dispatch_flow():
         conn.execute("INSERT INTO board_member (id, workspace_id, full_name, contact_email, role) VALUES (%s, %s, 'Director', 'dir@test.com', 'director')", (member_id, w_id))
         conn.execute("INSERT INTO meeting (id, workspace_id, title, scheduled_start) VALUES (%s, %s, 'Meeting', now())", (m_id, w_id))
         conn.execute("INSERT INTO decision (id, workspace_id, meeting_id, title) VALUES (%s, %s, %s, 'Decision')", (d_id, w_id, m_id))
+        conn.commit()
 
     # Create a commitment
     c = commitments.create_commitment(d_id, "Decision title", owner_board_member_id=member_id, workspace_id=w_id)
