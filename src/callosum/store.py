@@ -493,9 +493,12 @@ def approve(conn: psycopg.Connection, driver: Driver, change_id: uuid.UUID,
         (reviewer_id, change_id),
     )
 
-    # Lock existing version rows for this node_id to eliminate MAX(version)+1 race conditions
-    conn.execute("SELECT version FROM node_version WHERE node_id = %s FOR UPDATE", (change_id,))
-
+    # There is deliberately no `SELECT ... FOR UPDATE` on node_version here. One was added
+    # and removed: `FOR UPDATE` locks the rows it selects, so on the first insert for a
+    # node_id it selects nothing and locks nothing — the MAX(version)+1 race it claimed to
+    # close stayed open. And `node_id` is the change_id, which is approved exactly once, so
+    # there is never a second row to race with. If node_version ever gains real revisions,
+    # the fix is a UNIQUE (node_id, version) constraint, not a lock over an empty set.
     conn.execute(
         """
         INSERT INTO node_version (workspace_id, node_id, node_label, version, properties, change_reason, created_by)
