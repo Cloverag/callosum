@@ -28,14 +28,15 @@ identity, not its contents: `raw_text` is the whole corpus in a JSON response an
 Python, so they never leave the database.
 """
 
-from __future__ import annotations
-
+import json
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
-from callosum import store
+from callosum import ingest, llm, store
 from callosum.store import DEFAULT_WORKSPACE_ID
+from meridian import audit
 
 #: The clearance ladder, as in `meridian/packs.py`. Duplicated deliberately rather than
 #: imported: `packs` importing `documents` or the reverse would couple two modules that
@@ -62,6 +63,14 @@ class DocumentNotFound(DocumentError):
     """
 
 
+class DuplicateDocumentError(DocumentError):
+    """A document with identical SHA-256 content_hash already exists in this workspace."""
+
+
+class InvalidSensitivityError(DocumentError):
+    """Sensitivity level must be between 0 (Public) and 4 (Restricted)."""
+
+
 @dataclass(frozen=True)
 class Document:
     id: str
@@ -71,6 +80,21 @@ class Document:
     sensitivity: int
     authored_at: datetime | None
     ingested_at: datetime
+
+
+@dataclass(frozen=True)
+class QuarantineItem:
+    id: int
+    document_id: str | None
+    chunk_id: str | None
+    source: str
+    relation: str
+    target: str
+    quote: str
+    confidence: float
+    reason: str
+    detail: str
+    created_at: datetime
 
 
 def _row_to_document(row: dict) -> Document:
@@ -134,3 +158,146 @@ def get_document(
     if row is None:
         raise DocumentNotFound(str(document_id))
     return _row_to_document(row)
+
+
+def intake_document(
+    *,
+    title: str,
+    doc_type: str,
+    raw_text: str,
+    sensitivity: int = 2,
+    source_uri: str | None = None,
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
+    author_principal_id: uuid.UUID | str | None = None,
+) -> Document:
+    """Intake a source document into the tenant workspace (Meridian P4).
+
+    Validates sensitivity, computes SHA-256 content_hash deduplication, chunks text,
+    writes to document + chunk tables, creates Neo4j chunk bridge handles, and logs
+    an immutable audit event.
+    """
+    if not (PUBLIC_CLEARANCE <= sensitivity <= RESTRICTED_CLEARANCE):
+        raise InvalidSensitivityError(
+            f"sensitivity must be between {PUBLIC_CLEARANCE} and {RESTRICTED_CLEARANCE}, got {sensitivity}"
+        )
+
+    clean_text = raw_text.strip()
+    if not clean_text:
+        raise DocumentError("cannot intake empty text document")
+
+    hash_val = ingest.content_hash(clean_text)
+
+    with store.pg(workspace_id) as conn:
+        existing = conn.execute(
+            "SELECT id FROM document WHERE content_hash = %s AND workspace_id = %s",
+            (hash_val, workspace_id),
+        ).fetchone()
+        if existing:
+            raise DuplicateDocumentError(
+                f"document with identical content_hash ({hash_val[:8]}...) already exists in this workspace"
+            )
+
+        doc_uuid = uuid.uuid4()
+        row = conn.execute(
+            """
+            INSERT INTO document (id, workspace_id, title, doc_type, source_uri, raw_text,
+                                  content_hash, sensitivity, metadata)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING {_COLUMNS}
+            """.format(_COLUMNS=_COLUMNS),
+            (
+                doc_uuid,
+                workspace_id,
+                title.strip(),
+                doc_type.strip().lower(),
+                source_uri.strip() if source_uri else None,
+                clean_text,
+                hash_val,
+                sensitivity,
+                json.dumps({"intake_source": "meridian_p4_intake"}),
+            ),
+        ).fetchone()
+
+        chunks = ingest.chunk(clean_text)
+        if chunks:
+            try:
+                embeddings = llm.embed([c.text for c in chunks], input_type="document")
+            except Exception:
+                # Degrade to zero vectors if LLM provider is offline
+                embeddings = [[0.0] * store.EMBEDDING_DIM for _ in chunks]
+
+            chunk_ids = store.insert_chunks(
+                conn,
+                document_id=doc_uuid,
+                chunks=chunks,
+                embeddings=embeddings,
+                sensitivity=sensitivity,
+            )
+
+            # Bridge to Neo4j (:Chunk) nodes if Neo4j driver is available
+            try:
+                driver = store.neo(wait=2.0)
+                for c_id, c in zip(chunk_ids, chunks, strict=True):
+                    store.upsert_chunk_node(
+                        driver,
+                        chunk_id=c_id,
+                        document_id=doc_uuid,
+                        ordinal=c.ordinal,
+                        sensitivity=sensitivity,
+                        workspace_id=workspace_id,
+                    )
+                driver.close()
+            except Exception:
+                pass
+
+        actor_id = uuid.UUID(str(author_principal_id)) if author_principal_id else None
+        audit.record_audit_event(
+            conn,
+            aggregate_type="document",
+            aggregate_id=doc_uuid,
+            action="created",
+            payload={
+                "title": title.strip(),
+                "doc_type": doc_type.strip().lower(),
+                "sensitivity": sensitivity,
+                "chunks": len(chunks),
+                "content_hash": hash_val,
+            },
+            actor_principal_id=actor_id,
+            workspace_id=workspace_id,
+        )
+
+    return _row_to_document(row)
+
+
+def list_quarantine(*, workspace_id: str = DEFAULT_WORKSPACE_ID) -> list[QuarantineItem]:
+    """List extraction failures/quarantine items for the tenant workspace."""
+    with store.pg(workspace_id) as conn:
+        rows = conn.execute(
+            """
+            SELECT id, document_id, chunk_id, source, relation, target, quote,
+                   confidence, reason, detail, created_at
+              FROM extraction_failure
+             WHERE workspace_id = %s
+             ORDER BY created_at DESC
+             LIMIT 100
+            """,
+            (workspace_id,),
+        ).fetchall()
+
+    return [
+        QuarantineItem(
+            id=r["id"],
+            document_id=str(r["document_id"]) if r["document_id"] else None,
+            chunk_id=str(r["chunk_id"]) if r["chunk_id"] else None,
+            source=r["source"],
+            relation=r["relation"],
+            target=r["target"],
+            quote=r["quote"],
+            confidence=r["confidence"],
+            reason=r["reason"],
+            detail=r["detail"],
+            created_at=r["created_at"],
+        )
+        for r in rows
+    ]

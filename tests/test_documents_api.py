@@ -254,3 +254,59 @@ def test_the_clearance_argument_has_no_default(restore_client):
     for fn in (documents.list_documents, documents.get_document):
         parameter = inspect.signature(fn).parameters["clearance"]
         assert parameter.default is inspect.Parameter.empty, f"{fn.__name__} has a default clearance"
+
+
+class TestIntake:
+    """Source intake, deduplication, and quarantine queue tests (Meridian P4)."""
+
+    def test_intake_document_success(self, restore_client):
+        client, pid, ws = _signed_in("intake_user", CONFIDENTIAL)
+        try:
+            payload = {
+                "title": "Board Meeting 14 Minutes Intake",
+                "doc_type": "transcript",
+                "raw_text": "The board resolved to approve the Q3 expansion budget.",
+                "sensitivity": 2,
+                "source_uri": "transcript_14.txt",
+            }
+            res = client.post("/api/documents/intake", json=payload)
+            assert res.status_code == 201
+            data = res.json()
+            assert data["title"] == "Board Meeting 14 Minutes Intake"
+            assert data["doc_type"] == "transcript"
+            assert data["sensitivity"] == 2
+
+            # Verify it shows up in list_documents
+            docs = client.get("/api/documents").json()
+            assert any(d["id"] == data["id"] for d in docs)
+        finally:
+            _cleanup([pid], [ws])
+
+    def test_intake_duplicate_hash_409(self, restore_client):
+        client, pid, ws = _signed_in("dedupe_user", CONFIDENTIAL)
+        try:
+            payload = {
+                "title": "Unique Document 1",
+                "doc_type": "memo",
+                "raw_text": "Identical document content for SHA-256 deduplication test.",
+                "sensitivity": 1,
+            }
+            first = client.post("/api/documents/intake", json=payload)
+            assert first.status_code == 201
+
+            # Second intake with same raw_text in same workspace must yield 409
+            dup = client.post("/api/documents/intake", json=payload)
+            assert dup.status_code == 409
+            assert "already exists in this workspace" in dup.json()["detail"]
+        finally:
+            _cleanup([pid], [ws])
+
+    def test_list_quarantine(self, restore_client):
+        client, pid, ws = _signed_in("quarantine_user", CONFIDENTIAL)
+        try:
+            res = client.get("/api/documents/quarantine")
+            assert res.status_code == 200
+            assert isinstance(res.json(), list)
+        finally:
+            _cleanup([pid], [ws])
+
