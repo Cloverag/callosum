@@ -1,6 +1,6 @@
-"""fix_composite_fk_cascade_semantics — restore intended ON DELETE CASCADE/SET NULL semantics on composite tenant FKs (Issue #122)
+"""fix_composite_fk_cascades — restore intended ON DELETE CASCADE/SET NULL semantics on composite tenant FKs (Issue #122)
 
-Revision ID: 0021_fix_composite_fk_cascade_semantics
+Revision ID: 0021_fix_composite_fk_cascades
 Revises: 0020_meeting_importance
 Create Date: 2026-08-13 05:00:00.000000
 
@@ -9,7 +9,7 @@ Create Date: 2026-08-13 05:00:00.000000
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "0021_fix_composite_fk_cascade_semantics"
+revision = "0021_fix_composite_fk_cascades"
 down_revision = "0020_meeting_importance"
 branch_labels = None
 depends_on = None
