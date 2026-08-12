@@ -60,9 +60,11 @@ jobs:
           alembic upgrade head
           callosum init
 
-      - name: Run Pytest Suite
+      - name: Run Pytest Suite (Gated Integration Suite)
+        env:
+          CALLOSUM_RUN_INTEGRATION: "1"
         run: |
-          pytest -m "not llm" -q
+          pytest -q
 
   frontend-ci:
     name: Frontend CI (Next.js & Jest)

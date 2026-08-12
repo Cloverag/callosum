@@ -71,6 +71,7 @@ def _cleanup(*workspace_ids: str) -> None:
         _admin("DELETE FROM decision WHERE workspace_id = %s", (ws,))
         _admin("DELETE FROM board_member WHERE workspace_id = %s", (ws,))
         _admin("DELETE FROM meeting WHERE workspace_id = %s", (ws,))
+        _admin("DELETE FROM membership WHERE workspace_id = %s", (ws,))
         _admin("DELETE FROM workspace WHERE id = %s", (ws,))
 
 
