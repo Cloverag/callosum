@@ -25,7 +25,6 @@ from meridian.api import decisions as decisions_api
 from meridian.api import documents as documents_api
 from meridian.api import meetings as meetings_api
 from meridian.api import minutes as minutes_api
-from meridian.api import notifications as notifications_api
 from meridian.api import packs as packs_api
 from meridian.api import prep as prep_api
 from meridian.api import resolutions as resolutions_api
@@ -89,7 +88,6 @@ app.include_router(commitments_api.router)
 app.include_router(documents_api.router)
 app.include_router(conflicts_api.router)
 app.include_router(prep_api.router)
-app.include_router(notifications_api.router)
 
 # Domain exceptions map to HTTP centrally (P3 §5.3). Registered once here rather than
 # caught in each route, so a new endpoint inherits the right statuses — a 409 for a
