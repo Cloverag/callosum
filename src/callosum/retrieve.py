@@ -281,10 +281,10 @@ def vector_search(
     """
     try:
         vector = embed([query], input_type="query")[0]
-    except (RuntimeError, Exception) as exc:
-        # A persistent embedding failure (bge-m3 NaN, or unavailable local LLM service)
-        # must not take down the whole query. Degrade to graph-only retrieval — return
-        # no vector hits — and make it visible rather than silent.
+    except RuntimeError as exc:
+        # A persistent embedding failure (bge-m3 NaN, see llm.embed) must not take down
+        # the whole query. Degrade to graph-only retrieval — return no vector hits — and
+        # make it visible rather than silent. Better a partial answer than a 500.
         import sys
         print(f"[vector_search] embedding failed; returning no vector hits ({exc})",
               file=sys.stderr)
