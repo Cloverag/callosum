@@ -458,7 +458,7 @@ export default function DocumentsPage() {
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-2">
-                <Button type="button" variant="outline" onClick={() => setShowUploadModal(false)} className="rounded-xl">
+                <Button type="button" variant="secondary" onClick={() => setShowUploadModal(false)} className="rounded-xl">
                   Cancel
                 </Button>
                 <Button type="submit" disabled={uploading} className="rounded-xl bg-blue-600 hover:bg-blue-700 text-white">
@@ -517,7 +517,7 @@ export default function DocumentsPage() {
             </div>
 
             <div className="flex justify-end pt-2">
-              <Button onClick={() => setShowQuarantineModal(false)} variant="outline" className="rounded-xl">
+              <Button onClick={() => setShowQuarantineModal(false)} variant="secondary" className="rounded-xl">
                 Close Queue
               </Button>
             </div>
