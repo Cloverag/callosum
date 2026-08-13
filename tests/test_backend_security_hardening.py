@@ -67,32 +67,19 @@ def test_query_log_workspace_scoping():
     assert conn.last_params[0] == "11111111-1111-1111-1111-111111111111"
 
 
-def test_acl_grant_query_structure():
-    """H-1: vector_search and fetch_chunks SQL queries must check acl_grant."""
-    principal = retrieve.Principal(
-        id=uuid.uuid4(),
-        name="Advisor",
-        role="advisor",
-        clearance=1,  # Low clearance
-    )
-
-    class FakeConn:
-        def __init__(self):
-            self.queries = []
-
-        def execute(self, query, params):
-            self.queries.append((query, params))
-            return self
-
-        def fetchall(self):
-            return []
-
-        def fetchone(self):
-            return {"n": 0}
-
-    conn = FakeConn()
-    retrieve.fetch_chunks(conn, [uuid.uuid4()], principal)
-    assert any("acl_grant" in q[0] for q in conn.queries)
+# H-1 (`acl_grant` in the retrieval predicates) is deliberately not tested here, because
+# the predicate it tested has been reverted. `acl_grant` has no writer anywhere in the
+# codebase — no seed, no `callosum init`, no domain module, no endpoint — so the `EXISTS`
+# subquery was always false and the widening never took effect. The mechanism gate ran
+# byte-identical on 2026-08-13 for exactly that reason, which is evidence the change was
+# inert, not evidence it was safe.
+#
+# The test that stood here asserted `"acl_grant" in <sql string>` against a fake
+# connection: it proved the source contained a word, not that a grant widens access or
+# that its absence denies. If grant-based access becomes a real feature, rules.md §1
+# requires it arrive as a tenancy predicate that *removes* rows, with a failing test
+# first — one that inserts a grant and proves the widening, and one that proves the
+# fail-closed default without it.
 
 
 def test_session_absolute_expiration():

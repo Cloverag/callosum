@@ -281,10 +281,10 @@ def vector_search(
     """
     try:
         vector = embed([query], input_type="query")[0]
-    except (RuntimeError, Exception) as exc:
-        # A persistent embedding failure (bge-m3 NaN, or unavailable local LLM service)
-        # must not take down the whole query. Degrade to graph-only retrieval — return
-        # no vector hits — and make it visible rather than silent.
+    except RuntimeError as exc:
+        # A persistent embedding failure (bge-m3 NaN, see llm.embed) must not take down
+        # the whole query. Degrade to graph-only retrieval — return no vector hits — and
+        # make it visible rather than silent. Better a partial answer than a 500.
         import sys
         print(f"[vector_search] embedding failed; returning no vector hits ({exc})",
               file=sys.stderr)
@@ -295,29 +295,23 @@ def vector_search(
         SELECT c.id, c.text, d.title, 1 - (c.embedding <=> %s::vector) AS score
         FROM chunk c
         JOIN document d ON d.id = c.document_id
-        WHERE (c.sensitivity <= %s OR EXISTS (
-            SELECT 1 FROM acl_grant ag
-            WHERE ag.principal_id = %s AND (ag.object_id = c.document_id OR ag.object_id = c.id)
-        ))
+        WHERE c.sensitivity <= %s
         ORDER BY c.embedding <=> %s::vector
         LIMIT %s
         """,
-        (vector, principal.clearance, principal.id, vector, k),
+        (vector, principal.clearance, vector, k),
     ).fetchall()
 
     blocked = conn.execute(
         """
         SELECT count(*) AS n FROM (
             SELECT c.id FROM chunk c
-            WHERE NOT (c.sensitivity <= %s OR EXISTS (
-                SELECT 1 FROM acl_grant ag
-                WHERE ag.principal_id = %s AND (ag.object_id = c.document_id OR ag.object_id = c.id)
-            ))
+            WHERE c.sensitivity > %s
             ORDER BY c.embedding <=> %s::vector
             LIMIT %s
         ) t
         """,
-        (principal.clearance, principal.id, vector, k),
+        (principal.clearance, vector, k),
     ).fetchone()
 
     evidence = [
@@ -466,12 +460,9 @@ def fetch_chunks(
         SELECT c.id, c.text, d.title
         FROM chunk c
         JOIN document d ON d.id = c.document_id
-        WHERE c.id = ANY(%s) AND (c.sensitivity <= %s OR EXISTS (
-            SELECT 1 FROM acl_grant ag
-            WHERE ag.principal_id = %s AND (ag.object_id = c.document_id OR ag.object_id = c.id)
-        ))
+        WHERE c.id = ANY(%s) AND c.sensitivity <= %s
         """,
-        (list(set(chunk_ids)), principal.clearance, principal.id),
+        (list(set(chunk_ids)), principal.clearance),
     ).fetchall()
 
     return [

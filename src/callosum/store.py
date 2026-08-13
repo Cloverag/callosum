@@ -402,14 +402,20 @@ def upsert_chunk_node(driver: Driver, *, chunk_id: uuid.UUID, document_id: uuid.
         )
 
 
-def apply_entity(driver: Driver, payload: dict[str, Any], workspace_id: str = DEFAULT_WORKSPACE_ID) -> None:
+def apply_entity(driver: Driver, payload: dict[str, Any], workspace_id: str | None = None) -> None:
     """Commit an approved entity, and wire it to the chunk that mentions it.
 
-    workspace_id (from the payload, default Default Workspace) is part of the entity's
-    identity — this is what partitions the graph per tenant (Meridian P1, Brick 3). The
-    MENTIONS edge is attached only to a chunk in the same workspace.
+    workspace_id is part of the entity's identity — this is what partitions the graph
+    per tenant (Meridian P1, Brick 3). The MENTIONS edge is attached only to a chunk in
+    the same workspace.
+
+    An explicit `workspace_id` wins; `None` means "not supplied" and falls back to the
+    payload. The default must NOT be `DEFAULT_WORKSPACE_ID`: that makes "the caller
+    explicitly named the Default Workspace" indistinguishable from "the caller said
+    nothing", and silently hands the decision to extractor-written JSON. A tenancy
+    partition key is the last place to leave that ambiguous.
     """
-    ws_id = workspace_id if workspace_id != DEFAULT_WORKSPACE_ID else payload.get("workspace_id", DEFAULT_WORKSPACE_ID)
+    ws_id = workspace_id if workspace_id is not None else payload.get("workspace_id", DEFAULT_WORKSPACE_ID)
     with driver.session() as session:
         session.run(
             """
@@ -427,13 +433,16 @@ def apply_entity(driver: Driver, payload: dict[str, Any], workspace_id: str = DE
         )
 
 
-def apply_relationship(driver: Driver, payload: dict[str, Any], workspace_id: str = DEFAULT_WORKSPACE_ID) -> None:
+def apply_relationship(driver: Driver, payload: dict[str, Any], workspace_id: str | None = None) -> None:
     """Commit an approved relationship.
 
     The edge type is interpolated into the Cypher string because Neo4j does not
     accept a parameterised relationship type. That is an injection surface, so the
     value is checked against the RelationType enum before it gets here — never
     relax that check, and never let an unvalidated string reach this function.
+
+    `workspace_id` follows the same explicit-wins / `None`-means-unsupplied rule as
+    `apply_entity`; see the note there.
     """
     rel_type = payload["type"]
     from callosum.ontology import RelationType
@@ -441,7 +450,7 @@ def apply_relationship(driver: Driver, payload: dict[str, Any], workspace_id: st
     if rel_type not in RelationType.__members__.values():
         raise ValueError(f"Refusing to write unknown relationship type: {rel_type!r}")
 
-    ws_id = workspace_id if workspace_id != DEFAULT_WORKSPACE_ID else payload.get("workspace_id", DEFAULT_WORKSPACE_ID)
+    ws_id = workspace_id if workspace_id is not None else payload.get("workspace_id", DEFAULT_WORKSPACE_ID)
     with driver.session() as session:
         session.run(
             f"""
@@ -493,9 +502,12 @@ def approve(conn: psycopg.Connection, driver: Driver, change_id: uuid.UUID,
         (reviewer_id, change_id),
     )
 
-    # Lock existing version rows for this node_id to eliminate MAX(version)+1 race conditions
-    conn.execute("SELECT version FROM node_version WHERE node_id = %s FOR UPDATE", (change_id,))
-
+    # There is deliberately no `SELECT ... FOR UPDATE` on node_version here. One was added
+    # and removed: `FOR UPDATE` locks the rows it selects, so on the first insert for a
+    # node_id it selects nothing and locks nothing — the MAX(version)+1 race it claimed to
+    # close stayed open. And `node_id` is the change_id, which is approved exactly once, so
+    # there is never a second row to race with. If node_version ever gains real revisions,
+    # the fix is a UNIQUE (node_id, version) constraint, not a lock over an empty set.
     conn.execute(
         """
         INSERT INTO node_version (workspace_id, node_id, node_label, version, properties, change_reason, created_by)
