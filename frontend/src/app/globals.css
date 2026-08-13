@@ -226,6 +226,7 @@
        the worst stop is checked, never the midpoint. */
     --focal-foreground: #ffffff;
     --focal-ink: #101a28;
+    --focal-sheen: rgba(255, 255, 255, 0.08);
     --focal-action: linear-gradient(135deg, #101a28 0%, #1d4285 100%);
     --focal-memory: linear-gradient(135deg, #101a28 0%, #4a2e8c 100%);
   }
@@ -310,6 +311,8 @@
          focal card reads as a material and not a light source. */
       --focal-foreground: #e3e8f0;
       --focal-ink: #0c1015;
+    --focal-sheen: rgba(227, 232, 240, 0.08);
+      --focal-sheen: rgba(227, 232, 240, 0.08);
       --focal-action: linear-gradient(135deg, #0c1015 0%, #16233a 100%);
       --focal-memory: linear-gradient(135deg, #0c1015 0%, #2b1f4d 100%);
     }
@@ -367,6 +370,7 @@
        focal card reads as a material and not a light source. */
     --focal-foreground: #e3e8f0;
     --focal-ink: #0c1015;
+    --focal-sheen: rgba(227, 232, 240, 0.08);
     --focal-action: linear-gradient(135deg, #0c1015 0%, #16233a 100%);
     --focal-memory: linear-gradient(135deg, #0c1015 0%, #2b1f4d 100%);
   }
@@ -435,14 +439,72 @@
      the ramps stay in the token layer where the contrast gate can read them. */
   .surface-focal-action {
     background-image: var(--focal-action);
-    color: var(--focal-foreground);
-    box-shadow: var(--shadow-raised);
   }
 
   .surface-focal-memory {
     background-image: var(--focal-memory);
+  }
+
+  .surface-focal-action,
+  .surface-focal-memory {
+    position: relative;
+    /* Creates the stacking context the sheen's negative z-index needs, so it
+       paints ABOVE this element's background image but BELOW its content. */
+    isolation: isolate;
     color: var(--focal-foreground);
     box-shadow: var(--shadow-raised);
+    transition:
+      transform var(--duration-state) var(--ease-out-quart),
+      box-shadow var(--duration-state) var(--ease-out-quart);
+  }
+
+  /* Pointer sheen — the ramp catching light, so a focal surface reads as a
+     material rather than a painted rectangle. Deliberately NOT a custom cursor:
+     the native pointer keeps its affordances, and the effect stays inside the one
+     surface instead of becoming a page-wide device.
+
+     The alpha is SOLVED, not chosen. A white sheen lightens the ground under
+     white text, so it spends contrast. At the light ramp's lightest stop the
+     measured floor is: 0.08 -> 7.79:1, 0.10 -> 7.36:1, 0.12 -> 6.94:1, which
+     fails the 7:1 gate. 0.08 is the value with headroom, and
+     palette-contrast.test.ts asserts the composite rather than trusting it. */
+  .surface-focal-action::after,
+  .surface-focal-memory::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity var(--duration-state) var(--ease-out-quart);
+    background: radial-gradient(
+      22rem 22rem at var(--pointer-x, 50%) var(--pointer-y, 50%),
+      var(--focal-sheen),
+      transparent 70%
+    );
+  }
+
+  .surface-focal-action:hover,
+  .surface-focal-memory:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-overlay);
+  }
+
+  .surface-focal-action:hover::after,
+  .surface-focal-memory:hover::after {
+    opacity: 1;
+  }
+
+  /* The global reduced-motion rule collapses transition DURATION, which would
+     leave the lift as an instant 2px jump — worse than no lift. Removed outright
+     instead; the sheen still crossfades, which is the "instant/crossfade"
+     alternative DESIGN.md's motion hierarchy calls for. */
+  @media (prefers-reduced-motion: reduce) {
+    .surface-focal-action:hover,
+    .surface-focal-memory:hover {
+      transform: none;
+    }
   }
 }
 
