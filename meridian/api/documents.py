@@ -39,15 +39,9 @@ def list_quarantine(principal: CurrentPrincipal) -> list[domain.QuarantineItem]:
 @router.get("/{document_id}")
 def get_document(document_id: uuid.UUID, principal: CurrentPrincipal) -> domain.Document:
     """One document."""
-    try:
-        return domain.get_document(
-            str(document_id), workspace_id=principal.workspace_id, clearance=principal.clearance
-        )
-    except domain.DocumentNotFound:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Document {document_id} not found or above clearance",
-        )
+    return domain.get_document(
+        str(document_id), workspace_id=principal.workspace_id, clearance=principal.clearance
+    )
 
 
 @router.post("/intake", status_code=status.HTTP_201_CREATED)
@@ -55,22 +49,15 @@ def intake_document(
     req: IntakeDocumentRequest, principal: CurrentPrincipal
 ) -> domain.Document:
     """Intake a plain text document into the tenant workspace (Meridian P4)."""
-    try:
-        return domain.intake_document(
-            title=req.title,
-            doc_type=req.doc_type,
-            raw_text=req.raw_text,
-            sensitivity=req.sensitivity,
-            source_uri=req.source_uri,
-            workspace_id=principal.workspace_id,
-            author_principal_id=principal.id,
-        )
-    except domain.DuplicateDocumentError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
-    except domain.InvalidSensitivityError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-    except domain.DocumentError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    return domain.intake_document(
+        title=req.title,
+        doc_type=req.doc_type,
+        raw_text=req.raw_text,
+        sensitivity=req.sensitivity,
+        source_uri=req.source_uri,
+        workspace_id=principal.workspace_id,
+        author_principal_id=principal.id,
+    )
 
 
 @router.post("/upload", status_code=status.HTTP_201_CREATED)

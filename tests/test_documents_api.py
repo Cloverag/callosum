@@ -301,7 +301,9 @@ class TestIntake:
             # Second intake with same raw_text in same workspace must yield 409
             dup = client.post("/api/documents/intake", json=payload)
             assert dup.status_code == 409
-            assert "already exists in this workspace" in dup.json()["detail"]
+            err = dup.json()
+            detail = err.get("detail") or err.get("error", {}).get("detail", "")
+            assert "already exists in this workspace" in detail
         finally:
             _cleanup([pid], [ws])
 

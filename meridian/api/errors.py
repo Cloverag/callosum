@@ -90,6 +90,8 @@ _EXPLICIT: tuple[tuple[type[BaseException], int, str, str | None], ...] = (
     (WorkspaceRequired, HTTPStatus.BAD_REQUEST, BAD_WORKSPACE, None),
     # `InvalidTransition` breaks the suffix convention; it is a lifecycle conflict.
     (meetings.InvalidTransition, HTTPStatus.CONFLICT, CONFLICT, None),
+    (documents.DuplicateDocumentError, HTTPStatus.CONFLICT, CONFLICT, None),
+    (documents.InvalidSensitivityError, HTTPStatus.UNPROCESSABLE_ENTITY, INVALID, None),
 )
 
 
