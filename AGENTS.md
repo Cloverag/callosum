@@ -267,8 +267,13 @@ the graph-fact mechanism measure, provider/model, corpus, and baseline compariso
   (#123, #127). State the commit the figure was measured on, and say whether it came from a
   run or from `pytest --collect-only`. The same applies to the API operation/path/router
   counts and the migration head when you add an endpoint or a migration.
-- Keep provider access behind `llm.py`, typed extraction behind `ontology.py`, and storage
-  operations behind `store.py`.
+- Keep provider access behind `llm.py`, typed extraction behind `ontology.py`, and Postgres
+  storage operations behind `store.py`. **A new Neo4j operation goes through the gateway
+  `graph.py`, not `store.py`** (owner's decision 2026-08-13, `rules.md` §3): `store.py` is
+  frozen and `graph.py` is not, so routing a new product write through `store.py` turns a
+  product feature into a frozen-core edit and gains nothing. The `FROZEN_ALLOWLIST` in
+  `tests/test_no_raw_cypher.py` grandfathers pre-existing sites pending migration — it only
+  shrinks, and new work does not join it.
 - Stamp extraction proposals and failures with provider, model, prompt, and ontology
   versions. Bump the relevant version when changing prompt or ontology semantics.
 - Preserve compatibility between `RelationType`, the extractor prompt, gold seed data,
