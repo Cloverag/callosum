@@ -58,6 +58,7 @@ def _new_workspace() -> str:
 
 def _cleanup(*workspace_ids: str) -> None:
     for ws in workspace_ids:
+        _admin("DELETE FROM audit_event WHERE workspace_id = %s", (ws,))
         _admin("DELETE FROM resolution_vote WHERE workspace_id = %s", (ws,))
         _admin("UPDATE resolution SET superseded_by_id = NULL WHERE workspace_id = %s", (ws,))
         _admin("DELETE FROM resolution WHERE workspace_id = %s", (ws,))
