@@ -63,7 +63,7 @@ Measure-first, one aggregate root per checkpoint (own migration → domain modul
 
 - **Auth is real.** OIDC against Keycloak (compose service + realm import), an httpOnly signed-cookie session, and workspace selection re-validated against `membership` on every request. The session holds an identity and a choice — never a clearance, role or permission, so revoking a membership takes effect on the *next request* rather than at session expiry.
 - **`workspace_id` and `clearance` never come from a request.** Three layers hold that: `meridian/tenancy.py` raises rather than defaulting, `deps.current_principal` is the only path to a `Principal`, and a test walks the OpenAPI schema and fails the build if any endpoint declares either (ADR-013).
-- **Nine `lib/*` modules talk to the real API** through `lib/http.ts`: agenda, board members, commitments, decisions, documents, meetings, minutes, packs, resolutions. **61 API operations** across 44 paths and 10 routers (the nine domain routers plus `auth`; 55 of the 61 operations are the domain routers', 6 are `auth`'s). Every write carries `expected_version`; every mismatch is a 409, and the client acts on it rather than reporting it.
+- **Nine `lib/*` modules talk to the real API** through `lib/http.ts`: agenda, board members, commitments, decisions, documents, meetings, minutes, packs, resolutions. **At the freeze: 61 API operations** across 44 paths and 10 routers (the nine domain routers plus `auth`; 55 of the 61 operations are the domain routers', 6 are `auth`'s) — the surface has grown since; see the 2026-08-13 re-measurement below. Every write carries `expected_version`; every mismatch is a 409, and the client acts on it rather than reporting it.
 - **Three remain local, each a recorded exception, not a pending swap:** `graph` and `assistant` are real-data snapshots deferred to P6 (#100); `insights` was audited tile by tile in CP-E — every figure is traceable to a file in this repo or is `null` with the reason recorded inline.
 - **Deferred to P9 (#93):** CP-F failed/loading states, CP-G keyboard + accessibility verification, CP-H exit gate. **Accessibility is designed to WCAG 2.2 AA and never audited** — deferring CP-G defers the verification, not the standard, and any claim must carry that qualifier.
 - **Verified at the freeze commit** `caf650d`, against real Postgres and Neo4j: 610 backend passed (gated) · 180 frontend · `tsc --noEmit` clean · build green, 15 routes · mechanism gate 22/22 candidate recall, 21/21 traversal (100% mean), RBAC fail-closed 1/1, `eval/mechanism.csv` **byte-identical**.
@@ -71,3 +71,63 @@ Measure-first, one aggregate root per checkpoint (own migration → domain modul
 - **The frontend count went DOWN, 180 → 168, and that is not a regression.** All −12 come from the two files rewritten in `9d11390` when the last mocks were swapped: `commitments.test.ts` 23 → 12 cases and `decisions.test.ts` 6 → 5. Mock-shape assertions were replaced by real-contract ones; the suite count is unchanged at 10 and nothing was silently dropped. Recorded because a test count that falls between two documents is exactly the kind of number a reader is right to distrust.
 - The mechanism gate was **not** re-run at `7cbfa61`; the byte-identity claim above still belongs to `caf650d`.
 - **Not run at the freeze:** a clean-volume migration replay (destructive to the local volume; commands are in the freeze record).
+
+### Re-measured 2026-08-13 — a regression found, and closed the same day
+
+Everything above describes `caf650d` and `7cbfa61` and stays as written; it is the record of
+what was true then. This is the current state, measured rather than carried forward.
+
+**The P3 acceptance decision is unchanged.** The product track stays at **3 of 13**, P3 stays
+frozen and unaccepted for the reasons in the freeze record. What follows is a *current
+verification* result, not a re-scoring of that checkpoint — the 26 failures below are not P3
+exit criteria, and nothing here says P3 failed.
+
+| | At the freeze (`caf650d`) | `282380c`, earlier 2026-08-13 | Master `fda0be2`, now |
+|---|---|---|---|
+| Gated backend | 610 passed | 608 passed, **26 FAILED** | **635 passed, 0 failed** |
+| Fast backend | — | 218 passed | **219 passed**, 31 skipped, 5 deselected |
+| Frontend | 180 passed | 208 passed, 14 suites | **208 passed, 14 suites** |
+| API surface | 61 ops / 44 paths / 10 routers | 69 ops / 52 paths / 12 routers | **69 ops / 52 paths / 12 routers** |
+| Migration head | `0017_principal_identity` | `0020_meeting_importance` | **`0021_fix_composite_fk_cascades`** (21) |
+| ADRs | 15 | 15 | 15 |
+
+**Master is green again as of `fda0be2`.** The middle column is kept rather than overwritten,
+because a regression that existed for four days and was found by measurement is part of the
+record, not an embarrassment to tidy away. What follows describes that column.
+
+- **The gated suite was not clean at `282380c`:** `608 passed, 26 failed`, against a
+  `phase.md` that claimed "612 backend passed (0 failed)" — a figure belonging to `7cbfa61`.
+- **The 26 predated the frozen-core remediation.** They reproduced identically on master and
+  on `fix/frozen-core-and-audit-integrity`; the only difference between those runs was four
+  intentionally removed tests (218 → 214 fast, 608 → 604 gated).
+- **Fixed in #127, merged 2026-08-13** as `0021_fix_composite_fk_cascades`. Two causes, not
+  one: `0019` had dropped `ON DELETE` semantics on several composite foreign keys, **and**
+  `_cleanup()` in the resolution and commitment tests never deleted `membership` rows. The
+  second cause was not in the issue and would not have been found by reasoning backwards from
+  the migration — it was found by reproducing first.
+- **Where they fall:** `test_commitments.py` (11), `test_resolutions.py` (11), and one each in
+  `test_decisions.py`, `test_principal_identity.py`, `test_meetings_api.py`,
+  `test_auth_session.py`. Exceptions: 66 `ForeignKeyViolation`, 6 `AssertionError`, 3
+  `NotNullViolation`, the violations occurring on `workspace` deletes.
+- **The suspected cause was recorded as a hypothesis and only half of it was right.** #122
+  named `0019_composite_tenant_fks` as a suspicion, not a finding: it rewrote 16 foreign keys
+  as composite `(id, workspace_id)` keys, of which only 11 carried an explicit `ON DELETE`
+  clause, and one of the failures was `test_cascade_delete_on_meeting_deletion`. That half held.
+  The other half — the missing `membership` teardowns — was nowhere in the issue. **Recording
+  the guess as a guess is what left room to find the part the guess had missed.**
+- **CI could not see any of it, and now can.** `.github/workflows/ci.yml` ran
+  `pytest -m "not llm" -q` with no `CALLOSUM_RUN_INTEGRATION=1`, so it exercised the fast suite
+  only and reported green for four days while 26 gated tests failed (#123). #127 set
+  `CALLOSUM_RUN_INTEGRATION: "1"`, and the gated tier now runs on every push. Note the `llm`
+  exclusion did not disappear — it moved to `addopts` in `pyproject.toml`, so it is no longer
+  visible in the workflow itself.
+- **The mechanism baseline is intact.** Clean-room run at `282380c` on 2026-08-13, from empty
+  volumes: migrations `0001`→`0020` applied without error (the chain has since grown to `0021`), candidate recall 22/22, gold-seeded
+  traversal 21/21 (100% mean), RBAC fail-closed 1/1, and the 30 appended `eval/mechanism.csv`
+  rows **byte-identical** to the previous run. This supersedes the note above that the gate had
+  not been re-run since `caf650d`.
+- **What byte-identical does and does not prove here.** It proves the research baseline did not
+  move. It does **not** clear the frozen-core edits that shipped in #113: `acl_grant` has no
+  writer anywhere in the repo, so the widened predicate was inert during the run, and
+  `evaluate.py` seeds the gold graph positionally, so the changed `workspace_id` parameter fell
+  through to its old behaviour. The gate was structurally unable to reach either change.

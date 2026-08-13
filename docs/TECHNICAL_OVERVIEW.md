@@ -176,6 +176,17 @@ domain module were added, and `mechanism.csv` was byte-identical at the end. Tha
 mechanically demonstrable proof that the product was built *on* the engine rather than
 *into* it.
 
+**What byte-identity does not prove, learned 2026-08-13.** The claim above holds because
+during P3 the frozen files were not edited — the product grew beside the engine, so an
+unchanged `mechanism.csv` measured a real invariant. When frozen files *are* edited, the
+same result can mean something much weaker. In #113 a widened RBAC predicate and a changed
+`workspace_id` parameter shipped into `retrieve.py` and `store.py`; the gate still came back
+byte-identical, but only because neither code path was reachable in the run — `acl_grant`
+has no writer in the repo, and `evaluate.py` seeds the gold graph positionally. A passing
+gate is evidence a change is *inert on this corpus*, not evidence it is safe. The frozen-core
+rule in `rules.md` §1 asks for a failing test first for exactly this reason, and both changes
+were reverted rather than justified by the green result.
+
 ---
 
 ## 5. Product architecture (Track B — P3 frozen)
