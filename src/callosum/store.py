@@ -21,7 +21,7 @@ from neo4j import Driver, GraphDatabase
 from pgvector.psycopg import register_vector
 from psycopg.rows import dict_row
 
-from callosum.config import EMBEDDING_DIM, settings
+from callosum.config import settings
 
 # ---------------------------------------------------------------------------
 # Postgres
@@ -104,7 +104,6 @@ def insert_chunks(
     chunks: list,  # list[ingest.Chunk] — carries text + char offsets
     embeddings: list[list[float]],
     sensitivity: int,
-    workspace_id: str = DEFAULT_WORKSPACE_ID,
 ) -> list[uuid.UUID]:
     """Write chunks + embeddings, preserving char offsets. Postgres mints the UUIDs
     the graph will reuse."""
@@ -112,12 +111,12 @@ def insert_chunks(
     for c, vector in zip(chunks, embeddings, strict=True):
         row = conn.execute(
             """
-            INSERT INTO chunk (workspace_id, document_id, ordinal, text, start_char, end_char,
+            INSERT INTO chunk (document_id, ordinal, text, start_char, end_char,
                                sensitivity, embedding)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
-            (uuid.UUID(str(workspace_id)), document_id, c.ordinal, c.text, c.start_char, c.end_char, sensitivity, vector),
+            (document_id, c.ordinal, c.text, c.start_char, c.end_char, sensitivity, vector),
         ).fetchone()
         ids.append(row["id"])
     return ids

@@ -60,6 +60,8 @@ jobs:
           alembic upgrade head
           callosum init
 
+      # Runs both fast unit tests and gated integration tests (closes #123).
+      # Note: Live LLM tests remain excluded automatically via pyproject.toml's default addopts = "-m 'not llm'".
       - name: Run Pytest Suite (Gated Integration Suite)
         env:
           CALLOSUM_RUN_INTEGRATION: "1"

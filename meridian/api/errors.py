@@ -90,8 +90,6 @@ _EXPLICIT: tuple[tuple[type[BaseException], int, str, str | None], ...] = (
     (WorkspaceRequired, HTTPStatus.BAD_REQUEST, BAD_WORKSPACE, None),
     # `InvalidTransition` breaks the suffix convention; it is a lifecycle conflict.
     (meetings.InvalidTransition, HTTPStatus.CONFLICT, CONFLICT, None),
-    (documents.DuplicateDocumentError, HTTPStatus.CONFLICT, CONFLICT, None),
-    (documents.InvalidSensitivityError, HTTPStatus.UNPROCESSABLE_ENTITY, INVALID, None),
 )
 
 
@@ -202,8 +200,8 @@ def install_exception_handlers(app) -> None:
             code = (
                 FORBIDDEN if exc.status_code == 403
                 else "unauthorized" if exc.status_code == 401
-                else BAD_WORKSPACE if exc.status_code == 409
-                else INVALID if exc.status_code == 422
+                else CONFLICT if exc.status_code == 409
+                else INVALID if exc.status_code in (400, 422)
                 else INTERNAL
             )
             detail = str(exc.detail) if exc.detail else "An error occurred."

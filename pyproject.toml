@@ -22,7 +22,6 @@ dependencies = [
     "rapidfuzz>=3.9",   # entity name similarity for conflict detection
     "authlib>=1.6",     # OIDC client for the P3 authenticated API (ADR-009)
     "itsdangerous>=2.2",# signs the session cookie (Starlette SessionMiddleware)
-    "python-multipart>=0.0.9", # multipart form parser for document file upload
 ]
 
 [project.optional-dependencies]
