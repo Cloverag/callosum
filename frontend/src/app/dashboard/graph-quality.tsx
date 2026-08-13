@@ -58,7 +58,7 @@ function MetricRow({ metric }: { metric: QualityMetric }) {
         aria-label={`${metric.label}: ${metric.value} of ${metric.total}, ${Math.round(pct)} percent`}
       >
         <div
-          className="h-full rounded-full transition-[width] duration-[--duration-state]"
+          className="h-full rounded-full transition-[width] duration-(--duration-state)"
           style={{ width: `${pct}%`, background: "var(--memory)" }}
         />
       </div>

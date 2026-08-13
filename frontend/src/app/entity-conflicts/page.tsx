@@ -62,7 +62,7 @@ function ConflictCard({
           A hairline that firms up says the same thing on doctrine. */}
       <Card
         className={cn(
-          "group relative overflow-hidden transition-colors duration-[--duration-hover] hover:border-border-strong",
+          "group relative overflow-hidden transition-colors duration-(--duration-hover) hover:border-border-strong",
           processing && "pointer-events-none opacity-60"
         )}
       >
