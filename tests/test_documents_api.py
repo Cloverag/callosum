@@ -114,6 +114,10 @@ def _document(ws: str, title: str, sensitivity: int, doc_type: str = "board_deck
 
 def _cleanup(principal_ids: list[str], workspace_ids: list[str]) -> None:
     for ws in workspace_ids:
+        _admin("DELETE FROM audit_event WHERE workspace_id = %s", (ws,))
+        _admin("DELETE FROM extraction_failure WHERE workspace_id = %s", (ws,))
+        _admin("DELETE FROM proposed_change WHERE workspace_id = %s", (ws,))
+        _admin("DELETE FROM chunk WHERE workspace_id = %s", (ws,))
         _admin("DELETE FROM document WHERE workspace_id = %s", (ws,))
         _admin("DELETE FROM membership WHERE workspace_id = %s", (ws,))
     for pid in principal_ids:

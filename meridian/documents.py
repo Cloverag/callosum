@@ -233,6 +233,7 @@ def intake_document(
                 chunks=chunks,
                 embeddings=embeddings,
                 sensitivity=sensitivity,
+                workspace_id=workspace_id,
             )
 
             # Bridge to Neo4j (:Chunk) nodes if Neo4j driver is available
