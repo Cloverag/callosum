@@ -405,6 +405,62 @@ describe("gradients must be declared before they ship", () => {
     expect(failures).toEqual([]);
   });
 
+  it("holds the ALPHA TINTS of focal-foreground to AA, and says what they are", () => {
+    /**
+     * The 7:1 figure above is measured on `--focal-foreground` at full opacity.
+     * The components on a focal surface do not only use it that way: the hero's
+     * eyebrow, timestamp and supporting line are `text-focal-foreground/70` and
+     * `/75`, and the institutional-memory band copies the pattern. An alpha tint
+     * is a different colour, and it was never measured — "text over a gradient
+     * clears 7:1" was true of the token and had been generalised to every use of
+     * it, which is the same over-claim the dark theme's 5.5-vs-5.14 correction
+     * records one section above.
+     *
+     * Measured, the tints land in a 5.6-7.0 band: comfortably over the 4.5:1 AA
+     * floor everywhere, and under the 7:1 gate the solid token clears. Nothing is
+     * inaccessible and no token moves — the prose was wrong, not the palette. So
+     * the honest rule, asserted here and corrected in DESIGN.md, is that the 7:1
+     * gate governs the SOLID foreground, the tints answer to AA, and they are
+     * therefore scoped to secondary and metadata text rather than body copy.
+     */
+    const TINTS = [0.7, 0.75];
+    const results: number[] = [];
+
+    for (const theme of [
+      { name: "light", body: block(":root {") },
+      { name: "dark", body: block(':root[data-theme="dark"]') },
+    ]) {
+      const ink = rgb(tokens(theme.body)["focal-foreground"]);
+      for (const ramp of ["focal-action", "focal-memory"]) {
+        const decl = new RegExp(`--${ramp}\\s*:\\s*([^;]*)`).exec(theme.body)![1];
+        for (const stop of [...decl.matchAll(/#[0-9a-fA-F]{6}/g)].map((m) => m[0].toLowerCase())) {
+          for (const alpha of TINTS) {
+            const tinted = composite(stop, [ink[0], ink[1], ink[2], alpha]);
+            const ratio = contrast(tinted, stop);
+            if (ratio < 4.5) {
+              throw new Error(
+                `${theme.name} ${ramp} @${alpha} on ${stop} = ${round2(ratio)}:1, below the AA floor`,
+              );
+            }
+            results.push(ratio);
+          }
+        }
+      }
+    }
+
+    /**
+     * The worst case is what the claim has to be made of — the lightest stop of
+     * the light `focal-action` ramp, the same pairing the sheen assertion below
+     * finds binding. Pinned so DESIGN.md's stated band cannot drift from the
+     * tokens behind it, and asserted to be BELOW the 7:1 gate, because that gap
+     * is the whole reason this test exists: if a later edit lifted the tints over
+     * 7:1, the correction in DESIGN.md would have quietly become wrong again.
+     */
+    const worst = Math.min(...results);
+    expect(round2(worst)).toBeCloseTo(5.63, 1);
+    expect(worst).toBeLessThan(GRADIENT_TEXT_FLOOR);
+  });
+
   it("keeps text legible under the pointer sheen, at the ramp's lightest stop", () => {
     /**
      * The sheen is the case a naive gate misses. It is not a background of its
