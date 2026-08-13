@@ -5,6 +5,7 @@ All operations execute under RLS and log audit events.
 """
 
 import uuid
+from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -30,17 +31,21 @@ class ConflictResponse(BaseModel):
     quote_b: str | None = None
     sensitivity: int
     status: str = "pending"
+    #: Rendered by the conflict card ("Detected {date}") and declared on
+    #: `EntityConflict` in `frontend/src/lib/api.ts`. It was selected by the query
+    #: below and then dropped from the response, so the card has been formatting
+    #: `new Date(undefined)` for as long as it has existed.
+    created_at: datetime
 
 
 @router.get("", response_model=list[ConflictResponse])
 def list_conflicts(
-    request_session: Annotated[AuthenticatedSession, Depends(deps.current_session)],
-    workspace_id: Annotated[str, Depends(deps.current_workspace)],
+    principal: deps.CurrentPrincipal,
+    workspace_id: deps.CurrentWorkspace,
     status: str = Query("pending", description="Filter by conflict status (pending, approved, rejected)"),
     similarity_min: float = Query(0.0, description="Minimum similarity score (0.0 to 1.0)"),
 ) -> list[dict[str, Any]]:
     """List entity conflicts for the selected workspace."""
-    principal = deps.resolve_principal(request_session.principal_id, workspace_id)
     with store.pg(workspace_id) as conn:
         rows = conn.execute(
             """
@@ -66,6 +71,7 @@ def list_conflicts(
             "quote_b": r["quote_b"],
             "sensitivity": r["sensitivity"],
             "status": r["status"],
+            "created_at": r["created_at"],
         }
         for r in rows
     ]
@@ -78,9 +84,11 @@ def approve_conflict(
     workspace_id: Annotated[str, Depends(deps.current_workspace)],
 ) -> dict[str, Any]:
     """Approve an entity conflict, creating an ALIAS_OF graph edge."""
-    driver = store.connect_neo4j()
+    # `store.neo()` builds a NEW driver, with its own connection pool, on every
+    # call — the CLI callers are one-shot processes, so nothing there ever had to
+    # close one. A request handler is not, so the driver is scoped to the request.
     try:
-        with store.pg(workspace_id) as conn:
+        with store.neo() as driver, store.pg(workspace_id) as conn:
             change_id = engine_conflicts.approve_conflict(
                 conn, driver, conflict_id, reviewer_id=uuid.UUID(request_session.principal_id)
             )
