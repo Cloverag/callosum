@@ -46,7 +46,12 @@ export default function DashboardPage() {
       })
       .then((d) => setDecisions(d.slice(0, 5)))
       .catch((e) => setError(asApiError(e)));
-    apiClient.getPendingConflicts().then(setConflicts);
+    // Routed into the same `error` as the meetings load, not into an empty array.
+    // This call returned 500 for four days while the page showed "2 name conflicts
+    // awaiting your review" from a client-side fallback — the daily brief and the
+    // Needs You count were both reading invented rows. A count the page cannot
+    // stand behind must not appear at all.
+    apiClient.getPendingConflicts().then(setConflicts).catch((e) => setError(asApiError(e)));
     insightsApi.get().then(setInsights);
     // Newest five. The card links through to /decisions for the rest rather than
     // growing without bound on the dashboard.
