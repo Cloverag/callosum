@@ -44,8 +44,21 @@ export function Sparkline({
       role="img"
       aria-label={ariaLabel}
     >
-      <path d={area} fill="currentColor" fillOpacity={0.1} stroke="none" />
-      <path d={line} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+      {/* L5 reveal, in CSS rather than Framer: this component is not a client
+          component and does not need to become one to draw a line once.
+          `pathLength={1}` normalises the path so the single dasharray in
+          `.reveal-draw` works at any width, data length or value range. */}
+      <path d={area} fill="currentColor" fillOpacity={0.1} stroke="none" className="reveal-fade" />
+      <path
+        d={line}
+        pathLength={1}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="reveal-draw"
+      />
     </svg>
   );
 }

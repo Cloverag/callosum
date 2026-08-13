@@ -10,8 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/vendor/skeleton";
 import { cn } from "@/lib/utils";
 import { apiClient, type EntityConflict } from "@/lib/api";
-
-const EASE = [0.16, 1, 0.3, 1] as const;
+import { transition } from "@/lib/motion";
 
 function EntityBlock({ name, quote }: { name: string; quote: string }) {
   return (
@@ -47,13 +46,22 @@ function ConflictCard({
 }) {
   const pct = Math.round(conflict.similarity * 100);
 
+  /*
+   * `layout` is opt-in on reduced motion, not unconditional. It was the one piece
+   * of motion here that ignored the preference outright: resolving a conflict
+   * animates every card below it to a new position, which is exactly the travel a
+   * reader who asked for no motion asked not to see. The fade stays — a crossfade
+   * is the alternative DESIGN.md's hierarchy calls for. The duration was a bare
+   * 0.35 under a `reduce` branch covering only the transforms, so a reduced-motion
+   * reader still got a 350ms animation.
+   */
   return (
     <motion.div
-      layout
+      layout={!reduce}
       initial={reduce ? { opacity: 0 } : { opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       exit={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.97, filter: "blur(6px)" }}
-      transition={{ duration: 0.35, ease: EASE }}
+      transition={transition("entrance", reduce)}
     >
       {/* The hover affordance was a blue gradient sheen across the whole card.
           DESIGN.md §6 bans gradients outside the one named `body::before`

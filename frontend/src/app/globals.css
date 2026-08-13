@@ -120,10 +120,21 @@
   --shadow-raised: var(--sh-raised);
   --shadow-overlay: var(--sh-overlay);
 
-  /* Motion — L1 hover / L2 state (see DESIGN.md motion hierarchy) ---------- */
+  /* Motion — ONE ease, FOUR duration tiers (see DESIGN.md motion hierarchy).
+     Tokens for the same reason colours are tokens: before this, five durations
+     and two rival ease curves were spread across six components while DESIGN.md
+     published a hierarchy of two durations and one ease. A component picks a
+     tier here; it does not pick a number.
+
+     Mirrored in `src/lib/motion.ts` for the Framer Motion call sites, which
+     animate inline styles from JS and cannot read a custom property.
+     `__tests__/motion-contract.test.ts` asserts the mirror agrees with these. */
   --ease-out-quart: cubic-bezier(0.16, 1, 0.3, 1);
-  --duration-hover: 120ms;
-  --duration-state: 200ms;
+  --duration-hover: 120ms;      /* L1 — hover / press feedback */
+  --duration-state: 200ms;      /* L2 — dialog, reflow, progress fill */
+  --duration-entrance: 400ms;   /* L4 — a band arriving once, on load */
+  --duration-reveal: 1100ms;    /* L5 — a measured figure drawing itself */
+  --stagger-step: 50ms;         /* the beat between staggered siblings */
 }
 
 /* ============================================================================
@@ -427,6 +438,40 @@
   }
 }
 
+/* ============================================================================
+   KEYFRAMES — declared at the top level rather than inside a layer, because a
+   layered `@keyframes` is a portability trap nobody gains anything from.
+
+   Four, and no more. Each ends at the element's NATURAL state (opacity 1, no
+   transform, a fully drawn stroke), which is what lets `prefers-reduced-motion`
+   switch the animation off outright and land on a correct render — rather than
+   the global rule's duration collapse, which would leave a 10px jump.
+   ========================================================================== */
+
+/* L4 entrance: a band arrives. 10px of travel, once. */
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* L5 reveal: a stroke draws along its own length. Requires `pathLength="1"` on
+   the path, which normalises it so ONE dasharray works for any geometry. */
+@keyframes draw-in {
+  from { stroke-dashoffset: 1; }
+  to   { stroke-dashoffset: 0; }
+}
+
+/* L5 reveal: a proportional bar grows from its leading edge. */
+@keyframes grow-in {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
 @layer utilities {
   /* Level 3 — floating UI only (dialogs, popovers, command palette): a blurred
      translucent panel that lifts clearly off the page. Never a dashboard card
@@ -518,6 +563,72 @@
     .surface-focal-action:hover,
     .surface-focal-memory:hover {
       transform: none;
+    }
+  }
+
+  /* ==========================================================================
+     L4 — ENTRANCE (rules.md §6, 2026-08-13).
+
+     A band arrives once, on load, and is then still. This exists because the
+     dashboard used to appear all at once as a wall of twelve surfaces, which
+     gives the eye no order to read them in — the page had a hierarchy but no
+     way to show it in time as well as in space.
+
+     Staggered by an INDEX rather than a hand-written delay per element:
+     `--rise-index: 2` reads as "third in the order", so a reordered page cannot
+     end up with two bands sharing a beat or a gap where one was deleted.
+
+     Delay is capped at the fourth beat. Entrance choreography is a first
+     impression, not a queue to sit through — and an uncapped stagger means the
+     last card on a long page is still fading in after the operator has started
+     reading the first.
+     ========================================================================== */
+  .rise-in {
+    animation: rise-in var(--duration-entrance) var(--ease-out-quart) both;
+    animation-delay: calc(min(var(--rise-index, 0), 3) * var(--stagger-step));
+  }
+
+  /* ==========================================================================
+     L5 — REVEAL.
+
+     A measured figure draws itself: the gauge sweeps, the sparkline draws along
+     its own length, a distribution bar grows from its leading edge. This is the
+     one tier where motion is not feedback — it walks the eye along the axis the
+     number is measured on, which is the axis a reader has to travel anyway.
+
+     One pass, then still. Nothing here loops: a figure that keeps moving after
+     it has been read is asking for attention it has no further claim on.
+     ========================================================================== */
+  .reveal-draw {
+    stroke-dasharray: 1;
+    animation: draw-in var(--duration-reveal) var(--ease-out-quart) both;
+  }
+
+  .reveal-fade {
+    animation: fade-in var(--duration-reveal) var(--ease-out-quart) both;
+  }
+
+  .reveal-grow {
+    transform-origin: left center;
+    animation: grow-in var(--duration-reveal) var(--ease-out-quart) both;
+    animation-delay: calc(min(var(--rise-index, 0), 3) * var(--stagger-step));
+  }
+
+  /* Switched OFF rather than shortened, for the reason given above the keyframes:
+     each one ends at the natural state, so removing the animation renders the
+     finished frame. The global rule below only collapses DURATION, which for a
+     `both`-filled animation with a delay would hold the element invisible for the
+     delay and then pop it in — motion replaced by a flash, which is worse. */
+  @media (prefers-reduced-motion: reduce) {
+    .rise-in,
+    .reveal-fade,
+    .reveal-grow,
+    .reveal-draw {
+      animation: none;
+    }
+
+    .reveal-draw {
+      stroke-dasharray: none;
     }
   }
 }
