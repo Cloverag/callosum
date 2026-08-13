@@ -211,6 +211,19 @@ Each coloured ink is solved for ≥5.5:1 against `surface-alt`, the **lightest o
 
 **The ≥5.5:1 solve covers the four base surfaces, not all nine** (corrected 2026-08-13). On the five `-subtle` washes the coloured inks land between **5.14:1 and 5.49:1** — above the 4.5:1 AA floor everywhere, below the 5.5 target the neutrals hold. The two sentences above previously stated a ≥5.5 solve and a 5.14 worst pairing one clause apart, which cannot both be true of the same set; the figure was true of the base surfaces and had been generalised. Nothing was inaccessible and nothing moved in the palette — the prose was wrong, not the tokens. Both claims are now asserted separately by `frontend/__tests__/palette-contrast.test.ts`, so the distinction cannot collapse again. Light is unaffected: it clears 5.5:1 on all nine.
 
+### Focal surfaces — elevation level 4 *(added 2026-08-13)*
+
+Two ramps, and no others. They are palette members, not one-off styling, which is why their values live here rather than in a component.
+
+| Token | Ramp | Worst stop vs `--focal-foreground` (`#FFFFFF`) |
+|---|---|---|
+| `--focal-action` | `#101A28` → `#1D4285` | **9.68:1** |
+| `--focal-memory` | `#101A28` → `#4A2E8C` | **10.19:1** |
+
+Both share the ink end, so the two focal surfaces on a page read as one material at different temperatures rather than two competing brand colours. `action` carries the operational hero because that surface holds the primary button; `memory` carries the institutional-memory band. **The semantic families are unchanged** — this buys depth, not a new vocabulary, and violet still never means "button".
+
+The dark theme narrows both ramps rather than brightening them: a focal surface on a dark ground should read as a *material*, not a light source. Every stop of every ramp is asserted against `--focal-foreground` in `frontend/__tests__/palette-contrast.test.ts`, which checks **all stops** rather than a declared worst one, so a future edit to either end cannot slip past by moving which stop is darkest.
+
 The theme marker is **`data-theme` on `<html>`**, never a `.dark` class. Tailwind's `dark:` variant stays bound to a `.dark` we never apply, so vendored registry components cannot apply a *second*, uncoordinated adjustment on top of the token flip. `color-scheme` is set per theme at the root, so native date pickers, spinners and scrollbars follow without per-control classes. The default is **system**; a choice is stored under `meridian.theme` and applied by an inline pre-paint script, because a deferred one runs after the document has already painted the wrong theme.
 
 ### Named rules

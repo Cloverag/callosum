@@ -212,6 +212,16 @@
     /* Ambient ground wash, per theme (see body::before). */
     --wash-a: rgba(133, 91, 220, 0.05);
     --wash-b: rgba(44, 112, 229, 0.045);
+
+    /* Focal surfaces — elevation level 4 (rules.md §6, 2026-08-13). At most two
+       per page. Deep-ink based and anchored to a semantic family: `action` for
+       the operational hero that carries the primary button, `memory` for the
+       institutional-memory band. Every stop clears 7:1 against
+       `--focal-foreground`, asserted in __tests__/palette-contrast.test.ts —
+       the worst stop is checked, never the midpoint. */
+    --focal-foreground: #ffffff;
+    --focal-action: linear-gradient(135deg, #101a28 0%, #1d4285 100%);
+    --focal-memory: linear-gradient(135deg, #101a28 0%, #4a2e8c 100%);
   }
 
   /* ==========================================================================
@@ -289,6 +299,12 @@
 
       --wash-a: rgba(142, 113, 214, 0.08);
       --wash-b: rgba(76, 129, 220, 0.07);
+
+      /* Focal surfaces: the ramps NARROW in dark rather than brighten, so a
+         focal card reads as a material and not a light source. */
+      --focal-foreground: #e3e8f0;
+      --focal-action: linear-gradient(135deg, #0c1015 0%, #16233a 100%);
+      --focal-memory: linear-gradient(135deg, #0c1015 0%, #2b1f4d 100%);
     }
   }
 
@@ -339,6 +355,12 @@
 
     --wash-a: rgba(142, 113, 214, 0.08);
     --wash-b: rgba(76, 129, 220, 0.07);
+
+    /* Focal surfaces: the ramps NARROW in dark rather than brighten, so a
+       focal card reads as a material and not a light source. */
+    --focal-foreground: #e3e8f0;
+    --focal-action: linear-gradient(135deg, #0c1015 0%, #16233a 100%);
+    --focal-memory: linear-gradient(135deg, #0c1015 0%, #2b1f4d 100%);
   }
 }
 

@@ -314,39 +314,80 @@ describe("gradients must be declared before they ship", () => {
    * Every `gradient(` in globals.css must appear below. A new one fails this test
    * until its author states whether text sits on it, and proves the worst point.
    */
-  const DECLARED: {
-    match: string;
-    carriesText: false | { textToken: string; lightestStop: string; floor: number };
-    why: string;
-  }[] = [
+  const GRADIENT_TEXT_FLOOR = 7;
+
+  const DECLARED: { token: string; carriesText: boolean; why: string }[] = [
     {
-      match: "radial-gradient(60rem 40rem at 12% -8%, var(--wash-a), transparent 60%)",
+      token: "focal-action",
+      carriesText: true,
+      why: "elevation level 4 — the operational hero. Carries the meeting title and the primary button label in --focal-foreground.",
+    },
+    {
+      token: "focal-memory",
+      carriesText: true,
+      why: "elevation level 4 — the institutional-memory band. Carries its headline figure in --focal-foreground.",
+    },
+    {
+      token: "wash-a",
       carriesText: false,
       why: "body::before ambient ground wash, z-index -1, pointer-events none. No text is painted on it; page text sits on --surface above it, and that composite is asserted separately.",
     },
     {
-      match: "radial-gradient(52rem 36rem at 92% 4%, var(--wash-b), transparent 62%)",
+      token: "wash-b",
       carriesText: false,
       why: "the second ambient radial; same reasoning as wash-a.",
     },
   ];
 
-  const found = [...CSS.matchAll(/[a-z-]*gradient\([^;]*?\)(?=[,;\s])/g)].map((m) => m[0].trim());
+  /** Every `gradient(...)` occurrence, with the token or property it was assigned to. */
+  const found = [...CSS.matchAll(/--([a-z0-9-]+)\s*:\s*((?:linear|radial|conic)-gradient\([^;]*)\s*;/g)].map(
+    (m) => ({ token: m[1], value: m[2] }),
+  );
+  /** The two ambient radials are consumed in `body::before` via var(), not declared there. */
+  const consumed = [...CSS.matchAll(/(?:linear|radial|conic)-gradient\([^;]*?var\(--(wash-[ab])\)/g)].map(
+    (m) => ({ token: m[1], value: m[0] }),
+  );
 
   it("has every gradient in globals.css registered here", () => {
-    const unregistered = found.filter((g) => !DECLARED.some((d) => g.startsWith(d.match.slice(0, 40))));
-    expect(unregistered).toEqual([]);
+    const names = new Set(DECLARED.map((d) => d.token));
+    const unregistered = [...found, ...consumed].map((f) => f.token).filter((t) => !names.has(t));
+    expect([...new Set(unregistered)]).toEqual([]);
   });
 
-  it("verifies text-bearing gradients at the ramp's worst point, not its midpoint", () => {
+  it("holds every declared gradient to at most two focal surfaces", () => {
+    // rules.md §6: "at most two gradient surfaces per page". A third is not an
+    // excess of style, it is the point at which the page has no focal surface.
+    expect(DECLARED.filter((d) => d.carriesText)).toHaveLength(2);
+  });
+
+  it("verifies text-bearing gradients at EVERY stop, not the midpoint", () => {
+    /**
+     * The midpoint of a ramp always flatters it. Checking every stop also means a
+     * later edit cannot slip past by changing WHICH end is darkest — there is no
+     * declared "worst stop" to go stale.
+     */
     const failures: string[] = [];
-    for (const d of DECLARED) {
-      if (d.carriesText === false) continue;
-      const { textToken, lightestStop, floor } = d.carriesText;
-      const ink = LIGHT[textToken] ?? textToken;
-      const ratio = contrast(ink, lightestStop);
-      if (ratio < floor) {
-        failures.push(`${d.match}: ${textToken} on ${lightestStop} = ${round2(ratio)}:1, floor ${floor}`);
+    for (const theme of [
+      { name: "light", t: LIGHT, body: block(":root {") },
+      { name: "dark", t: DARK_EXPLICIT, body: block(':root[data-theme="dark"]') },
+    ]) {
+      const ink = theme.t["focal-foreground"];
+      expect(ink).toBeDefined();
+      for (const d of DECLARED) {
+        if (!d.carriesText) continue;
+        const decl = new RegExp(`--${d.token}\\s*:\\s*([^;]*)`).exec(theme.body);
+        if (!decl) {
+          failures.push(`${theme.name}: --${d.token} is registered but not declared`);
+          continue;
+        }
+        const stops = [...decl[1].matchAll(/#[0-9a-fA-F]{6}/g)].map((m) => m[0].toLowerCase());
+        expect(stops.length).toBeGreaterThanOrEqual(2);
+        for (const stop of stops) {
+          const ratio = contrast(ink, stop);
+          if (ratio < GRADIENT_TEXT_FLOOR) {
+            failures.push(`${theme.name} --${d.token}: focal-foreground on ${stop} = ${round2(ratio)}:1`);
+          }
+        }
       }
     }
     expect(failures).toEqual([]);
