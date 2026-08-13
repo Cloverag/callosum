@@ -37,7 +37,7 @@ export function Stages() {
           <li key={stage.id} className="flex items-center gap-1">
             <a
               href={`#${stage.id}`}
-              className="rounded-[8px] px-2 py-1 text-muted-foreground transition-colors duration-150 hover:bg-surface-sunken hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+              className="rounded-[8px] px-2 py-1 text-muted-foreground transition-colors duration-(--duration-hover) hover:bg-surface-sunken hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
             >
               <span className="tabular-nums text-subtle-foreground">{i + 1}</span>{" "}
               {stage.label}

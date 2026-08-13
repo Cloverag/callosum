@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { cn } from "@/lib/utils";
 
 export type StatSegment = {
@@ -34,8 +35,16 @@ export function StatBar({
         role="img"
         aria-label={ariaLabel ?? shown.map((s) => `${s.label}: ${s.value}`).join(", ")}
       >
-        {shown.map((s) => (
-          <div key={s.label} className={cn("h-full", s.color)} style={{ width: `${(s.value / total) * 100}%` }} />
+        {/* L5 reveal — each segment grows from its leading edge, in order, so the
+            bar assembles left to right the way it is read. `scaleX` rather than an
+            animated width: width would relayout the flex row on every frame and
+            drag its siblings along with it. */}
+        {shown.map((s, i) => (
+          <div
+            key={s.label}
+            className={cn("reveal-grow h-full", s.color)}
+            style={{ width: `${(s.value / total) * 100}%`, "--rise-index": i } as CSSProperties}
+          />
         ))}
       </div>
       <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">

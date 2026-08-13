@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/http";
 import { authApi, LOGIN_URL, type AuthContext } from "@/lib/auth";
+import { transition } from "@/lib/motion";
 
 /**
  * Stands between an unauthenticated browser and the application shell.
@@ -72,8 +73,10 @@ export function useSession(): Session | null {
   return useContext(SessionContext);
 }
 
-/** Matches `needs-you.tsx`, which set the house curve. Mirrors `--ease-out-quart`. */
-const EASE = [0.22, 1, 0.36, 1] as const;
+/* The local EASE was `[0.22, 1, 0.36, 1]` under a comment saying it mirrored
+   `--ease-out-quart`. That token is `cubic-bezier(0.16, 1, 0.3, 1)`, so the
+   claim was never true — and `needs-you.tsx`, cited as the house curve, was
+   copying the same wrong value. Both now import the one ease from `lib/motion`. */
 
 export function SessionGate({ children }: { children: ReactNode }) {
   const [state, setState] = useState<State>({ phase: "checking" });
@@ -181,7 +184,7 @@ function Panel({ children }: { children: ReactNode }) {
     <motion.div
       initial={{ opacity: 0, y: reduce ? 0 : 6 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: reduce ? 0 : 0.2, ease: EASE }}
+      transition={transition("state", reduce)}
       className="w-full max-w-sm"
     >
       <Card className="p-8">{children}</Card>

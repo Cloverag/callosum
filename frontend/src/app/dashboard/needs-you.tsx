@@ -5,6 +5,7 @@ import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
 import { FileSignature, GitMerge, CalendarClock, FileUp, ChevronRight, Check } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { STAGGER, transition } from "@/lib/motion";
 
 export type ActionCounts = {
   /**
@@ -65,7 +66,7 @@ export function NeedsYou({ counts }: { counts: ActionCounts | null }) {
           className="space-y-0.5 p-2.5"
           initial="hidden"
           animate="show"
-          variants={{ show: { transition: { staggerChildren: reduce ? 0 : 0.05 } } }}
+          variants={{ show: { transition: { staggerChildren: reduce ? 0 : STAGGER } } }}
         >
           {ROWS.map((r) => {
             const count = counts![r.key];
@@ -74,12 +75,12 @@ export function NeedsYou({ counts }: { counts: ActionCounts | null }) {
                 key={r.key}
                 variants={{
                   hidden: { opacity: 0, y: reduce ? 0 : 6 },
-                  show: { opacity: 1, y: 0, transition: { duration: reduce ? 0 : 0.2, ease: [0.22, 1, 0.36, 1] } },
+                  show: { opacity: 1, y: 0, transition: transition("state", reduce) },
                 }}
               >
                 <Link
                   href={r.href}
-                  className="group flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors duration-150 hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus"
+                  className="group flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors duration-(--duration-hover) hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus"
                 >
                   <span className="text-muted-foreground group-hover:text-foreground [&_svg]:size-4" aria-hidden>
                     {r.icon}
