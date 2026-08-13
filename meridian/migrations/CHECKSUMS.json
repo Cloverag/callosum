@@ -19,5 +19,6 @@
   "0018_identity_multi_tenant": "b0c548440b24800fd4125e9701be26bb0884cfbc730651b9075fea3aa2d18d1e",
   "0019_composite_tenant_fks": "9b0aa314f44d42129b31a4a742b01ea3ac2a8b47f954917ad2808bb8d1de48f2",
   "0020_meeting_importance": "85fd3d689c4fbef822da33de3fc1578e1684ee199125e88f36b1a1cfb4765e7b",
-  "0021_fix_composite_fk_cascades": "e695f28f8da9bd00734362f4a80513337e42f8f5568a820bdda125f81c88f480"
+  "0021_fix_composite_fk_cascades": "e695f28f8da9bd00734362f4a80513337e42f8f5568a820bdda125f81c88f480",
+  "0022_doc_content_hash_uq": "319b906908c24e162211b1bd0283b0ba37dcb75d85b27f8297cc71c4531a49d0"
 }

@@ -1,136 +1,350 @@
-"""Document reads for board surfaces (Meridian P3, CP-E).
+"""Document intake and institutional memory lifecycle (Meridian P4).
 
-`document` belongs to the **frozen core schema** and has no product module, which left
-`frontend/src/lib/documents.ts` as the last mock behind a live surface. The packs page
-fetched real packs and mock documents, so every `board_pack_item.document_id` resolved
-to nothing and every item in every pack rendered as a broken reference.
+This module owns document ingestion, chunking, embedding generation, Neo4j chunk
+bridging, verified extraction integration, clearance-gated document retrieval, and
+quarantine reporting.
 
-This module is the smallest thing that fixes that: a read-only product-side view of the
-frozen table. It adds no columns, no writes and no ingestion — those live in
-`callosum.ingest`, on the other side of the freeze.
-
----------------------------------------------------------------------------
-WHY A PRODUCT MODULE RATHER THAN READING `callosum.store` FROM THE API
----------------------------------------------------------------------------
-The open question in the P3 scope note was whether to read the table through the frozen
-core or add a module here. It is here because the clearance gate belongs on the product
-side: `store.pg()` scopes by workspace, but nothing in the frozen core filters a
-document by the *caller's* clearance, and putting that filter in the API layer would be
-the app-side filtering Invariant #1 exists to prevent. One module, one predicate,
-mirroring `packs._fetch_items_for_packs`.
-
----------------------------------------------------------------------------
-WHAT IS DELIBERATELY NOT SELECTED
----------------------------------------------------------------------------
-`raw_text`, `content_hash` and `metadata`. A board surface renders a document's
-identity, not its contents: `raw_text` is the whole corpus in a JSON response and
-`content_hash` is a dedupe key. They are excluded in the SQL rather than dropped in
-Python, so they never leave the database.
+Invariants strictly enforced:
+  1. No zero-vector corruption: if embedding generation fails, intake fails loudly.
+  2. Neo4j graph bridge integrity: chunk nodes must be successfully upserted.
+  3. Database-level deduplication: content_hash unique constraint per workspace.
+  4. Verified extraction pipeline: verified claims queued for human approval; unverified claims quarantined.
+  5. Clearance filtering: documents above caller clearance are completely invisible (fail-closed).
 """
 
-from __future__ import annotations
-
+import hashlib
+import json
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
-from callosum import store
+import psycopg
+
+from callosum import extract, ingest, llm, store
 from callosum.store import DEFAULT_WORKSPACE_ID
-
-#: The clearance ladder, as in `meridian/packs.py`. Duplicated deliberately rather than
-#: imported: `packs` importing `documents` or the reverse would couple two modules that
-#: only share a constant, and the p1.0.5 postmortem records what happens when a
-#: hard-coded "maximum" drifts from the table.
-PUBLIC_CLEARANCE = 0
-RESTRICTED_CLEARANCE = 4
-
-#: Columns a board reader may see. Written once so `list` and `get` cannot diverge —
-#: a `SELECT *` here is how `raw_text` reaches a browser.
-_COLUMNS = "id, title, doc_type, source_uri, sensitivity, authored_at, ingested_at"
+from meridian import audit
 
 
 class DocumentError(Exception):
-    """Base for document errors, so `errors.classify` can map the family."""
+    """Base exception for document operations."""
 
 
 class DocumentNotFound(DocumentError):
-    """No such document, **or** one above the caller's clearance.
+    """Document does not exist or caller clearance is insufficient to observe it."""
 
-    Deliberately one error for both. Distinguishing them would confirm that a
-    restricted document exists to someone who may not read it, which is the same
-    existence oracle `PrincipalNotFound` and `get_pack` both refuse to be.
-    """
+
+class DuplicateDocumentError(DocumentError):
+    """Document with identical content hash already exists in this tenant workspace."""
+
+
+class InvalidSensitivityError(DocumentError):
+    """Sensitivity level outside the valid clearance ladder (0..3)."""
+
+
+class EmbeddingProviderError(DocumentError):
+    """Embedding generation failed; cannot index document into vector store."""
+
+
+class GraphStoreError(DocumentError):
+    """Neo4j graph store operation failed during chunk node bridging."""
 
 
 @dataclass(frozen=True)
 class Document:
-    id: str
+    id: uuid.UUID
+    workspace_id: uuid.UUID
     title: str
     doc_type: str
     source_uri: str | None
+    raw_text: str
+    content_hash: str
     sensitivity: int
-    authored_at: datetime | None
-    ingested_at: datetime
+    metadata: dict[str, Any]
+    created_at: datetime
+    updated_at: datetime
 
 
-def _row_to_document(row: dict) -> Document:
+@dataclass(frozen=True)
+class QuarantineItem:
+    id: uuid.UUID
+    workspace_id: uuid.UUID
+    document_id: uuid.UUID | None
+    chunk_id: uuid.UUID | None
+    source: str
+    relation: str
+    target: str
+    quote: str
+    confidence: float
+    reason: str
+    detail: str
+    provider: str
+    extractor_model: str
+    created_at: datetime
+
+
+_COLUMNS = (
+    "id, workspace_id, title, doc_type, source_uri, raw_text, content_hash, "
+    "sensitivity, metadata, created_at, updated_at"
+)
+
+
+def _row_to_document(row: dict[str, Any]) -> Document:
+    meta = row["metadata"]
+    if isinstance(meta, str):
+        try:
+            meta = json.loads(meta)
+        except Exception:
+            meta = {}
+    elif meta is None:
+        meta = {}
+
     return Document(
-        id=str(row["id"]),
+        id=row["id"],
+        workspace_id=row["workspace_id"],
         title=row["title"],
         doc_type=row["doc_type"],
         source_uri=row["source_uri"],
+        raw_text=row["raw_text"],
+        content_hash=row["content_hash"],
         sensitivity=row["sensitivity"],
-        authored_at=row["authored_at"],
-        ingested_at=row["ingested_at"],
+        metadata=meta,
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
     )
+
+
+def _row_to_quarantine(row: dict[str, Any]) -> QuarantineItem:
+    return QuarantineItem(
+        id=row["id"],
+        workspace_id=row["workspace_id"],
+        document_id=row["document_id"],
+        chunk_id=row["chunk_id"],
+        source=row["source"],
+        relation=row["relation"],
+        target=row["target"],
+        quote=row["quote"] or "",
+        confidence=float(row["confidence"] or 0.0),
+        reason=row["reason"],
+        detail=row["detail"] or "",
+        provider=row["provider"],
+        extractor_model=row["extractor_model"],
+        created_at=row["created_at"],
+    )
+
+
+def intake_document(
+    *,
+    title: str,
+    doc_type: str,
+    raw_text: str,
+    sensitivity: int,
+    workspace_id: str | uuid.UUID = DEFAULT_WORKSPACE_ID,
+    author_principal_id: str | uuid.UUID | None = None,
+    source_uri: str | None = None,
+    extract_proposals: bool = False,
+) -> Document:
+    """Intake a source document into tenant memory.
+
+    Performs deduplication, chunking, embedding, graph bridge node creation,
+    optional verified extraction, and audit logging within an atomic transaction.
+    """
+    if not title or not title.strip():
+        raise DocumentError("Document title cannot be empty.")
+    if sensitivity not in (0, 1, 2, 3):
+        raise InvalidSensitivityError(f"Invalid sensitivity: {sensitivity}. Must be 0, 1, 2, or 3.")
+
+    clean_text = raw_text.strip()
+    if not clean_text:
+        raise DocumentError("Document text cannot be empty.")
+
+    ws_uuid = uuid.UUID(str(workspace_id))
+    hash_val = hashlib.sha256(clean_text.encode("utf-8")).hexdigest()
+
+    # Pre-check deduplication
+    with store.pg(str(ws_uuid)) as check_conn:
+        existing = check_conn.execute(
+            "SELECT id FROM document WHERE workspace_id = %s AND content_hash = %s",
+            (ws_uuid, hash_val),
+        ).fetchone()
+        if existing:
+            raise DuplicateDocumentError(
+                f"Document with content hash '{hash_val}' already exists in this workspace"
+            )
+
+    # Chunk text with true character offsets
+    chunks = ingest.chunk(clean_text)
+    embeddings: list[list[float]] = []
+    if chunks:
+        try:
+            embeddings = llm.embed([c.text for c in chunks], input_type="document")
+        except Exception as exc:
+            raise EmbeddingProviderError(f"Embedding generation failed: {exc}") from exc
+
+    doc_uuid = uuid.uuid4()
+    with store.pg(str(ws_uuid)) as conn:
+        try:
+            row = conn.execute(
+                f"""
+                INSERT INTO document (id, workspace_id, title, doc_type, source_uri, raw_text,
+                                      content_hash, sensitivity, metadata)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING {_COLUMNS}
+                """,
+                (
+                    doc_uuid,
+                    ws_uuid,
+                    title.strip(),
+                    doc_type.strip().lower(),
+                    source_uri.strip() if source_uri else None,
+                    clean_text,
+                    hash_val,
+                    sensitivity,
+                    json.dumps({"intake_source": "meridian_p4_intake"}),
+                ),
+            ).fetchone()
+        except psycopg.errors.UniqueViolation as exc:
+            raise DuplicateDocumentError(
+                f"Document with content hash '{hash_val}' already exists in this workspace"
+            ) from exc
+
+        chunk_ids: list[uuid.UUID] = []
+        if chunks:
+            chunk_ids = store.insert_chunks(
+                conn,
+                document_id=doc_uuid,
+                chunks=chunks,
+                embeddings=embeddings,
+                sensitivity=sensitivity,
+                workspace_id=str(ws_uuid),
+            )
+
+            # Bridge to Neo4j (:Chunk) nodes
+            try:
+                driver = store.neo(wait=2.0)
+                for c_id, c in zip(chunk_ids, chunks, strict=True):
+                    store.upsert_chunk_node(
+                        driver,
+                        chunk_id=c_id,
+                        document_id=doc_uuid,
+                        ordinal=c.ordinal,
+                        sensitivity=sensitivity,
+                        workspace_id=str(ws_uuid),
+                    )
+            except Exception as exc:
+                raise GraphStoreError(f"Failed to upsert Neo4j chunk nodes: {exc}") from exc
+
+        # Optional verified extraction into proposals and quarantine
+        queued_count = 0
+        quarantine_count = 0
+        if extract_proposals and chunks:
+            stamp = extract.stamp()
+            for cid, c in zip(chunk_ids, chunks, strict=True):
+                verified = extract.extract(c.text)
+                q, bad = store.queue_proposals(
+                    conn,
+                    document_id=doc_uuid,
+                    chunk_id=cid,
+                    chunk_start=c.start_char,
+                    chunk_text=c.text,
+                    verified=verified,
+                    stamp=stamp,
+                    workspace_id=str(ws_uuid),
+                )
+                queued_count += q
+                quarantine_count += bad
+
+        # Record structured audit event
+        audit.record_audit_event(
+            conn,
+            aggregate_type="document",
+            aggregate_id=doc_uuid,
+            action="created",
+            actor_principal_id=author_principal_id,
+            payload={
+                "title": title.strip(),
+                "doc_type": doc_type.strip().lower(),
+                "sensitivity": sensitivity,
+                "content_hash": hash_val,
+                "chunks_count": len(chunks),
+                "proposals_queued": queued_count,
+                "quarantined_failures": quarantine_count,
+            },
+            workspace_id=str(ws_uuid),
+        )
+
+        return _row_to_document(row)
+
+
+def get_document(
+    document_id: str | uuid.UUID,
+    *,
+    workspace_id: str | uuid.UUID = DEFAULT_WORKSPACE_ID,
+    clearance: int = 0,
+) -> Document:
+    """Fetch a document by ID, enforcing clearance and tenant isolation."""
+    doc_uuid = uuid.UUID(str(document_id))
+    ws_uuid = uuid.UUID(str(workspace_id))
+
+    with store.pg(str(ws_uuid)) as conn:
+        row = conn.execute(
+            f"""
+            SELECT {_COLUMNS}
+            FROM document
+            WHERE id = %s AND workspace_id = %s
+            """,
+            (doc_uuid, ws_uuid),
+        ).fetchone()
+
+        if not row:
+            raise DocumentNotFound(f"Document {document_id} not found")
+
+        # Fail-closed clearance gate: higher sensitivity document is invisible
+        if row["sensitivity"] > clearance:
+            raise DocumentNotFound(f"Document {document_id} not found or above clearance")
+
+        return _row_to_document(row)
 
 
 def list_documents(
     *,
-    workspace_id: str = DEFAULT_WORKSPACE_ID,
-    clearance: int,
-    doc_type: str | None = None,
+    workspace_id: str | uuid.UUID = DEFAULT_WORKSPACE_ID,
+    clearance: int = 0,
 ) -> list[Document]:
-    """Documents the caller may read, newest ingestion first.
+    """List documents in a workspace filtered by caller clearance."""
+    ws_uuid = uuid.UUID(str(workspace_id))
 
-    `clearance` is required and has no default. A default is what made
-    `packs.list_packs` fail open at `clearance: int = 4` — the top of the ladder — so a
-    forgotten argument here is a `TypeError` at the call site rather than a silent
-    disclosure of everything.
+    with store.pg(str(ws_uuid)) as conn:
+        rows = conn.execute(
+            f"""
+            SELECT {_COLUMNS}
+            FROM document
+            WHERE workspace_id = %s AND sensitivity <= %s
+            ORDER BY created_at DESC
+            """,
+            (ws_uuid, clearance),
+        ).fetchall()
 
-    Documents above the caller's clearance are **not returned in any form**. There is no
-    count, no placeholder and no total to subtract from: the filter is a `WHERE` clause,
-    so a withheld document leaves no trace in the result. That is the same discipline as
-    `_fetch_items_for_packs`, and it is why this returns a plain list.
-    """
-    query = f"SELECT {_COLUMNS} FROM document WHERE sensitivity <= %s"
-    params: list = [clearance]
-
-    if doc_type is not None:
-        query += " AND doc_type = %s"
-        params.append(doc_type)
-
-    query += " ORDER BY ingested_at DESC, id"
-
-    with store.pg(workspace_id) as conn:
-        rows = conn.execute(query, params).fetchall()
-    return [_row_to_document(r) for r in rows]
+        return [_row_to_document(r) for r in rows]
 
 
-def get_document(
-    document_id: str, *, workspace_id: str = DEFAULT_WORKSPACE_ID, clearance: int
-) -> Document:
-    """One document, or `DocumentNotFound`.
+def list_quarantine(
+    *,
+    workspace_id: str | uuid.UUID = DEFAULT_WORKSPACE_ID,
+) -> list[QuarantineItem]:
+    """List extraction failures / quarantine items for the tenant workspace."""
+    ws_uuid = uuid.UUID(str(workspace_id))
 
-    The clearance predicate is in the query rather than checked after fetching, so a
-    document the caller may not read is never loaded into the process at all.
-    """
-    with store.pg(workspace_id) as conn:
-        row = conn.execute(
-            f"SELECT {_COLUMNS} FROM document WHERE id = %s AND sensitivity <= %s",
-            (uuid.UUID(str(document_id)), clearance),
-        ).fetchone()
+    with store.pg(str(ws_uuid)) as conn:
+        rows = conn.execute(
+            """
+            SELECT id, workspace_id, document_id, chunk_id, source, relation, target,
+                   quote, confidence, reason, detail, provider, extractor_model, created_at
+            FROM extraction_failure
+            WHERE workspace_id = %s
+            ORDER BY created_at DESC
+            """,
+            (ws_uuid,),
+        ).fetchall()
 
-    if row is None:
-        raise DocumentNotFound(str(document_id))
-    return _row_to_document(row)
+        return [_row_to_quarantine(r) for r in rows]
