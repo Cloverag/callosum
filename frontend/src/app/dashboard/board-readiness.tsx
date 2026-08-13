@@ -85,7 +85,7 @@ export function BoardReadiness({ readiness }: { readiness: BoardReadinessData | 
                 </div>
                 <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-surface-sunken">
                   <div
-                    className="h-full rounded-full bg-muted-foreground transition-[width] duration-[--duration-state] ease-out"
+                    className="h-full rounded-full bg-muted-foreground transition-[width] duration-(--duration-state) ease-out"
                     style={{ width: `${value}%` }}
                   />
                 </div>

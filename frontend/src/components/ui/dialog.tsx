@@ -40,7 +40,7 @@ export function Dialog({ open, onClose, title, description, children, footer, cl
         <DialogPrimitive.Backdrop
           className={cn(
             "fixed inset-0 z-50 bg-black/40 backdrop-blur-sm",
-            "transition-opacity duration-[--duration-state] ease-[--ease-out-quart]",
+            "transition-opacity duration-(--duration-state) ease-(--ease-out-quart)",
             "data-starting-style:opacity-0 data-ending-style:opacity-0"
           )}
         />
@@ -50,7 +50,7 @@ export function Dialog({ open, onClose, title, description, children, footer, cl
             // plane (DESIGN.md — Elevation).
             "surface-glass fixed top-1/2 left-1/2 z-50 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2",
             "rounded-[20px] p-0 text-foreground outline-none",
-            "transition-[opacity,transform] duration-[--duration-state] ease-[--ease-out-quart]",
+            "transition-[opacity,transform] duration-(--duration-state) ease-(--ease-out-quart)",
             "data-starting-style:scale-95 data-starting-style:opacity-0",
             "data-ending-style:scale-95 data-ending-style:opacity-0",
             className
@@ -72,7 +72,7 @@ export function Dialog({ open, onClose, title, description, children, footer, cl
             </div>
             <DialogPrimitive.Close
               aria-label="Close"
-              className="-mr-1 flex size-8 shrink-0 items-center justify-center rounded-[10px] text-muted-foreground transition-colors duration-[--duration-hover] hover:bg-surface-sunken hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+              className="-mr-1 flex size-8 shrink-0 items-center justify-center rounded-[10px] text-muted-foreground transition-colors duration-(--duration-hover) hover:bg-surface-sunken hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
             >
               <X className="size-4" />
             </DialogPrimitive.Close>

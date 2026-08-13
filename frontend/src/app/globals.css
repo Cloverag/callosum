@@ -1,4 +1,19 @@
-@import "tailwindcss";
+/* `source(none)` turns OFF Tailwind v4's automatic content detection, and the
+   `@source` below turns it back on for the only directory that defines UI.
+
+   Auto-detection scans the whole project, markdown and tests included — and a
+   scanner cannot tell a warning from a use. `DESIGN.md` and `rules.md` quote the
+   broken v3 spelling `rounded-[--radius-card]` as the defect they record, and
+   `__tests__/tailwind-var-syntax.test.ts` quotes it as the thing it forbids, so
+   the documentation of the bug was regenerating the bug: the compiled sheet
+   carried `border-radius: --radius-card` again, emitted from the paragraphs
+   explaining why it must not exist.
+
+   Excluding those three files one at a time is a list that loses — the next
+   document to name the pattern reintroduces it. Scoping the scan to `src/`
+   states the true rule instead: classes come from components. */
+@import "tailwindcss" source(none);
+@source "../**/*.{ts,tsx}";
 /* Maps shadcn's token vocabulary onto the semantic layer below, so components
    copied in from the KokonutUI / Animate UI / Bklit registries render in the
    Meridian design language unedited. Read that file before adding a registry. */
@@ -311,7 +326,6 @@
          focal card reads as a material and not a light source. */
       --focal-foreground: #e3e8f0;
       --focal-ink: #0c1015;
-    --focal-sheen: rgba(227, 232, 240, 0.08);
       --focal-sheen: rgba(227, 232, 240, 0.08);
       --focal-action: linear-gradient(135deg, #0c1015 0%, #16233a 100%);
       --focal-memory: linear-gradient(135deg, #0c1015 0%, #2b1f4d 100%);

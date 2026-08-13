@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
  */
 const buttonVariants = cva(
   "inline-flex items-center justify-center gap-2 rounded-[12px] font-medium whitespace-nowrap select-none " +
-    "transition-[color,background-color,border-color,box-shadow] duration-[--duration-hover] ease-out " +
+    "transition-[color,background-color,border-color,box-shadow] duration-(--duration-hover) ease-out " +
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-surface " +
     "disabled:pointer-events-none disabled:opacity-50 " +
     // Icons size themselves unless a call site says otherwise.

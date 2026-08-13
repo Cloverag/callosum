@@ -20,7 +20,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
         aria-invalid={error || ariaInvalid || undefined}
         className={cn(
           "h-10 w-full rounded-[12px] border bg-surface-raised text-sm text-foreground",
-          "placeholder:text-muted-foreground transition-colors duration-[--duration-hover]",
+          "placeholder:text-muted-foreground transition-colors duration-(--duration-hover)",
           // Full-strength ring, matching Button and NavItem. It was `focus-focus/40`,
           // the only 40%-alpha focus ring in the app — thinner-looking than every
           // other control and closer to the 3:1 floor than it needed to be.
