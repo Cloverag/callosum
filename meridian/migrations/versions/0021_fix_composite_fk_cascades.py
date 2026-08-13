@@ -50,6 +50,13 @@ def upgrade() -> None:
                 FOREIGN KEY (resolution_id, workspace_id) REFERENCES resolution(id, workspace_id) ON DELETE SET NULL,
             ADD CONSTRAINT commitment_owner_workspace_fk
                 FOREIGN KEY (owner_board_member_id, workspace_id) REFERENCES board_member(id, workspace_id) ON DELETE CASCADE;
+
+        -- 5. Restore UNIQUE (provider, subject) on principal_identity
+        ALTER TABLE principal_identity
+            DROP CONSTRAINT IF EXISTS principal_identity_provider_subject_principal_uq,
+            DROP CONSTRAINT IF EXISTS principal_identity_provider_subject_uq,
+            ADD CONSTRAINT principal_identity_provider_subject_uq
+                UNIQUE (provider, subject);
         """
     )
 

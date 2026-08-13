@@ -21,7 +21,7 @@ from neo4j import Driver, GraphDatabase
 from pgvector.psycopg import register_vector
 from psycopg.rows import dict_row
 
-from callosum.config import settings
+from callosum.config import EMBEDDING_DIM, settings
 
 # ---------------------------------------------------------------------------
 # Postgres

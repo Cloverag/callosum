@@ -34,7 +34,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from callosum import ingest, llm, store
+from callosum import config, ingest, llm, store
+from callosum.config import EMBEDDING_DIM
 from callosum.store import DEFAULT_WORKSPACE_ID
 from meridian import audit
 
@@ -224,7 +225,7 @@ def intake_document(
                 embeddings = llm.embed([c.text for c in chunks], input_type="document")
             except Exception:
                 # Degrade to zero vectors if LLM provider is offline
-                embeddings = [[0.0] * store.EMBEDDING_DIM for _ in chunks]
+                embeddings = [[0.0] * EMBEDDING_DIM for _ in chunks]
 
             chunk_ids = store.insert_chunks(
                 conn,
