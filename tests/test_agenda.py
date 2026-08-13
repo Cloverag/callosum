@@ -48,8 +48,10 @@ def _new_workspace() -> str:
 
 def _cleanup(*workspace_ids: str) -> None:
     for ws in workspace_ids:
+        _admin("DELETE FROM audit_event WHERE workspace_id = %s", (ws,))
         _admin("DELETE FROM agenda_item WHERE workspace_id = %s", (ws,))
         _admin("DELETE FROM meeting WHERE workspace_id = %s", (ws,))
+        _admin("DELETE FROM membership WHERE workspace_id = %s", (ws,))
         _admin("DELETE FROM workspace WHERE id = %s", (ws,))
 
 
