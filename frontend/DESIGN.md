@@ -149,12 +149,27 @@ This is a **light-first** product: the light palette is the tuned one, and the o
 
 **Density doctrine.** Meridian is dense but calm — never "minimal." Optimize for seeing more meaningful information without overwhelming the operator; reduce decorative elements before reducing content.
 
-**Motion hierarchy** (see `globals.css` tokens `--duration-hover` 120ms, `--duration-state` 200ms):
+**Motion hierarchy.** Motion is a **token layer, like colour** *(made one 2026-08-13; `rules.md` §6)*. `globals.css` declares one ease and four durations; `src/lib/motion.ts` mirrors them for Framer Motion, which animates inline styles from JS and cannot read a custom property. A component picks a **tier**, never a number — and a new tier is an amendment here, not a call site.
+
+| Token | Tier | |
+|---|---|---|
+| `--duration-hover` | 120ms | L1 |
+| `--duration-state` | 200ms | L2 |
+| `--duration-entrance` | 400ms | L4 |
+| `--duration-reveal` | 1100ms | L5 |
+| `--stagger-step` | 50ms | the beat between staggered siblings |
+| `--ease-out-quart` | `cubic-bezier(0.16, 1, 0.3, 1)` | the one ease |
+
 - **L0 — None:** static content being scanned.
 - **L1 — Hover / press (120ms):** state feedback on interactive elements.
 - **L2 — State transitions (200ms):** dialog/popover open-close, list reflow, progress fills.
 - **L3 — The focal surface (200ms)** *(added 2026-08-13)*: a 2px lift with a deepened shadow, and a **pointer sheen** — a soft radial that follows the cursor across the ramp, so the surface reads as a material catching light. Scoped to the focal surface alone.
-- **Reduced motion:** all non-essential motion collapses to instant/crossfade (enforced globally). The focal lift is **removed outright** rather than made instant, because the global rule collapses duration and a 2px jump is worse than no lift; the sheen still crossfades, which is the alternative this hierarchy asks for.
+- **L4 — Entrance (400ms, `.rise-in`)** *(added 2026-08-13)*: a band arrives once, on load — 10px of travel and a fade. It exists because the dashboard appeared all at once as a wall of surfaces, which gives the eye no order to read them in: the page had a hierarchy in space and no way to state it in time. Applied to **bands, not cards** — twelve elements arriving in sequence is a loading screen impersonating a page; three is a page settling. Staggered by `--rise-index`, a *position in the reading order* rather than a hand-written delay, and capped at the fourth beat so a long page never has its last card still fading in after the first has been read.
+- **L5 — Reveal (1100ms, `.reveal-draw` / `.reveal-grow` / `.reveal-fade`)** *(added 2026-08-13)*: a measured figure draws itself — the gauge sweeps, the sparkline draws along its own length, a distribution bar grows from its leading edge. The one tier where motion is not feedback: it walks the eye along the axis the number is measured on, which is the axis a reader has to travel anyway. The value is the gauge's, which shipped and was reviewed at 1.1s; the tier was named around it rather than retuned to accommodate new members.
+- **Nothing loops.** A reveal earns one pass. A figure still moving after it has been read is asking for attention it has no further claim on — and an infinite animation is the one kind reduced motion's duration collapse makes *worse*, by turning a slow pulse into a strobe. The exception is a **loading indicator** (`animate-spin`, `animate-pulse`), where the loop is the signal and it stops when the thing it reports on finishes.
+- **Reduced motion:** all non-essential motion collapses to instant/crossfade (enforced globally). Three things follow that a single global rule does not give you. The focal lift is **removed outright** rather than made instant, because the global rule collapses duration and a 2px jump is worse than no lift. Every keyframe sequence **ends at the element's natural state** (`opacity: 1`, `transform: none`, a drawn stroke), which is what makes switching an animation off safe — collapsing the duration of a `both`-filled animation with a delay holds the element invisible and then pops it, replacing motion with a flash. And the global CSS rule **does not reach Framer**, whose animations run in JS and never consult a media query, so every Framer call site branches itself via `transition()` in `lib/motion.ts`.
+
+`frontend/__tests__/motion-contract.test.ts` asserts the scale: that the CSS tokens and the JS mirror agree, that no declaration in `globals.css` writes a literal time, that nothing loops, that every animating class is switched off under reduced motion, that every `to` frame lands on the natural state, and that no component writes a duration or an ease of its own. Before it existed, the code carried five durations and two rival ease curves while this section published two and one.
 
 **The sheen is not a custom cursor, deliberately.** Replacing the native pointer is the most recognisable portfolio-site device there is, and it costs the affordances the real cursor carries. The effect stays inside one surface and leaves the pointer alone. It is also **contrast-bearing, not decoration**: a light sheen lightens the ground under white text, so `--focal-sheen` was solved against the 7:1 gate rather than chosen — 0.08 → 7.79:1, 0.10 → 7.36:1, 0.12 → 6.94:1, which fails. `palette-contrast.test.ts` composites it onto each ramp's lightest stop and asserts the result.
 
@@ -227,9 +242,13 @@ Two ramps, and no others. They are palette members, not one-off styling, which i
 
 Worst stop against `--focal-foreground`: **9.68:1** (light `focal-action`), against a 7:1 floor. Light stops measure 17.49 / 9.68 / 10.19.
 
+**That 7:1 governs the SOLID foreground, not its alpha tints** *(corrected 2026-08-13)*. Components on a focal surface do not only use the token at full opacity: the hero's eyebrow, timestamp and supporting line are `text-focal-foreground/70` and `/75`, and the institutional-memory band follows the same pattern. An alpha tint is a different colour and had never been measured — "text over a gradient clears 7:1" was true of the token and had been generalised to every use of it, the same shape of over-claim the dark theme's 5.5-versus-5.14 correction records above. Measured, the tints occupy a **5.63:1 to 6.96:1** band: over the 4.5:1 AA floor at every stop of both ramps in both themes, under the 7:1 the solid token clears. Nothing was inaccessible and no token moved — the prose was wrong, not the palette. The rule that follows: **the 7:1 gate is for solid `--focal-foreground`; the tints answer to AA and are therefore scoped to secondary and metadata text, never body copy or a figure the reader has to act on.** `palette-contrast.test.ts` asserts both the floor and the band, so the distinction cannot collapse again.
+
 `--focal-ink` exists because **the accent inverts on a focal surface**, for the reason this document already gives about dark fills: a blue light enough to separate from an ink→blue ramp cannot also hold a white label. Measured, `accent` on that ramp's light stop is **2.10:1** — a button that does not read as a button. So `Button` gains `focal` (light fill, `--focal-ink` label) and `focalGhost` (hairline outline). Blue still *means* action everywhere in the product; on this one surface that meaning is carried by the fill rather than by the hue.
 
 Both share the ink end, so the two focal surfaces on a page read as one material at different temperatures rather than two competing brand colours. `action` carries the operational hero because that surface holds the primary button; `memory` carries the institutional-memory band. **The semantic families are unchanged** — this buys depth, not a new vocabulary, and violet still never means "button".
+
+`--focal-memory` shipped with the ramp above, contrast-gated at every stop and registered in the test as "the institutional-memory band" — and then nothing consumed it: the band it was named for stayed a 10px uppercase eyebrow, the quietest type in the system introducing half the dashboard. `dashboard/institutional-memory-band.tsx` is that band. It is a **band, not a promoted card**: everything inside the graph-health card — the violet gauge, the status dots, the sunken quote wells — is tuned for a light ground and would have to be re-inked to sit on a deep ramp, whereas a band introduces the section without touching what the section contains. It is the section, not any one card, that the violet identity belongs to. Its headline figure restates the gauge beneath it deliberately: the section's thesis is the verified share and the gauge is its detail, and both read the single `memory.verifiedPct` field, so a restated number here has one source and cannot disagree with itself. With it the dashboard holds **exactly two** focal surfaces, which is the cap.
 
 The dark theme narrows both ramps rather than brightening them: a focal surface on a dark ground should read as a *material*, not a light source. Every stop of every ramp is asserted against `--focal-foreground` in `frontend/__tests__/palette-contrast.test.ts`, which checks **all stops** rather than a declared worst one, so a future edit to either end cannot slip past by moving which stop is darkest.
 
@@ -237,6 +256,7 @@ The theme marker is **`data-theme` on `<html>`**, never a `.dark` class. Tailwin
 
 ### Named rules
 - **The Semantic-Only Rule.** Components consume semantic tokens exclusively. A raw hex, a `blue-600`, or a `slate-100` inside a component is a bug — it breaks theming and AA at once.
+- **The Token-Must-Compile Rule** *(added 2026-08-13, from a defect)*. Referencing a token is only half of consuming it. Eighteen utilities across ten files were written `rounded-[--radius-card]` / `duration-[--duration-hover]` — the Tailwind **v3** spelling, which v4 does not wrap in `var()`. The compiled sheet held `border-radius: --radius-card`, which is not a length, so the browser discarded the declaration without complaint: **every focal surface rendered with square corners** against this document's 16px, and six hover transitions fell back to the default duration. The correct form is `rounded-(--radius-card)`, and `__tests__/tailwind-var-syntax.test.ts` holds it. Generalised: a design system is only as real as its compiled output, so *"the component consumes the token"* is a measured claim and is checked like one.
 - **The One-Action Rule.** Blue means *action*. It appears on primary action, active nav, links, focus, selection — and nowhere else. Blue to "brighten up" a panel is a bug.
 - **The Memory-Only Violet Rule.** Violet appears only on institutional-memory surfaces. Violet anywhere else — a button, a nav item, a generic accent — is a bug.
 - **The Neutral-Page Rule.** Page base is neutral `#F7F8FA` and cards are white; separation comes from hairlines and a subtle shadow, never a tint.
@@ -342,7 +362,8 @@ Rules that follow from that, and apply to every chart here:
 - **Do** convey depth by tonal layering (neutral page → white card) first, subtle shadow second.
 - **Do** derive nav/tab active state from the current route (`usePathname`).
 - **Do** give every interactive element a visible, non-color-only focus ring and a full keyboard path; make citation/source interactions keyboard-operable.
-- **Do** provide a `prefers-reduced-motion` alternative for every transition; keep state transitions 150–250ms.
+- **Do** pick a motion **tier**, never a duration: `--duration-hover` / `-state` / `-entrance` / `-reveal`, or `transition()` from `lib/motion.ts` in a Framer call site. A new tier is an amendment here, in the same commit.
+- **Do** provide a `prefers-reduced-motion` alternative for every transition — and branch **Framer call sites yourself**, because the global CSS rule cannot reach an animation running in JS.
 - **Do** signal status with a shape/label/icon in addition to color.
 - **Do** keep information density high: tight, legible rows and short paths to common actions.
 
@@ -356,6 +377,8 @@ Rules that follow from that, and apply to every chart here:
   3. **Verified at the ramp's worst point** — lightest stop in light theme, darkest in dark, never the midpoint, which flatters every gradient ever measured. Text over a gradient clears **7:1** there.
 
   Every `gradient(` in `globals.css` is declared in `frontend/__tests__/palette-contrast.test.ts` with whether text sits on it; an undeclared one fails the suite. The prior **named exception** stands and is registered as text-free: the ambient ground wash on `body::before` (two ≤5%-alpha radials, fixed to the viewport), which exists so translucent chrome has something behind it to blur. *(That exception was itself an amendment, 2026-07-26, for "a little glass look".)*
+- **Don't** loop an animation that is not a loading indicator, and don't stagger an entrance across cards — L4 is for bands, and a page whose every element arrives in turn is a loading screen impersonating a page.
+- **Don't** write `utility-[--token]`. That is Tailwind v3 and compiles to an invalid declaration the browser silently drops; the v4 form is `utility-(--token)`.
 - **Don't** ship sci-fi copy — write plainly: "Loading…", "No conflicts pending review."
 - **Don't** hardcode off-token hex or palette-step colors in components.
 - **Don't** use a `border-left`/`border-right` >1px as a colored accent stripe; use full hairlines or background tints.
