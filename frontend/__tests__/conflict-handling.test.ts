@@ -36,6 +36,10 @@ const MEETING: Meeting = {
   created_by: null,
   created_at: "2026-08-01T09:00:00Z",
   updated_at: "2026-08-01T09:00:00Z",
+  // Added by 0020_meeting_importance and mirrored into the Meeting type by #127.
+  // The cross-language contract test compares this type against the Python, so a
+  // fixture that omits it stops compiling the moment the backend field lands.
+  importance: "standard",
 };
 
 function stubFetch(status: number, body: unknown) {
