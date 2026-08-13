@@ -8,7 +8,9 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/vendor/skeleton";
+import { LoadFailed, asApiError } from "@/components/ui/load-failed";
 import { cn } from "@/lib/utils";
+import type { ApiError } from "@/lib/http";
 import { apiClient, type EntityConflict } from "@/lib/api";
 import { transition } from "@/lib/motion";
 
@@ -150,14 +152,20 @@ function EmptyState() {
 
 export default function EntityConflictsPage() {
   const [conflicts, setConflicts] = useState<EntityConflict[] | null>(null);
+  const [error, setError] = useState<ApiError | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const reduce = useReducedMotion() ?? false;
 
   useEffect(() => {
+    // This was `.catch(() => setConflicts([]))`, which rendered the reassuring
+    // "No conflicts pending review" empty state for a load that had failed —
+    // and it failed on every request from 2026-08-10, because the endpoint
+    // raised `AttributeError`. "Nothing needs your review" and "we could not
+    // ask" are opposite answers and must not share a screen.
     apiClient
       .getPendingConflicts()
       .then(setConflicts)
-      .catch(() => setConflicts([]));
+      .catch((e) => setError(asApiError(e)));
   }, []);
 
   async function resolve(id: string, action: "approve" | "reject") {
@@ -165,7 +173,12 @@ export default function EntityConflictsPage() {
     try {
       if (action === "approve") await apiClient.approveConflict(id);
       else await apiClient.rejectConflict(id);
+      // Removed only after the server confirms. A failed approve used to reject
+      // this promise into nothing — the card stayed, no message appeared, and the
+      // one before it silently kept a fallback's word that the merge had landed.
       setConflicts((prev) => (prev ?? []).filter((c) => c.id !== id));
+    } catch (e) {
+      setError(asApiError(e));
     } finally {
       setProcessingId(null);
     }
@@ -187,7 +200,9 @@ export default function EntityConflictsPage() {
       />
 
       <div className="mt-6">
-        {conflicts === null ? (
+        {error ? (
+          <LoadFailed what="Entity conflicts" error={error} />
+        ) : conflicts === null ? (
           <ConflictSkeletons />
         ) : conflicts.length === 0 ? (
           <EmptyState />
