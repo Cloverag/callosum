@@ -86,6 +86,11 @@
   --color-surface-sunken: var(--surface-sunken);      /* inset wells, quote blocks */
   --color-surface-glass: var(--surface-glass);        /* blurred overlay only */
 
+  /* Focal surface (elevation L4) — always ink-based in BOTH themes, so its
+     foreground does not flip with the theme the way the page's does. */
+  --color-focal-foreground: var(--focal-foreground);  /* text/icons ON a focal surface */
+  --color-focal-ink: var(--focal-ink);                /* label on a light fill placed on one */
+
   /* Radius (brief: cards 16, controls 12, modals 20, pills full) ----------- */
   --radius-control: 12px;
   --radius-card: 16px;
@@ -220,6 +225,7 @@
        `--focal-foreground`, asserted in __tests__/palette-contrast.test.ts —
        the worst stop is checked, never the midpoint. */
     --focal-foreground: #ffffff;
+    --focal-ink: #101a28;
     --focal-action: linear-gradient(135deg, #101a28 0%, #1d4285 100%);
     --focal-memory: linear-gradient(135deg, #101a28 0%, #4a2e8c 100%);
   }
@@ -303,6 +309,7 @@
       /* Focal surfaces: the ramps NARROW in dark rather than brighten, so a
          focal card reads as a material and not a light source. */
       --focal-foreground: #e3e8f0;
+      --focal-ink: #0c1015;
       --focal-action: linear-gradient(135deg, #0c1015 0%, #16233a 100%);
       --focal-memory: linear-gradient(135deg, #0c1015 0%, #2b1f4d 100%);
     }
@@ -359,6 +366,7 @@
     /* Focal surfaces: the ramps NARROW in dark rather than brighten, so a
        focal card reads as a material and not a light source. */
     --focal-foreground: #e3e8f0;
+    --focal-ink: #0c1015;
     --focal-action: linear-gradient(135deg, #0c1015 0%, #16233a 100%);
     --focal-memory: linear-gradient(135deg, #0c1015 0%, #2b1f4d 100%);
   }
@@ -419,6 +427,22 @@
     background: var(--surface-glass);
     backdrop-filter: blur(16px) saturate(1.4);
     -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  }
+
+  /* Level 4 — the focal surface (rules.md §6, 2026-08-13). AT MOST TWO per page:
+     `action` for the operational hero, `memory` for the institutional-memory
+     band. Exposed as utilities so no component ever writes a gradient itself —
+     the ramps stay in the token layer where the contrast gate can read them. */
+  .surface-focal-action {
+    background-image: var(--focal-action);
+    color: var(--focal-foreground);
+    box-shadow: var(--shadow-raised);
+  }
+
+  .surface-focal-memory {
+    background-image: var(--focal-memory);
+    color: var(--focal-foreground);
+    box-shadow: var(--shadow-raised);
   }
 }
 

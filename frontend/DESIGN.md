@@ -215,10 +215,16 @@ Each coloured ink is solved for ≥5.5:1 against `surface-alt`, the **lightest o
 
 Two ramps, and no others. They are palette members, not one-off styling, which is why their values live here rather than in a component.
 
-| Token | Ramp | Worst stop vs `--focal-foreground` (`#FFFFFF`) |
+| Token | Light ramp | Dark ramp |
 |---|---|---|
-| `--focal-action` | `#101A28` → `#1D4285` | **9.68:1** |
-| `--focal-memory` | `#101A28` → `#4A2E8C` | **10.19:1** |
+| `--focal-action` | `#101A28` → `#1D4285` | `#0C1015` → `#16233A` |
+| `--focal-memory` | `#101A28` → `#4A2E8C` | `#0C1015` → `#2B1F4D` |
+| `--focal-foreground` | `#FFFFFF` | `#E3E8F0` |
+| `--focal-ink` | `#101A28` | `#0C1015` |
+
+Worst stop against `--focal-foreground`: **9.68:1** (light `focal-action`), against a 7:1 floor. Light stops measure 17.49 / 9.68 / 10.19.
+
+`--focal-ink` exists because **the accent inverts on a focal surface**, for the reason this document already gives about dark fills: a blue light enough to separate from an ink→blue ramp cannot also hold a white label. Measured, `accent` on that ramp's light stop is **2.10:1** — a button that does not read as a button. So `Button` gains `focal` (light fill, `--focal-ink` label) and `focalGhost` (hairline outline). Blue still *means* action everywhere in the product; on this one surface that meaning is carried by the fill rather than by the hue.
 
 Both share the ink end, so the two focal surfaces on a page read as one material at different temperatures rather than two competing brand colours. `action` carries the operational hero because that surface holds the primary button; `memory` carries the institutional-memory band. **The semantic families are unchanged** — this buys depth, not a new vocabulary, and violet still never means "button".
 
