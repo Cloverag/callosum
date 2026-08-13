@@ -493,4 +493,5 @@ class TestTheSessionStoresNoAuthorization:
             sess.PROVIDER,
             sess.SUBJECT,
             sess.WORKSPACE_ID,
+            sess.CREATED_AT,
         }

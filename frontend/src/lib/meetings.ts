@@ -87,6 +87,7 @@ export type Meeting = {
   created_by: string | null;
   created_at: string; // ISO
   updated_at: string; // ISO
+  importance: string;
 };
 
 // In-memory mock store, dated around the current demo month (July 2026).
