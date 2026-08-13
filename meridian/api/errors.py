@@ -102,6 +102,7 @@ _BY_NAME: tuple[tuple[tuple[str, ...], int, str], ...] = (
     (("Stale",), HTTPStatus.CONFLICT, STALE),
     (("NotFound",), HTTPStatus.NOT_FOUND, NOT_FOUND),
     (("Locked",), HTTPStatus.CONFLICT, CONFLICT),
+    (("Duplicate",), HTTPStatus.CONFLICT, CONFLICT),
     (("Validation",), HTTPStatus.UNPROCESSABLE_ENTITY, INVALID),
 )
 
@@ -200,7 +201,7 @@ def install_exception_handlers(app) -> None:
             code = (
                 FORBIDDEN if exc.status_code == 403
                 else "unauthorized" if exc.status_code == 401
-                else BAD_WORKSPACE if exc.status_code == 409
+                else CONFLICT if exc.status_code == 409
                 else INVALID if exc.status_code == 422
                 else INTERNAL
             )

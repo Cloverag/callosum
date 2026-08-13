@@ -54,23 +54,23 @@ def get_document(document_id: uuid.UUID, principal: CurrentPrincipal) -> domain.
 def intake_document(
     req: IntakeDocumentRequest, principal: CurrentPrincipal
 ) -> domain.Document:
-    """Intake a plain text document into the tenant workspace (Meridian P4)."""
-    try:
-        return domain.intake_document(
-            title=req.title,
-            doc_type=req.doc_type,
-            raw_text=req.raw_text,
-            sensitivity=req.sensitivity,
-            source_uri=req.source_uri,
-            workspace_id=principal.workspace_id,
-            author_principal_id=principal.id,
-        )
-    except domain.DuplicateDocumentError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
-    except domain.InvalidSensitivityError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-    except domain.DocumentError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    """Intake a plain text document into the tenant workspace (Meridian P4).
+
+    No try/except here on purpose. `DocumentError` is registered in
+    `errors.install_exception_handlers`, so every subclass is classified centrally and
+    answers in the `{"error": {"code", "detail"}}` envelope the client parses. Catching
+    them here re-raised a bare `HTTPException`, which fell through the envelope's
+    fallback branch and came back mislabelled.
+    """
+    return domain.intake_document(
+        title=req.title,
+        doc_type=req.doc_type,
+        raw_text=req.raw_text,
+        sensitivity=req.sensitivity,
+        source_uri=req.source_uri,
+        workspace_id=principal.workspace_id,
+        author_principal_id=principal.id,
+    )
 
 
 @router.post("/upload", status_code=status.HTTP_201_CREATED)
@@ -119,19 +119,13 @@ async def upload_document(
             detail="File contains no extractable plain text",
         )
 
-    try:
-        return domain.intake_document(
-            title=doc_title,
-            doc_type=doc_type,
-            raw_text=raw_text,
-            sensitivity=sensitivity,
-            source_uri=filename,
-            workspace_id=principal.workspace_id,
-            author_principal_id=principal.id,
-        )
-    except domain.DuplicateDocumentError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
-    except domain.InvalidSensitivityError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-    except domain.DocumentError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    # Classified centrally, for the reason given on `/intake` above.
+    return domain.intake_document(
+        title=doc_title,
+        doc_type=doc_type,
+        raw_text=raw_text,
+        sensitivity=sensitivity,
+        source_uri=filename,
+        workspace_id=principal.workspace_id,
+        author_principal_id=principal.id,
+    )
