@@ -328,7 +328,12 @@ Rules that follow from that, and apply to every chart here:
 - **Don't** style like an enterprise board portal (Diligent, Boardvantage) or a generic SaaS dashboard (gradient hero-metric tiles, identical icon-heading-text card grids).
 - **Don't** use violet for buttons or navigation, or blue for success/warning — each color has one meaning.
 - **Don't** use neon, glow-as-default, or glass on content cards.
-- **Don't** use gradients — with one **named exception**: the ambient ground wash on `body::before` (two ≤5%-alpha radials, fixed to the viewport). It exists so translucent chrome has something behind it to blur; without it the glass surfaces read as flat white. It never appears on a card, a button, a metric tile, or text. *(Amended 2026-07-26 at the owner's request for "a little glass look" — a gradient anywhere else is still a defect.)*
+- **Do** use gradients only on a **registered focal surface** *(amended 2026-08-13, owner's decision — this rule previously read "don't use gradients"; see `rules.md` §6)*. Three things hold, and a gradient failing any of them is still a defect:
+  1. **Anchored to a semantic family.** The operational hero ramps ink→blue-ink because it carries the primary action; the institutional-memory panel ramps ink→violet-ink. Violet still never means "button" — the amendment buys depth, not a new vocabulary.
+  2. **At most two per page**, deep-ink based, linear, low chroma. Never on a button, badge, chip, chart, icon, small panel, or text. A third gradient means the page has no focal surface left.
+  3. **Verified at the ramp's worst point** — lightest stop in light theme, darkest in dark, never the midpoint, which flatters every gradient ever measured. Text over a gradient clears **7:1** there.
+
+  Every `gradient(` in `globals.css` is declared in `frontend/__tests__/palette-contrast.test.ts` with whether text sits on it; an undeclared one fails the suite. The prior **named exception** stands and is registered as text-free: the ambient ground wash on `body::before` (two ≤5%-alpha radials, fixed to the viewport), which exists so translucent chrome has something behind it to blur. *(That exception was itself an amendment, 2026-07-26, for "a little glass look".)*
 - **Don't** ship sci-fi copy — write plainly: "Loading…", "No conflicts pending review."
 - **Don't** hardcode off-token hex or palette-step colors in components.
 - **Don't** use a `border-left`/`border-right` >1px as a colored accent stripe; use full hairlines or background tints.
