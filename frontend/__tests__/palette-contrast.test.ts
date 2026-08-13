@@ -316,35 +316,47 @@ describe("gradients must be declared before they ship", () => {
    */
   const GRADIENT_TEXT_FLOOR = 7;
 
-  const DECLARED: { token: string; carriesText: boolean; why: string }[] = [
+  type Kind = "ramp" | "overlay" | "decorative";
+  const DECLARED: { token: string; kind: Kind; why: string }[] = [
     {
       token: "focal-action",
-      carriesText: true,
+      kind: "ramp",
       why: "elevation level 4 — the operational hero. Carries the meeting title and the primary button label in --focal-foreground.",
     },
     {
       token: "focal-memory",
-      carriesText: true,
+      kind: "ramp",
       why: "elevation level 4 — the institutional-memory band. Carries its headline figure in --focal-foreground.",
     },
     {
+      token: "focal-sheen",
+      kind: "overlay",
+      why: "the pointer sheen on a focal surface. It LIGHTENS the ground beneath white text, so it spends contrast and must be measured composited onto the ramp's lightest stop — not treated as decoration sitting elsewhere.",
+    },
+    {
       token: "wash-a",
-      carriesText: false,
+      kind: "decorative",
       why: "body::before ambient ground wash, z-index -1, pointer-events none. No text is painted on it; page text sits on --surface above it, and that composite is asserted separately.",
     },
     {
       token: "wash-b",
-      carriesText: false,
+      kind: "decorative",
       why: "the second ambient radial; same reasoning as wash-a.",
     },
   ];
 
-  /** Every `gradient(...)` occurrence, with the token or property it was assigned to. */
+  /** A gradient DECLARED as a token value: `--focal-action: linear-gradient(...)`. */
   const found = [...CSS.matchAll(/--([a-z0-9-]+)\s*:\s*((?:linear|radial|conic)-gradient\([^;]*)\s*;/g)].map(
     (m) => ({ token: m[1], value: m[2] }),
   );
-  /** The two ambient radials are consumed in `body::before` via var(), not declared there. */
-  const consumed = [...CSS.matchAll(/(?:linear|radial|conic)-gradient\([^;]*?var\(--(wash-[ab])\)/g)].map(
+  /**
+   * A gradient CONSUMED in a rule, naming its colour through `var()` — the
+   * ambient washes and the pointer sheen. Matched generically rather than by a
+   * list of known names: a gradient that introduces a new token would otherwise
+   * slip past the registry entirely, which is the one thing this gate exists to
+   * stop.
+   */
+  const consumed = [...CSS.matchAll(/(?:linear|radial|conic)-gradient\([^;]*?var\(--([a-z0-9-]+)\)/g)].map(
     (m) => ({ token: m[1], value: m[0] }),
   );
 
@@ -357,7 +369,7 @@ describe("gradients must be declared before they ship", () => {
   it("holds every declared gradient to at most two focal surfaces", () => {
     // rules.md §6: "at most two gradient surfaces per page". A third is not an
     // excess of style, it is the point at which the page has no focal surface.
-    expect(DECLARED.filter((d) => d.carriesText)).toHaveLength(2);
+    expect(DECLARED.filter((d) => d.kind === "ramp")).toHaveLength(2);
   });
 
   it("verifies text-bearing gradients at EVERY stop, not the midpoint", () => {
@@ -374,7 +386,7 @@ describe("gradients must be declared before they ship", () => {
       const ink = theme.t["focal-foreground"];
       expect(ink).toBeDefined();
       for (const d of DECLARED) {
-        if (!d.carriesText) continue;
+        if (d.kind !== "ramp") continue;
         const decl = new RegExp(`--${d.token}\\s*:\\s*([^;]*)`).exec(theme.body);
         if (!decl) {
           failures.push(`${theme.name}: --${d.token} is registered but not declared`);
@@ -387,6 +399,40 @@ describe("gradients must be declared before they ship", () => {
           if (ratio < GRADIENT_TEXT_FLOOR) {
             failures.push(`${theme.name} --${d.token}: focal-foreground on ${stop} = ${round2(ratio)}:1`);
           }
+        }
+      }
+    }
+    expect(failures).toEqual([]);
+  });
+
+  it("keeps text legible under the pointer sheen, at the ramp's lightest stop", () => {
+    /**
+     * The sheen is the case a naive gate misses. It is not a background of its
+     * own — it LIGHTENS whatever it sits on, so it spends the ramp's contrast
+     * budget under the same white text. Checked where it costs most: composited
+     * at full strength onto the lightest stop of each ramp.
+     *
+     * Measured at alpha 0.08 the binding case is light `focal-action` at
+     * 7.79:1. At 0.10 it is 7.36:1 and at 0.12 it is 6.94:1 — which fails. The
+     * alpha was solved against this assertion rather than picked and hoped for.
+     */
+    const failures: string[] = [];
+    for (const theme of [
+      { name: "light", body: block(":root {") },
+      { name: "dark", body: block(':root[data-theme="dark"]') },
+    ]) {
+      const ink = tokens(theme.body)["focal-foreground"];
+      const sheen = rgbaTokens(theme.body)["focal-sheen"];
+      expect(sheen).toBeDefined();
+
+      for (const ramp of ["focal-action", "focal-memory"]) {
+        const decl = new RegExp(`--${ramp}\\s*:\\s*([^;]*)`).exec(theme.body)![1];
+        const stops = [...decl.matchAll(/#[0-9a-fA-F]{6}/g)].map((m) => m[0].toLowerCase());
+        // The stop that is already closest to the text is the one the sheen can push over.
+        const lightest = stops.reduce((a, b) => (luminance(rgb(a)) > luminance(rgb(b)) ? a : b));
+        const ratio = contrast(ink, composite(lightest, sheen));
+        if (ratio < GRADIENT_TEXT_FLOOR) {
+          failures.push(`${theme.name} ${ramp} + sheen on ${lightest} = ${round2(ratio)}:1`);
         }
       }
     }

@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDayFull, formatTime, startOfDay } from "@/lib/calendar";
 import { MEETING_STATUS_LABEL, MEETING_STATUS_TONE, isScheduled, type Meeting } from "@/lib/meetings";
+import { usePointerSheen } from "@/hooks/use-pointer-sheen";
 
 /** "Today" / "Tomorrow" / "in 3 days" — the operator's first read on urgency. */
 function relativeDay(start: Date): string {
@@ -42,6 +43,7 @@ function Stat({ icon, label, value }: { icon: ReactNode; label: string; value: s
 
 export function MeetingHero({ meeting, loading }: { meeting: Meeting | null; loading: boolean }) {
   const router = useRouter();
+  const sheen = usePointerSheen<HTMLElement>();
 
   /**
    * Loading and empty both render ON the focal surface rather than falling back
@@ -73,7 +75,7 @@ export function MeetingHero({ meeting, loading }: { meeting: Meeting | null; loa
   // upcoming meeting rather than rendered with a fabricated one.
   if (!meeting || !isScheduled(meeting)) {
     return (
-      <section className="surface-focal-action flex min-h-[16rem] flex-col items-center justify-center rounded-[--radius-card] p-8 text-center">
+      <section {...sheen} className="surface-focal-action flex min-h-[16rem] flex-col items-center justify-center rounded-[--radius-card] p-8 text-center">
         <CalendarClock className="size-6 text-focal-foreground/70" aria-hidden />
         <h2 className="mt-3 text-lg font-medium text-focal-foreground">No upcoming meetings</h2>
         <p className="mt-1.5 max-w-xs text-sm text-focal-foreground/75">
@@ -101,7 +103,7 @@ export function MeetingHero({ meeting, loading }: { meeting: Meeting | null; loa
    * its own elevation from `.surface-focal-action`.
    */
   return (
-    <section className="surface-focal-action flex min-h-[16rem] flex-col rounded-[--radius-card] p-8">
+    <section {...sheen} className="surface-focal-action flex min-h-[16rem] flex-col rounded-[--radius-card] p-8">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-focal-foreground/70">

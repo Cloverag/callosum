@@ -153,7 +153,10 @@ This is a **light-first** product: the light palette is the tuned one, and the o
 - **L0 — None:** static content being scanned.
 - **L1 — Hover / press (120ms):** state feedback on interactive elements.
 - **L2 — State transitions (200ms):** dialog/popover open-close, list reflow, progress fills.
-- **Reduced motion:** all non-essential motion collapses to instant/crossfade (enforced globally).
+- **L3 — The focal surface (200ms)** *(added 2026-08-13)*: a 2px lift with a deepened shadow, and a **pointer sheen** — a soft radial that follows the cursor across the ramp, so the surface reads as a material catching light. Scoped to the focal surface alone.
+- **Reduced motion:** all non-essential motion collapses to instant/crossfade (enforced globally). The focal lift is **removed outright** rather than made instant, because the global rule collapses duration and a 2px jump is worse than no lift; the sheen still crossfades, which is the alternative this hierarchy asks for.
+
+**The sheen is not a custom cursor, deliberately.** Replacing the native pointer is the most recognisable portfolio-site device there is, and it costs the affordances the real cursor carries. The effect stays inside one surface and leaves the pointer alone. It is also **contrast-bearing, not decoration**: a light sheen lightens the ground under white text, so `--focal-sheen` was solved against the 7:1 gate rather than chosen — 0.08 → 7.79:1, 0.10 → 7.36:1, 0.12 → 6.94:1, which fails. `palette-contrast.test.ts` composites it onto each ramp's lightest stop and asserts the result.
 
 ## 2. Colors
 
