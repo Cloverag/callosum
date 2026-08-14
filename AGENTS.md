@@ -9,14 +9,23 @@ The two stores are deliberately coupled: Postgres owns documents, chunk text,
 embeddings, RBAC, history, and the approval queue; Neo4j owns entities and their
 relationships. A `chunk.id` UUID exists in both stores and is the bridge between them.
 
-The repository is a Python 3.12 CLI application. Phases 1–5 are implemented, but the
-README explicitly says they have not been exercised end-to-end against live APIs. The
-frontend is not implemented. Evaluation has a deterministic seeded graph, while normal
-ingestion/extraction remains model-driven.
+The repository is a Python 3.12 CLI application **and** a FastAPI product API with a
+Next.js frontend. The research track (R0–R13) is closed and frozen at `eval-baseline-v3`;
+the product track has P0–P2 accepted, P3 frozen feature-complete with its exit gate not
+claimed, and P4 source intake in flight. Evaluation has a deterministic seeded graph,
+while normal ingestion/extraction remains model-driven. See `ROADMAP.md` and `phase.md`
+for authoritative status — not this paragraph, which is a summary and will age.
 
 The source code and schema are authoritative when they disagree with older prose or
-recorded outputs. In particular, the active Ollama default in `config.py` and
-`.env.example` is `gpt-oss:120b-cloud`; some documentation still refers to Kimi.
+recorded outputs. The active Ollama default in `config.py` and `.env.example` is
+`gpt-oss:120b-cloud`. Documentation referring to Kimi is stale; README was reconciled to
+this on 2026-08-15.
+
+CI is `.github/workflows/ci.yml`: a backend job running pytest with
+`CALLOSUM_RUN_INTEGRATION=1` against Postgres and Neo4j service containers, and a
+frontend job running Jest and a Next build. The `llm`-marked tests stay excluded through
+`addopts` in `pyproject.toml`, so their exclusion is not visible in the workflow file.
+The mechanism gate is not in CI and remains a local run.
 
 ## Meridian product context
 
@@ -121,7 +130,8 @@ readable chunk; a vector result can follow `Chunk -[:MENTIONS]-> Entity` into th
 | `pyproject.toml` | Packaging, Python constraint (`>=3.12,<3.13`), dependencies, `callosum` console entry point, pytest marker/default selection, Hatch build configuration. |
 | `.env.example` | Copy to `.env` for provider and database settings. Contains no secrets; `.env` is ignored. |
 | `.gitignore` | Excludes local environment/build artifacts, `reference/`, generated graph outputs, and generated `eval/results.md`. |
-| `docker-compose.yml` | Local Postgres 16 + pgvector on host `5433`, and Neo4j 5 on `7474`/`7687`; mounts the schema only on fresh Postgres volume initialization. |
+| `docker-compose.yml` | Local Postgres 16 + pgvector on host `5433`, Neo4j 5 on `7474`/`7687`, and Keycloak 26 on `8080` for the P3 OIDC path; mounts the schema only on fresh Postgres volume initialization. All three bind to `127.0.0.1` only. Keycloak runs `start-dev` — in-memory H2, no TLS, nothing survives a restart. |
+| `.github/workflows/ci.yml` | Backend job (pytest, gated suite, Postgres + Neo4j services) and frontend job (Jest + Next build). |
 
 ### Application package: `src/callosum/`
 
@@ -143,9 +153,9 @@ readable chunk; a vector result can follow `Chunk -[:MENTIONS]-> Entity` into th
 | Path | Responsibility |
 |---|---|
 | `src/app/` | Next.js App Router providing the Meridian shell (Sidebar, Header, Layout) and feature pages (e.g., `entity-conflicts`). |
-| `src/app/globals.css` | Implements the **Cinematic Luxury Aesthetic**: deep void/slate dark modes, premium off-white light modes, semantic CSS variables for `next-themes`, and glassmorphic utilities. |
-| `src/components/` | Reusable UI components. Heavily relies on Framer Motion for micro-interactions (e.g., fluid layout animations, theme toggling) and `lucide-react` for iconography. |
-| `src/lib/api.ts` | The typed API client layer. Currently implements in-memory mock endpoints with simulated latency; designed to be swapped for real backend integration in P1. |
+| `src/app/globals.css` | Implements design system v2 **"Calm Desk"**: **light mode only**, semantic token layer, blue `#2563EB` = action, violet `#6D28D9` reserved for Institutional Memory. The `dark` variant is deliberately bound to a `.dark` class that is never applied, so third-party `dark:` classes can never fire — do not remove that binding. See `frontend/DESIGN.md`. |
+| `src/components/` | Reusable UI components, `lucide-react` for iconography. |
+| `src/lib/` | The typed API client layer. Nine modules call the real API through `lib/http.ts` (agenda, board members, commitments, decisions, documents, meetings, minutes, packs, resolutions). `graph` and `assistant` remain local snapshots deferred to P6 (#100) and `insights` is a tile-by-tile audited local module — recorded exceptions, not pending swaps. |
 
 ### Persistence: `schema/`
 
@@ -249,6 +259,14 @@ the graph-fact mechanism measure, provider/model, corpus, and baseline compariso
 - Write deterministic tests for all changes to parsing, offsets, schema, evaluation logic,
   or access control. Run `pytest -q`; deliberately run `pytest -m llm` only with a
   configured live provider and when the cost/nondeterminism is acceptable.
+- **When you add or remove test cases, update the counts in `README.md` in the same PR.**
+  The "What is built" table and the two verification commands both quote a test count, and
+  a count that drifts is worse than no count: a reader cannot tell a stale figure from a
+  regression, and the repository has already paid for that once — `phase.md` advertised
+  "612 backend passed (0 failed)" for four days while the gated suite was failing 26 tests
+  (#123, #127). State the commit the figure was measured on, and say whether it came from a
+  run or from `pytest --collect-only`. The same applies to the API operation/path/router
+  counts and the migration head when you add an endpoint or a migration.
 - Keep provider access behind `llm.py`, typed extraction behind `ontology.py`, and storage
   operations behind `store.py`.
 - Stamp extraction proposals and failures with provider, model, prompt, and ontology
@@ -304,10 +322,19 @@ the graph-fact mechanism measure, provider/model, corpus, and baseline compariso
 
 1. Check `git diff` and confirm only intended files changed.
 2. Run the fast test suite; include the command/result in the handoff.
-3. For a schema/config/provider change, verify `callosum doctor` against a fresh local
+3. If the test count changed, update `README.md` to match before opening the PR — see the
+   rule in "Change rules → Do". The numbers to keep honest are:
+
+   | Figure | Where it lives | How to get it |
+   |---|---|---|
+   | Backend tests | README "What is built" + verification block | `CALLOSUM_RUN_INTEGRATION=1 pytest` (or `--collect-only` if the stack is down — say which) |
+   | Frontend tests / suites | same two places | `cd frontend && npx jest` |
+   | API operations / paths / routers | README "What is built" | count from `app.openapi()`, not by grepping decorators |
+   | Migration head + count | README "What is built" | `ls meridian/migrations/versions/` |
+4. For a schema/config/provider change, verify `callosum doctor` against a fresh local
    environment when practical.
-4. For core retrieval/extraction changes, run the documented eval baseline and compare the
+5. For core retrieval/extraction changes, run the documented eval baseline and compare the
    appropriate stratum and mechanism metrics with the prior CSV rows.
-5. For RBAC changes, prove both that a high-clearance principal receives authorized source
+6. For RBAC changes, prove both that a high-clearance principal receives authorized source
    text and that a low-clearance principal cannot receive it through vectors, graph facts,
    graph quotes, or graph-resolved chunks.
