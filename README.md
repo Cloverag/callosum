@@ -122,7 +122,7 @@ it**.
 
 **Stack** — Postgres 16 + pgvector · Neo4j 5 · Python 3.12 + FastAPI · Next.js 16 +
 React 19 + Tailwind v4 · Keycloak (OIDC). The LLM provider is pluggable and defaults to a
-free tier (Ollama Cloud / Kimi K2.5, bge-m3 embeddings), because *extraction quality is
+free tier (Ollama Cloud / `gpt-oss:120b-cloud`, bge-m3 embeddings), because *extraction quality is
 graph quality* — which model does the extracting is a research variable, not an
 implementation detail.
 
@@ -140,12 +140,17 @@ feature-complete at P3.
 
 | | |
 |---|---|
-| Backend tests | **612** passing |
-| Frontend tests | **176** passing, 11 suites |
-| API | **61 operations** across 44 paths, 10 routers |
-| Migrations | 17, forward and reverse tested |
+| Backend tests | **631** selected, gated suite |
+| Frontend tests | **208** passing, 14 suites |
+| API | **69 operations** across 52 paths, 12 routers |
+| Migrations | 21, head `0021_fix_composite_fk_cascades`, forward and reverse tested |
 | Architecture decisions | 15 ADRs |
-| Commits | 315 (`git rev-list --count master`) |
+| Commits | 380 (`git rev-list --count master`) |
+
+Measured on `c3073dc` (2026-08-15), not carried forward from an earlier run. The backend
+figure is `pytest --collect-only` under `CALLOSUM_RUN_INTEGRATION=1`, which is what this
+machine can establish without the compose stack up; it is the same 631 that PR #130
+reports as its baseline for this commit. The frontend figure is a real `npx jest` run.
 
 **P3 is frozen, not accepted** — of its three exit criteria one is met, one is partial and
 one is not met, because the accessibility and error-state checkpoints were deliberately
@@ -244,13 +249,14 @@ routes. Set `MERIDIAN_API_ORIGIN` if the API is not on `:8000`.
 ```bash
 docker compose up -d && docker compose ps               # all three healthy FIRST
 .venv/bin/callosum eval-mechanism                        # deterministic gate, no LLM
-CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 612 tests, real stores
-cd frontend && npx jest && npm run build                 # 176 tests, 11 suites
+CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 631 tests, real stores
+cd frontend && npx jest && npm run build                 # 208 tests, 14 suites
 ```
 
 `CALLOSUM_RUN_INTEGRATION=1` runs against real Postgres and Neo4j, so the compose stack
-must be up. Run it with the containers stopped and roughly 395 tests fail on connection
-errors — the failure looks like a broken build and is a missing database.
+must be up. Without the gate the suite selects 216 tests; with it, 631. Run it with the
+containers stopped and the 415 gated tests fail on connection errors — the failure looks
+like a broken build and is a missing database.
 
 ---
 
@@ -271,7 +277,14 @@ Stated because a limitation a reader finds is worth less than one they are told.
 - **Cross-tenant FK protection covers 1 relationship of 10.** The rest are safe by an
   application-level check, which is a real defence that every future author has to
   remember.
-- **No CI.** Every figure above is a local run against real Postgres and Neo4j.
+- **CI runs the gated suite, and it is younger than most of this document.**
+  `.github/workflows/ci.yml` builds Postgres and Neo4j as services, applies
+  `schema/postgres.sql` and the Alembic chain, and runs pytest with
+  `CALLOSUM_RUN_INTEGRATION=1`; the frontend job runs Jest and a Next build. It earned
+  its place immediately by catching that migrations `0018`–`0020` shipped with revision
+  ids longer than Alembic's `varchar(32)` and could never have applied. Two caveats: for
+  its first days it ran the fast suite only and reported green while 26 gated tests failed
+  (#123), and the mechanism gate is **not** part of it — that figure is still a local run.
 - **Observed-tier numbers are a single run of a single model.** Multi-run stability has not
   been characterised.
 
