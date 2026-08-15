@@ -98,12 +98,24 @@ def get_agenda_suggestions(
 
     with store.pg(workspace_id) as conn:
         # 1. Overdue Commitments
+        # `commitment` has no `owner_name`; it has `owner_board_member_id`, and the name
+        # lives on `board_member`. The previous query selected `owner_name` directly and
+        # therefore raised `UndefinedColumn` on every call — see the module note in
+        # `meridian/api/prep.py` about why that surfaced as a 404.
+        #
+        # LEFT JOIN because an unowned commitment is a legitimate state, and the caller
+        # below already renders `owner_name or 'unassigned'`. The join is on the composite
+        # `(id, workspace_id)`, matching the tenant-scoped foreign keys from `0019`, so it
+        # cannot resolve a name across a workspace boundary.
         overdue = conn.execute(
             """
-            SELECT id, title, owner_name, due_date
-              FROM commitment
-             WHERE workspace_id = %s AND status = 'open' AND due_date < NOW()
-             ORDER BY due_date ASC
+            SELECT c.id, c.title, bm.full_name AS owner_name, c.due_date
+              FROM commitment c
+              LEFT JOIN board_member bm
+                     ON bm.id = c.owner_board_member_id
+                    AND bm.workspace_id = c.workspace_id
+             WHERE c.workspace_id = %s AND c.status = 'open' AND c.due_date < NOW()
+             ORDER BY c.due_date ASC
              LIMIT 5
             """,
             (workspace_id,),
@@ -120,9 +132,17 @@ def get_agenda_suggestions(
             )
 
         # 2. Open/Proposed Decisions
+        # `decision` has no `category` column and never has — the table is
+        # (id, meeting_id, agenda_item_id, title, rationale, status, superseded_by_id,
+        # version, created_at, updated_at, workspace_id). `status` is the real
+        # discriminator and is what the reason now names.
+        #
+        # Substituting a real field rather than inventing a category: §2 forbids
+        # rendering a value that has no source, and a category nobody records is
+        # exactly that.
         decisions = conn.execute(
             """
-            SELECT id, title, category
+            SELECT id, title, status
               FROM decision
              WHERE workspace_id = %s AND status IN ('proposed', 'open')
              ORDER BY created_at ASC
@@ -135,7 +155,7 @@ def get_agenda_suggestions(
             suggestions.append(
                 {
                     "title": f"Decision: {d['title']}",
-                    "reason": f"Unresolved {d['category']} decision requiring board alignment",
+                    "reason": f"Unresolved decision ({d['status']}) requiring board alignment",
                     "source": {"kind": "decision", "id": str(d["id"]), "label": d["title"]},
                     "suggested_duration_minutes": 15,
                 }
