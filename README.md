@@ -184,6 +184,13 @@ bypassing row-level security — so a single-column reference can link two tenan
 constraint neither can read across. Reproduced as an attack, then fixed with composite
 `(id, workspace_id)` keys that reject it *even through a superuser connection*.
 
+That covers **16 relationships across 14 tables** (`0019_composite_tenant_fks`, closing
+issue #41). It is listed here rather than under Limitations because it used to be a
+limitation: only one relationship was protected this way, and the rest relied on an
+application-level check every future author had to remember. The follow-up matters too —
+`0019` rewrote 16 keys but gave only 11 an explicit `ON DELETE`, so the cascade semantics
+silently changed until `0021_fix_composite_fk_cascades` restored them (#122, #127).
+
 Full detail: **[Technical Overview](docs/TECHNICAL_OVERVIEW.md)** — problem, architecture,
 evaluation methodology, results, security model, limitations, future work.
 
@@ -274,9 +281,6 @@ Stated because a limitation a reader finds is worth less than one they are told.
   verification checkpoint was deferred.
 - **Grounding precision is 50%** on abstention negatives — the linker does not reliably
   refuse a question with no referent in the graph. The weakest measured number here.
-- **Cross-tenant FK protection covers 1 relationship of 10.** The rest are safe by an
-  application-level check, which is a real defence that every future author has to
-  remember.
 - **CI runs the gated suite, and it is younger than most of this document.**
   `.github/workflows/ci.yml` builds Postgres and Neo4j as services, applies
   `schema/postgres.sql` and the Alembic chain, and runs pytest with
