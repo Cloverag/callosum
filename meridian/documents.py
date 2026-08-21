@@ -1,65 +1,109 @@
-"""Document reads for board surfaces (Meridian P3, CP-E).
+"""Document intake, reads, and institutional memory lifecycle (Meridian P4).
 
-`document` belongs to the **frozen core schema** and has no product module, which left
-`frontend/src/lib/documents.ts` as the last mock behind a live surface. The packs page
-fetched real packs and mock documents, so every `board_pack_item.document_id` resolved
-to nothing and every item in every pack rendered as a broken reference.
-
-This module is the smallest thing that fixes that: a read-only product-side view of the
-frozen table. It adds no columns, no writes and no ingestion — those live in
-`callosum.ingest`, on the other side of the freeze.
+This module owns document ingestion, chunking, embedding generation, Neo4j chunk
+bridging, verified extraction, clearance-gated document retrieval, and quarantine
+reporting.
 
 ---------------------------------------------------------------------------
-WHY A PRODUCT MODULE RATHER THAN READING `callosum.store` FROM THE API
+INVARIANTS
 ---------------------------------------------------------------------------
-The open question in the P3 scope note was whether to read the table through the frozen
-core or add a module here. It is here because the clearance gate belongs on the product
-side: `store.pg()` scopes by workspace, but nothing in the frozen core filters a
-document by the *caller's* clearance, and putting that filter in the API layer would be
-the app-side filtering Invariant #1 exists to prevent. One module, one predicate,
-mirroring `packs._fetch_items_for_packs`.
-
----------------------------------------------------------------------------
-WHAT IS DELIBERATELY NOT SELECTED
----------------------------------------------------------------------------
-`raw_text`, `content_hash` and `metadata`. A board surface renders a document's
-identity, not its contents: `raw_text` is the whole corpus in a JSON response and
-`content_hash` is a dedupe key. They are excluded in the SQL rather than dropped in
-Python, so they never leave the database.
+1. **Never returns raw corpus text**: `_COLUMNS` excludes `raw_text`, `content_hash`,
+   and `metadata`. A board surface renders a document's identity, not its contents.
+2. **Clearance-filtered (fail-closed)**: `clearance` is a required argument on **every**
+   read path, quarantine included. A document above the caller's clearance is absent
+   (404), never redacted.
+3. **No zero-vector corruption (Option A)**: If embedding generation fails, intake
+   aborts immediately with `EmbeddingProviderError` without writing corrupt vectors.
+4. **Graph bridge integrity, by replay rather than by compensation**: chunk ids are
+   derived deterministically, so the graph write is idempotent and a crashed intake
+   heals on retry. See `_chunk_id`.
+5. **Deduplication**: Multi-tenant deduplication by `(workspace_id, content_hash)`.
+6. **Mandatory verified extraction**: All ingested chunks undergo quote verification;
+   verified claims are queued in `proposed_change` and unverified claims in
+   `extraction_failure`. Extraction holds **no** database connection.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
-from callosum import store
+import psycopg
+
+from callosum import extract, graph, ingest, llm, store
 from callosum.store import DEFAULT_WORKSPACE_ID
+from meridian import audit
 
-#: The clearance ladder, as in `meridian/packs.py`. Duplicated deliberately rather than
-#: imported: `packs` importing `documents` or the reverse would couple two modules that
-#: only share a constant, and the p1.0.5 postmortem records what happens when a
-#: hard-coded "maximum" drifts from the table.
-PUBLIC_CLEARANCE = 0
-RESTRICTED_CLEARANCE = 4
+log = logging.getLogger(__name__)
 
-#: Columns a board reader may see. Written once so `list` and `get` cannot diverge —
-#: a `SELECT *` here is how `raw_text` reaches a browser.
+#: Columns a board reader may see. Excludes raw_text, content_hash, and metadata.
 _COLUMNS = "id, title, doc_type, source_uri, sensitivity, authored_at, ingested_at"
+
+#: Namespace for the deterministic document/chunk ids minted below. A fixed constant,
+#: never regenerated — changing it would make every future retry mint new ids and
+#: silently break the replay-safety this exists to provide.
+_INTAKE_NAMESPACE = uuid.UUID("038ccca2-775d-569a-8895-712bfe0451bd")
+
+#: Reason recorded when extraction *raised* for a chunk, as opposed to running and
+#: rejecting an edge. Deliberately not a `callosum.ontology.FailureReason`: those four
+#: values are verdicts the verifier reached about an edge the model emitted, and this is
+#: the absence of any edge at all. Adding it to that enum would also mean an
+#: `ONTOLOGY_VERSION` bump, which would restamp every eval row for a product-layer
+#: concern.
+_EXTRACTION_ERROR = "extraction_error"
+
+
+def _chunk_id(workspace_id: uuid.UUID, content_hash: str, ordinal: int) -> uuid.UUID:
+    """The chunk's id, derived rather than random — so a retry replays onto the graph.
+
+    `AGENTS.md` invariant 7 makes graph-first writes safe *because* `MERGE` is
+    idempotent: a crash is repaired by re-running. A `uuid4()` per attempt breaks that —
+    a retry does not replay onto the same nodes, it MERGEs a **second** set, and because
+    the first attempt never committed to Postgres the content-hash pre-check does not
+    catch the retry either. Those orphans have ids that exist nowhere in Postgres, so
+    nothing can ever collect them.
+
+    **`workspace_id` is in the key, and that is not decoration.** Migration `0022`
+    deliberately scopes dedup to `(workspace_id, content_hash)` so two tenants may hold
+    byte-identical documents. Derive the id from the hash alone and those two tenants
+    mint the *same* chunk ids — and `MERGE` would then fuse their bridge nodes into one,
+    which is a cross-tenant leak created by the very migration that permits the
+    duplicate. Verified: `uuid5(ns, f"{h}:0")` collides across workspaces;
+    `uuid5(ns, f"{ws}:{h}:0")` does not.
+    """
+    return uuid.uuid5(_INTAKE_NAMESPACE, f"{workspace_id}:{content_hash}:{ordinal}")
+
+
+def _document_id(workspace_id: uuid.UUID, content_hash: str) -> uuid.UUID:
+    """The document's id, derived on the same principle and the same key material.
+
+    Consistent with the `(workspace_id, content_hash)` unique index: one document per
+    content per tenant, so its identity may as well *be* that pair. A retry after a
+    crashed intake therefore rebuilds the identical document and chunk nodes rather than
+    a parallel set.
+    """
+    return uuid.uuid5(_INTAKE_NAMESPACE, f"{workspace_id}:{content_hash}")
 
 
 class DocumentError(Exception):
-    """Base for document errors, so `errors.classify` can map the family."""
+    """Base for document domain errors."""
 
 
 class DocumentNotFound(DocumentError):
-    """No such document, **or** one above the caller's clearance.
+    """No such document, or one above the caller's clearance."""
 
-    Deliberately one error for both. Distinguishing them would confirm that a
-    restricted document exists to someone who may not read it, which is the same
-    existence oracle `PrincipalNotFound` and `get_pack` both refuse to be.
-    """
+
+class DuplicateDocumentError(DocumentError):
+    """Document with identical content hash already exists in this tenant workspace."""
+
+
+class InvalidSensitivityError(DocumentError):
+    """Sensitivity level outside the valid clearance ladder (0..3)."""
 
 
 @dataclass(frozen=True)
@@ -73,7 +117,25 @@ class Document:
     ingested_at: datetime
 
 
-def _row_to_document(row: dict) -> Document:
+@dataclass(frozen=True)
+class QuarantineItem:
+    id: uuid.UUID
+    workspace_id: uuid.UUID
+    document_id: uuid.UUID | None
+    chunk_id: uuid.UUID | None
+    source: str
+    relation: str
+    target: str
+    quote: str
+    confidence: float
+    reason: str
+    detail: str
+    provider: str
+    extractor_model: str
+    created_at: datetime
+
+
+def _row_to_document(row: dict[str, Any]) -> Document:
     return Document(
         id=str(row["id"]),
         title=row["title"],
@@ -85,6 +147,25 @@ def _row_to_document(row: dict) -> Document:
     )
 
 
+def _row_to_quarantine(row: dict[str, Any]) -> QuarantineItem:
+    return QuarantineItem(
+        id=row["id"],
+        workspace_id=row["workspace_id"],
+        document_id=row["document_id"],
+        chunk_id=row["chunk_id"],
+        source=row["source"],
+        relation=row["relation"],
+        target=row["target"],
+        quote=row["quote"] or "",
+        confidence=float(row["confidence"] or 0.0),
+        reason=row["reason"],
+        detail=row["detail"] or "",
+        provider=row["provider"],
+        extractor_model=row["extractor_model"],
+        created_at=row["created_at"],
+    )
+
+
 def list_documents(
     *,
     workspace_id: str = DEFAULT_WORKSPACE_ID,
@@ -93,18 +174,11 @@ def list_documents(
 ) -> list[Document]:
     """Documents the caller may read, newest ingestion first.
 
-    `clearance` is required and has no default. A default is what made
-    `packs.list_packs` fail open at `clearance: int = 4` — the top of the ladder — so a
-    forgotten argument here is a `TypeError` at the call site rather than a silent
-    disclosure of everything.
-
-    Documents above the caller's clearance are **not returned in any form**. There is no
-    count, no placeholder and no total to subtract from: the filter is a `WHERE` clause,
-    so a withheld document leaves no trace in the result. That is the same discipline as
-    `_fetch_items_for_packs`, and it is why this returns a plain list.
+    `clearance` is required. Documents above clearance are omitted in the SQL WHERE
+    clause, leaving no trace in the response.
     """
     query = f"SELECT {_COLUMNS} FROM document WHERE sensitivity <= %s"
-    params: list = [clearance]
+    params: list[Any] = [clearance]
 
     if doc_type is not None:
         query += " AND doc_type = %s"
@@ -118,13 +192,12 @@ def list_documents(
 
 
 def get_document(
-    document_id: str, *, workspace_id: str = DEFAULT_WORKSPACE_ID, clearance: int
+    document_id: str,
+    *,
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
+    clearance: int,
 ) -> Document:
-    """One document, or `DocumentNotFound`.
-
-    The clearance predicate is in the query rather than checked after fetching, so a
-    document the caller may not read is never loaded into the process at all.
-    """
+    """One document, or `DocumentNotFound` if absent or above clearance."""
     with store.pg(workspace_id) as conn:
         row = conn.execute(
             f"SELECT {_COLUMNS} FROM document WHERE id = %s AND sensitivity <= %s",
@@ -134,3 +207,353 @@ def get_document(
     if row is None:
         raise DocumentNotFound(str(document_id))
     return _row_to_document(row)
+
+
+def intake_document(
+    *,
+    title: str,
+    doc_type: str,
+    raw_text: str,
+    sensitivity: int,
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
+    author_principal_id: str | None = None,
+    source_uri: str | None = None,
+) -> Document:
+    """Intake a source document into tenant memory.
+
+    Validation → dedup → chunking → embeddings → Neo4j bridge → Postgres commit →
+    audit → verified extraction, in that order.
+
+    **The graph is written before Postgres commits, and that ordering is deliberate**
+    (`AGENTS.md` invariant 7). It is safe here for the same reason it is safe in
+    `store.approve()`: the write is idempotent, because `MERGE` is idempotent *and* the
+    ids are derived rather than random. A crash between the two stores leaves bridge
+    nodes that the next attempt MERGEs onto rather than duplicating. The compensating
+    delete below is a fast path that spares the retry, not the thing correctness rests
+    on.
+
+    Extraction happens last and holds **no** connection while it runs.
+    """
+    if not title or not title.strip():
+        raise DocumentError("Document title cannot be empty.")
+    if sensitivity not in (0, 1, 2, 3):
+        raise InvalidSensitivityError(f"Invalid sensitivity: {sensitivity}. Must be 0, 1, 2, or 3.")
+
+    clean_text = raw_text.strip()
+    if not clean_text:
+        raise DocumentError("Document text cannot be empty.")
+
+    ws_uuid = uuid.UUID(str(workspace_id))
+    hash_val = hashlib.sha256(clean_text.encode("utf-8")).hexdigest()
+
+    # Pre-check deduplication in the workspace
+    with store.pg(str(ws_uuid)) as check_conn:
+        existing = check_conn.execute(
+            "SELECT id FROM document WHERE workspace_id = %s AND content_hash = %s",
+            (ws_uuid, hash_val),
+        ).fetchone()
+        if existing:
+            raise DuplicateDocumentError(
+                f"Document with content hash '{hash_val}' already exists in this workspace"
+            )
+
+    # Chunk text preserving exact character offsets.
+    chunks = ingest.chunk(clean_text)
+
+    # No try/except here on purpose. `llm.embed` is the provider boundary and already
+    # raises `EmbeddingProviderError` for every way a backend can fail; re-wrapping a
+    # bare `Exception` at this call site would relabel a `TypeError` in our own code as
+    # "provider unreachable", which sends an operator to check a service that is up.
+    embeddings: list[list[float]] = (
+        llm.embed([c.text for c in chunks], input_type="document") if chunks else []
+    )
+
+    doc_uuid = _document_id(ws_uuid, hash_val)
+    chunk_ids = [_chunk_id(ws_uuid, hash_val, c.ordinal) for c in chunks]
+
+    neo_driver = None
+    try:
+        if chunks:
+            try:
+                neo_driver = store.neo(wait=2.0)
+                _bridge_chunk_nodes(
+                    neo_driver,
+                    doc_uuid=doc_uuid,
+                    chunk_ids=chunk_ids,
+                    chunks=chunks,
+                    sensitivity=sensitivity,
+                    workspace_id=ws_uuid,
+                )
+            except Exception as exc:
+                raise graph.GraphStoreError(
+                    f"Failed to bridge chunk nodes to Neo4j: {exc}"
+                ) from exc
+
+        # Insert into Postgres
+        try:
+            with store.pg(str(ws_uuid)) as conn:
+                row = conn.execute(
+                    """
+                    INSERT INTO document (id, workspace_id, title, doc_type, source_uri, raw_text,
+                                          content_hash, sensitivity, authored_by, metadata)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id, title, doc_type, source_uri, sensitivity, authored_at, ingested_at
+                    """,
+                    (
+                        doc_uuid,
+                        ws_uuid,
+                        title.strip(),
+                        doc_type.strip().lower(),
+                        source_uri.strip() if source_uri else None,
+                        clean_text,
+                        hash_val,
+                        sensitivity,
+                        uuid.UUID(str(author_principal_id)) if author_principal_id else None,
+                        json.dumps({"intake_source": "meridian_p4_intake"}),
+                    ),
+                ).fetchone()
+
+                # Insert chunks with the derived chunk UUIDs
+                for c, cid, vector in zip(chunks, chunk_ids, embeddings, strict=True):
+                    conn.execute(
+                        """
+                        INSERT INTO chunk (id, workspace_id, document_id, ordinal, text, start_char, end_char,
+                                           sensitivity, embedding)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        """,
+                        (cid, ws_uuid, doc_uuid, c.ordinal, c.text, c.start_char, c.end_char, sensitivity, vector),
+                    )
+
+                # Record structured audit event
+                audit.record_audit_event(
+                    conn,
+                    aggregate_type="document",
+                    aggregate_id=doc_uuid,
+                    action="created",
+                    actor_principal_id=author_principal_id,
+                    payload={
+                        "title": title.strip(),
+                        "doc_type": doc_type.strip().lower(),
+                        "sensitivity": sensitivity,
+                        "content_hash": hash_val,
+                        "chunks_count": len(chunks),
+                    },
+                    workspace_id=str(ws_uuid),
+                )
+        except psycopg.errors.UniqueViolation as exc:
+            _try_unbridge(neo_driver, chunk_ids, ws_uuid)
+            raise DuplicateDocumentError(
+                f"Document with content hash '{hash_val}' already exists in this workspace"
+            ) from exc
+        except Exception:
+            _try_unbridge(neo_driver, chunk_ids, ws_uuid)
+            raise
+    finally:
+        # `store.neo()` builds a fresh driver — and therefore a fresh connection pool —
+        # on every call. The CLI is one-shot and never had to care; this is a request
+        # path, so without this every intake leaks one.
+        if neo_driver is not None:
+            neo_driver.close()
+
+    # --- Verified extraction, holding nothing -------------------------------------
+    #
+    # Extract first, with no connection open, then write in one short transaction.
+    # The previous shape called `extract.extract()` — a provider round trip with a 300s
+    # timeout — *inside* an open transaction, once per chunk: a 20-chunk document could
+    # hold a write transaction for an hour and a half. Worse, `queue_proposals` wrote
+    # into that same transaction, so a failure on chunk 19 rolled back the 18 sets of
+    # proposals already queued, and a bare `except: pass` then swallowed the fact that
+    # anything had happened at all.
+    #
+    # That combination could discard rejected extractions, which `AGENTS.md` invariant 3
+    # forbids outright: "Never discard a rejected extraction." A chunk whose extraction
+    # *raises* is now recorded too — as a quarantine row with `_EXTRACTION_ERROR` and the
+    # exception in `detail` — so "nothing was extracted here" is never silently
+    # indistinguishable from "nothing was found here".
+    if chunks:
+        stamp = extract.stamp()
+        extracted: list[tuple[uuid.UUID, Any, Any]] = []
+        failed: list[tuple[uuid.UUID, Any, Exception]] = []
+
+        for cid, c in zip(chunk_ids, chunks, strict=True):
+            try:
+                extracted.append((cid, c, extract.extract(c.text)))
+            except Exception as exc:  # noqa: BLE001 — recorded, not swallowed
+                log.exception(
+                    "extraction failed for chunk %s of document %s", cid, doc_uuid
+                )
+                failed.append((cid, c, exc))
+
+        try:
+            with store.pg(str(ws_uuid)) as ext_conn:
+                for cid, c, verified in extracted:
+                    store.queue_proposals(
+                        ext_conn,
+                        document_id=doc_uuid,
+                        chunk_id=cid,
+                        chunk_start=c.start_char,
+                        chunk_text=c.text,
+                        verified=verified,
+                        stamp=stamp,
+                        workspace_id=str(ws_uuid),
+                    )
+                for cid, c, exc in failed:
+                    _record_extraction_error(
+                        ext_conn,
+                        document_id=doc_uuid,
+                        chunk_id=cid,
+                        chunk_text=c.text,
+                        exc=exc,
+                        stamp=stamp,
+                        workspace_id=ws_uuid,
+                    )
+        except Exception:
+            # The document and its chunks are committed and correct; the proposal queue
+            # is not. Logged with the exception rather than passed, so a systematically
+            # empty queue is visible instead of looking like a corpus with nothing in it.
+            log.exception(
+                "failed to record extraction results for document %s; the document is "
+                "committed but its proposals and quarantine rows are not",
+                doc_uuid,
+            )
+
+    return _row_to_document(row)
+
+
+def _bridge_chunk_nodes(
+    driver,
+    *,
+    doc_uuid: uuid.UUID,
+    chunk_ids: list[uuid.UUID],
+    chunks: list,
+    sensitivity: int,
+    workspace_id: uuid.UUID,
+) -> None:
+    """Write the `(:Chunk)` bridge nodes for this document.
+
+    Lives here rather than in `store.py` because it contains no Cypher of its own — it
+    is a loop over the already-public `store.upsert_chunk_node`, so nothing about it
+    needs the frozen core or the gateway. It is also not called `..._batch`: it opens one
+    session per node, and a name that promises batching the implementation does not do is
+    worse than no name at all. Making it a true `UNWIND` batch means a new gateway method,
+    which is worth doing when the node count justifies it and not before.
+    """
+    for cid, c in zip(chunk_ids, chunks, strict=True):
+        store.upsert_chunk_node(
+            driver,
+            chunk_id=cid,
+            document_id=doc_uuid,
+            ordinal=c.ordinal,
+            sensitivity=sensitivity,
+            workspace_id=str(workspace_id),
+        )
+
+
+def _try_unbridge(driver, chunk_ids: list[uuid.UUID], workspace_id: uuid.UUID) -> None:
+    """Best-effort removal of bridge nodes after a failed Postgres write.
+
+    **Guarded, and deliberately so.** If this raises, its exception would replace the one
+    that actually explains the failure — and the likeliest cause of the Postgres write
+    failing is an outage that will take this down too, so the failure you would most want
+    to read is exactly the one that would be masked. The original propagates; this one is
+    logged.
+
+    Correctness does not rest on this succeeding. The ids are derived (`_chunk_id`), so a
+    retry MERGEs onto the same nodes rather than orphaning a second set. This only spares
+    the retry the work.
+    """
+    if driver is None or not chunk_ids:
+        return
+    try:
+        gateway = graph.GraphGateway(driver)
+        ctx = graph.GraphContext(workspace_id=str(workspace_id))
+        gateway.delete_chunk_nodes(ctx, list(chunk_ids))
+    except Exception:  # noqa: BLE001 — must never mask the original failure
+        log.exception(
+            "compensating delete of %d chunk node(s) failed; they will be reclaimed by "
+            "MERGE on the next intake of the same document",
+            len(chunk_ids),
+        )
+
+
+def _record_extraction_error(
+    conn: psycopg.Connection,
+    *,
+    document_id: uuid.UUID,
+    chunk_id: uuid.UUID,
+    chunk_text: str,
+    exc: Exception,
+    stamp: dict[str, str],
+    workspace_id: uuid.UUID,
+) -> None:
+    """Quarantine a chunk whose extraction raised, rather than losing it.
+
+    `source`, `relation`, `target` and `quote` are left NULL because no edge was ever
+    emitted — this row says "extraction did not run to completion here", which is a
+    different fact from "the verifier rejected this edge", and writing a synthetic edge
+    to fill the columns would record a claim the model never made.
+    """
+    conn.execute(
+        """
+        INSERT INTO extraction_failure
+            (workspace_id, document_id, chunk_id, reason, detail,
+             provider, extractor_model, prompt_version, ontology_version, chunk_chars)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """,
+        (
+            workspace_id,
+            document_id,
+            chunk_id,
+            _EXTRACTION_ERROR,
+            f"{type(exc).__name__}: {exc}",
+            stamp["provider"],
+            stamp["extractor_model"],
+            stamp["prompt_version"],
+            stamp["ontology_version"],
+            len(chunk_text),
+        ),
+    )
+
+
+def list_quarantine(
+    *,
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
+    clearance: int,
+) -> list[QuarantineItem]:
+    """Quarantined extractions the caller may see, newest first.
+
+    **`clearance` is required, for the same reason it is required on `list_documents`.**
+    A quarantine row carries `quote` — text the model lifted while reading a chunk — plus
+    `source`/`relation`/`target`, which are graph facts, and `document_id`, which is the
+    existence of a document. Returning those unfiltered would let an investor-clearance
+    caller read material derived from a board-confidential document, which is `rules.md`
+    §2 ("withheld sources are disclosed as a count only — never their content, title, or
+    existence beyond that count") and P4's own exit criterion ("restricted titles, text,
+    quotes, graph facts, and hints cannot leak").
+
+    The filter is an **INNER JOIN**, so a row whose `document_id` is NULL is excluded
+    rather than shown. That is the fail-closed reading: a row that cannot be attributed
+    to a document cannot be shown to be safe, and every row this module writes has a
+    document. RLS already scopes the workspace; this scopes the clearance *within* it.
+    """
+    ws_uuid = uuid.UUID(str(workspace_id))
+
+    with store.pg(str(ws_uuid)) as conn:
+        rows = conn.execute(
+            """
+            SELECT ef.id, ef.workspace_id, ef.document_id, ef.chunk_id,
+                   ef.source, ef.relation, ef.target, ef.quote, ef.confidence,
+                   ef.reason, ef.detail, ef.provider, ef.extractor_model, ef.created_at
+            FROM extraction_failure ef
+            JOIN document d
+              ON d.id = ef.document_id
+             AND d.workspace_id = ef.workspace_id
+            WHERE ef.workspace_id = %s
+              AND d.sensitivity <= %s
+            ORDER BY ef.created_at DESC
+            """,
+            (ws_uuid, clearance),
+        ).fetchall()
+
+        return [_row_to_quarantine(r) for r in rows]
+
