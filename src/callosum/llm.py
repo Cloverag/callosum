@@ -25,6 +25,16 @@ T = TypeVar("T", bound=BaseModel)
 OLLAMA_TIMEOUT = httpx.Timeout(300.0, connect=5.0)  # cloud models think for a while on dense chunks; 5s connect timeout prevents CI hangs when Ollama is uninstalled
 
 
+class EmbeddingProviderError(RuntimeError):
+    """Embedding generation failed; the provider is unreachable or returned garbage.
+
+    Raised by `embed()` rather than by callers, because this module is the provider
+    boundary — a caller should not have to know which vendor exception means "the
+    provider is down". Subclasses `RuntimeError` so the CLI and eval paths, which
+    already handle `RuntimeError` from this module, are unaffected.
+    """
+
+
 # ---------------------------------------------------------------------------
 # Schema flattening
 # ---------------------------------------------------------------------------
@@ -305,63 +315,85 @@ def embed(texts: list[str], input_type: str = "document") -> list[list[float]]:
 
     cfg = settings()
 
-    if cfg.provider == Provider.ANTHROPIC:
-        import voyageai
+    # The provider call is wrapped so that every way a backend can fail leaves this
+    # function as one type. This module is the provider boundary (AGENTS.md), so a
+    # caller should not have to know that Ollama fails with `RuntimeError`, voyageai
+    # with its own SDK exceptions, and the network with `httpx` errors. A broad catch
+    # is correct *here* and wrong one layer up: inside this block the failing code is
+    # the vendor's, so "the provider failed" is an accurate reading of anything raised.
+    try:
+        if cfg.provider == Provider.ANTHROPIC:
+            import voyageai
 
-        client = voyageai.Client(api_key=cfg.voyage_api_key or None)
-        vectors: list[list[float]] = []
-        for i in range(0, len(texts), 128):
-            result = client.embed(
-                texts[i : i + 128], model=cfg.voyage_model, input_type=input_type
-            )
-            vectors.extend(result.embeddings)
-    else:
-        vectors = []
-        # bge-m3 runs locally and is free. Batch modestly — a long transcript chunk
-        # is a lot of tokens and the local model has no server-side batching.
-        for i in range(0, len(texts), 16):
-            batch = texts[i : i + 16]
-            vecs = _embed_batch_ollama(cfg, batch)
-            if vecs is None:
-                # This batch triggered the bge-m3 NaN fault (HTTP 500 "unsupported value:
-                # NaN", or a 200 whose vectors contain NaN/Inf). The fault is input-specific
-                # and DETERMINISTIC, not transient (root cause + evidence in docs/reviews/
-                # 2026-07-17-nan-investigation.md): a specific tokenization overflows to NaN,
-                # so retrying the identical string re-hits it. Retry ONCE with a minimally
-                # normalized input — trailing whitespace and a single trailing '?' removed —
-                # which changes the tokenization enough to dodge the fault while barely moving
-                # the vector (verified: dropping the trailing '?' recovers the failing query).
-                # This is infrastructure hardening, not retrieval logic: it never changes a
-                # readable input's result, only rescues one the model cannot encode. Exactly
-                # one retry — not a general multi-retry loop — then exclude with an audit line.
-                normalized = [_normalize_for_retry(t) for t in batch]
-                vecs = _embed_batch_ollama(cfg, normalized)
-                if vecs is None:
-                    print(
-                        f"[embed] bge-m3 returned an invalid (NaN/Inf) embedding for "
-                        f"{batch!r}; normalized retry {normalized!r} also failed — "
-                        f"infrastructure failure, excluding this input.",
-                        file=sys.stderr,
-                    )
-                    raise RuntimeError(
-                        f"bge-m3 returned an invalid embedding (NaN/Inf) for {batch!r} "
-                        f"and the normalized retry {normalized!r} also failed"
-                    )
-                print(
-                    f"[embed] recovered a bge-m3 NaN via input normalization: "
-                    f"{batch!r} -> {normalized!r}",
-                    file=sys.stderr,
+            client = voyageai.Client(api_key=cfg.voyage_api_key or None)
+            vectors: list[list[float]] = []
+            for i in range(0, len(texts), 128):
+                result = client.embed(
+                    texts[i : i + 128], model=cfg.voyage_model, input_type=input_type
                 )
-            vectors.extend(vecs)
+                vectors.extend(result.embeddings)
+        else:
+            vectors = _embed_ollama(cfg, texts)
+    except EmbeddingProviderError:
+        raise
+    except Exception as exc:
+        raise EmbeddingProviderError(
+            f"Embedding provider ({cfg.provider.value}) failed: {exc}"
+        ) from exc
 
     from callosum.config import EMBEDDING_DIM
 
+    # Deliberately outside the try. A dimension mismatch is a *configuration* error —
+    # the provider answered perfectly well, with the wrong model — and calling it a
+    # provider outage would send an operator to check a service that is up.
     if vectors and len(vectors[0]) != EMBEDDING_DIM:
         raise ValueError(
             f"Embedding model returned {len(vectors[0])}-dim vectors but "
             f"chunk.embedding is VECTOR({EMBEDDING_DIM}). Either pick a 1024-dim "
             f"model (bge-m3, mxbai-embed-large, voyage-3) or migrate the column."
         )
+    return vectors
+
+
+def _embed_ollama(cfg, texts: list[str]) -> list[list[float]]:
+    """The Ollama arm of `embed()`, unchanged in behaviour — extracted for readability."""
+    vectors: list[list[float]] = []
+    # bge-m3 runs locally and is free. Batch modestly — a long transcript chunk
+    # is a lot of tokens and the local model has no server-side batching.
+    for i in range(0, len(texts), 16):
+        batch = texts[i : i + 16]
+        vecs = _embed_batch_ollama(cfg, batch)
+        if vecs is None:
+            # This batch triggered the bge-m3 NaN fault (HTTP 500 "unsupported value:
+            # NaN", or a 200 whose vectors contain NaN/Inf). The fault is input-specific
+            # and DETERMINISTIC, not transient (root cause + evidence in docs/reviews/
+            # 2026-07-17-nan-investigation.md): a specific tokenization overflows to NaN,
+            # so retrying the identical string re-hits it. Retry ONCE with a minimally
+            # normalized input — trailing whitespace and a single trailing '?' removed —
+            # which changes the tokenization enough to dodge the fault while barely moving
+            # the vector (verified: dropping the trailing '?' recovers the failing query).
+            # This is infrastructure hardening, not retrieval logic: it never changes a
+            # readable input's result, only rescues one the model cannot encode. Exactly
+            # one retry — not a general multi-retry loop — then exclude with an audit line.
+            normalized = [_normalize_for_retry(t) for t in batch]
+            vecs = _embed_batch_ollama(cfg, normalized)
+            if vecs is None:
+                print(
+                    f"[embed] bge-m3 returned an invalid (NaN/Inf) embedding for "
+                    f"{batch!r}; normalized retry {normalized!r} also failed — "
+                    f"infrastructure failure, excluding this input.",
+                    file=sys.stderr,
+                )
+                raise EmbeddingProviderError(
+                    f"bge-m3 returned an invalid embedding (NaN/Inf) for {batch!r} "
+                    f"and the normalized retry {normalized!r} also failed"
+                )
+            print(
+                f"[embed] recovered a bge-m3 NaN via input normalization: "
+                f"{batch!r} -> {normalized!r}",
+                file=sys.stderr,
+            )
+        vectors.extend(vecs)
     return vectors
 
 

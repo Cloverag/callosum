@@ -28,6 +28,7 @@ string. Domain errors keep their detail, because "title must not be empty" and
 from dataclasses import dataclass
 from http import HTTPStatus
 
+from callosum import graph, llm
 from callosum.identity import PrincipalNotFound
 from meridian import (
     agenda,
@@ -64,24 +65,26 @@ class ApiError:
 
 # --- Codes -----------------------------------------------------------------
 
+#: Machine-readable error codes. Stable strings, not HTTP status numbers: the
+#: frontend switches on these.
+BAD_WORKSPACE = "bad_workspace"
+CONFLICT = "conflict"
+FORBIDDEN = "forbidden"
+INVALID = "invalid"
 NOT_FOUND = "not_found"
 STALE = "stale_resource"
-CONFLICT = "conflict"
-INVALID = "invalid"
-FORBIDDEN = "forbidden"
-BAD_WORKSPACE = "workspace_required"
+SERVICE_UNAVAILABLE = "service_unavailable"
 INTERNAL = "internal"
 
-#: What a caller is told when authorization fails, regardless of why.
 _FORBIDDEN_DETAIL = "Not available to you."
 
 
-# --- Pass 1: explicit, for anything needing more than its suffix implies ----
+# --- Pass 1: explicit type registrations ------------------------------------
+#
+# These MUST come first. If an exception matches both an explicit entry and a
+# naming pattern below, the explicit entry wins.
 
 _EXPLICIT: tuple[tuple[type[BaseException], int, str, str | None], ...] = (
-    # Authorization. Fixed detail: the exception message names the principal the
-    # caller asked about, and the whole point of PrincipalNotFound is that "unknown"
-    # and "not a member" are indistinguishable.
     (PrincipalNotFound, HTTPStatus.FORBIDDEN, FORBIDDEN, _FORBIDDEN_DETAIL),
     (audit.ActorNotInWorkspace, HTTPStatus.FORBIDDEN, FORBIDDEN, _FORBIDDEN_DETAIL),
     # A missing or malformed workspace is the caller's error, not a permission
@@ -90,6 +93,15 @@ _EXPLICIT: tuple[tuple[type[BaseException], int, str, str | None], ...] = (
     (WorkspaceRequired, HTTPStatus.BAD_REQUEST, BAD_WORKSPACE, None),
     # `InvalidTransition` breaks the suffix convention; it is a lifecycle conflict.
     (meetings.InvalidTransition, HTTPStatus.CONFLICT, CONFLICT, None),
+    (documents.DuplicateDocumentError, HTTPStatus.CONFLICT, CONFLICT, None),
+    (documents.InvalidSensitivityError, HTTPStatus.UNPROCESSABLE_ENTITY, INVALID, None),
+    # Infrastructure, not domain. A provider being down or a graph write failing is not
+    # the caller's mistake, so 503 rather than a 4xx — see `test_api_errors.py`, which
+    # asserts no *domain* exception falls through to a 500. These two are exempt by
+    # meaning rather than by module: they are defined outside `meridian.*` precisely so
+    # the completeness walk does not claim them as domain errors.
+    (llm.EmbeddingProviderError, HTTPStatus.SERVICE_UNAVAILABLE, SERVICE_UNAVAILABLE, None),
+    (graph.GraphStoreError, HTTPStatus.SERVICE_UNAVAILABLE, SERVICE_UNAVAILABLE, None),
 )
 
 
@@ -223,6 +235,8 @@ def install_exception_handlers(app) -> None:
         resolutions.ResolutionError,
         PrincipalNotFound,
         WorkspaceRequired,
+        llm.EmbeddingProviderError,
+        graph.GraphStoreError,
     ]
     for base in bases:
         app.add_exception_handler(base, handle)
