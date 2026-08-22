@@ -69,6 +69,12 @@ ACTIONS = frozenset(
         "item_added",
         "item_removed",
         "recorded",
+        # Intake refused a submission whose content is already filed in this
+        # workspace. Recorded for EVERY duplicate, not only the ones the actor could
+        # not have read — see ADR-016. If only the hidden collisions were logged, the
+        # presence of a row would itself be the disclosure the audit exists to make
+        # visible, and the audit trail would become a second copy of the oracle.
+        "intake_duplicate_refused",
     }
 )
 
