@@ -46,6 +46,8 @@ $CLI ingest-doc data/demo/messy_board_appendix.pdf --type appendix --sensitivity
 $CLI ingest-doc data/demo/messy_board_followup_email.md --type email --sensitivity 1 --no-extract
 $CLI ingest-doc data/demo/messy_audit_followup_email.md --type email --sensitivity 1 --no-extract
 $CLI ingest-doc data/demo/messy_restricted_email.md --type email --sensitivity 3 --no-extract
+$CLI ingest-doc data/demo/messy_board_meeting_17_transcript.txt --type transcript --sensitivity 1 --no-extract
+$CLI ingest-doc data/demo/messy_vendor_followup_email.md --type email --sensitivity 1 --no-extract
 $CLI ingest-doc "$COMP" --type transcript --sensitivity 3 --no-extract
 
 hr "Seeding the gold graph (deterministic — no LLM)"
