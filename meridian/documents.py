@@ -292,13 +292,30 @@ def intake_document(
     ws_uuid = uuid.UUID(str(workspace_id))
     hash_val = hashlib.sha256(clean_text.encode("utf-8")).hexdigest()
 
-    # Pre-check deduplication in the workspace
+    # Pre-check deduplication in the workspace.
+    #
+    # NO clearance predicate here, and that is a decision rather than an omission —
+    # ADR-016. Dedup is content-addressed and per-workspace, so a caller who submits
+    # bytes already filed above their clearance learns that the workspace holds them.
+    # Adding `AND sensitivity <= %s` does not close that: the INSERT then hits
+    # `uq_document_workspace_content_hash` and raises the same error one step later.
+    # The oracle is a property of content-addressed dedup, not of where the predicate
+    # sits, and the alternatives are worse (see the ADR). It is therefore accepted and
+    # made *visible* instead: every refusal is audited, so probing leaves a trail.
     with store.pg(str(ws_uuid)) as check_conn:
         existing = check_conn.execute(
-            "SELECT id FROM document WHERE workspace_id = %s AND content_hash = %s",
+            "SELECT id, sensitivity FROM document WHERE workspace_id = %s AND content_hash = %s",
             (ws_uuid, hash_val),
         ).fetchone()
         if existing:
+            _record_duplicate_refusal(
+                workspace_id=ws_uuid,
+                existing_id=existing["id"],
+                existing_sensitivity=existing["sensitivity"],
+                actor_principal_id=author_principal_id,
+                author_clearance=author_clearance,
+                content_hash=hash_val,
+            )
             raise DuplicateDocumentError(
                 f"Document with content hash '{hash_val}' already exists in this workspace"
             )
@@ -388,6 +405,17 @@ def intake_document(
                 )
         except psycopg.errors.UniqueViolation as exc:
             _try_unbridge(neo_driver, chunk_ids, ws_uuid)
+            # The race: another intake committed the same content between the pre-check
+            # and this INSERT. The caller receives the identical 409, so they learn the
+            # identical fact — auditing only the pre-check path would leave a hole in
+            # the trail exactly where concurrency put it. Re-queried rather than assumed,
+            # because the row that won the race is the one this refusal is about.
+            _audit_race_refusal(
+                workspace_id=ws_uuid,
+                content_hash=hash_val,
+                actor_principal_id=author_principal_id,
+                author_clearance=author_clearance,
+            )
             raise DuplicateDocumentError(
                 f"Document with content hash '{hash_val}' already exists in this workspace"
             ) from exc
@@ -558,6 +586,109 @@ def _record_extraction_error(
             stamp["ontology_version"],
             len(chunk_text),
         ),
+    )
+
+
+
+def _record_duplicate_refusal(
+    *,
+    workspace_id: uuid.UUID,
+    existing_id: uuid.UUID,
+    existing_sensitivity: int,
+    actor_principal_id: str | None,
+    author_clearance: int,
+    content_hash: str,
+) -> None:
+    """Record that intake refused a submission as a duplicate (ADR-016).
+
+    The dedup pre-check is an existence oracle: submitting content already filed above
+    your clearance returns 409, which tells you the workspace holds it. That cannot be
+    closed cheaply — the alternatives are in the ADR — so it is accepted and made
+    **detectable** instead. This is the trail.
+
+    **Every refusal is recorded, not only the ones the actor could not read.** If only
+    the hidden collisions produced a row, the presence of a row would itself be the
+    disclosure, and the audit trail would become a second copy of the oracle for whoever
+    can read it. `actor_could_read` carries the distinction in the payload instead.
+
+    Written on its own connection, deliberately. `record_audit_event`'s contract is that
+    it runs inside the mutating transaction so the two roll back together — but here
+    there is no mutation to be atomic with. The intake is refused; the only thing to
+    persist is that it was attempted.
+
+    Failure to audit must not convert a 409 into a 500: the caller's answer is correct
+    either way, and losing the trail is worse reported than raised. `AGENTS.md` invariant
+    3's discipline applies — logged with the exception, never silently passed.
+
+    **Depends on D7.** `aggregate_id` is the existing document's id, which is the correct
+    aggregate for this event and is also the identifier the oracle would disclose. There
+    is no audit read endpoint today. If one is built, it must be clearance-aware or this
+    row hands back exactly what the refusal withheld.
+    """
+    actor_could_read = existing_sensitivity <= author_clearance
+    try:
+        with store.pg(str(workspace_id)) as conn:
+            audit.record_audit_event(
+                conn,
+                aggregate_type="document",
+                aggregate_id=existing_id,
+                action="intake_duplicate_refused",
+                actor_principal_id=actor_principal_id,
+                payload={
+                    "content_hash": content_hash,
+                    "actor_clearance": author_clearance,
+                    "actor_could_read": actor_could_read,
+                },
+                workspace_id=str(workspace_id),
+            )
+    except Exception:  # noqa: BLE001 — a lost trail must not become a 500
+        log.exception(
+            "failed to audit a refused duplicate intake in workspace %s "
+            "(content_hash=%s); the refusal itself is unaffected",
+            workspace_id,
+            content_hash,
+        )
+
+
+
+def _audit_race_refusal(
+    *,
+    workspace_id: uuid.UUID,
+    content_hash: str,
+    actor_principal_id: str | None,
+    author_clearance: int,
+) -> None:
+    """Audit a duplicate refusal that came from the unique index rather than the pre-check.
+
+    Separate from `_record_duplicate_refusal` only because the winning row's id and
+    sensitivity are not in hand here — the INSERT failed, it did not return anything. One
+    extra SELECT on the failure path is cheap, and guessing would put a wrong
+    `aggregate_id` in an append-only trail.
+
+    Silent when the row cannot be found: by the time this runs the winner could have been
+    deleted, and inventing an event for a document that is not there would be recording
+    something that did not happen.
+    """
+    try:
+        with store.pg(str(workspace_id)) as conn:
+            row = conn.execute(
+                "SELECT id, sensitivity FROM document WHERE workspace_id = %s AND content_hash = %s",
+                (workspace_id, content_hash),
+            ).fetchone()
+    except Exception:  # noqa: BLE001 — see `_record_duplicate_refusal`
+        log.exception("failed to look up the winning row for a raced duplicate intake")
+        return
+
+    if row is None:
+        return
+
+    _record_duplicate_refusal(
+        workspace_id=workspace_id,
+        existing_id=row["id"],
+        existing_sensitivity=row["sensitivity"],
+        actor_principal_id=actor_principal_id,
+        author_clearance=author_clearance,
+        content_hash=content_hash,
     )
 
 
