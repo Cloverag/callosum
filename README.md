@@ -130,27 +130,28 @@ implementation detail.
 
 ## What is built
 
-Two tracks. The research engine is closed and frozen; the product is frozen
-feature-complete at P3.
+Two tracks. The research engine is closed and frozen. The product has three phases
+accepted; P3 is frozen feature-complete with its exit gate unclaimed, and P4 source
+intake has shipped without one.
 
 | Track | State |
 |---|---|
 | **Research engine** (`src/callosum/`) | **14 / 14 checkpoints accepted**, frozen at `eval-baseline-v3` |
-| **Product** (`meridian/`, `frontend/`) | **3 / 13 phases accepted**; P3 frozen feature-complete, exit gate not claimed |
+| **Product** (`meridian/`, `frontend/`) | **3 / 13 phases accepted**; P3 frozen, exit gate not claimed · P4 source intake merged, exit gate not claimed |
 
 | | |
 |---|---|
-| Backend tests | **631** selected, gated suite |
-| Frontend tests | **208** passing, 14 suites |
-| API | **69 operations** across 52 paths, 12 routers |
-| Migrations | 21, head `0021_fix_composite_fk_cascades`, forward and reverse tested |
+| Backend tests | **700** passing, gated suite |
+| Frontend tests | **218** passing, 15 suites |
+| API | **70 operations** across 53 paths, 12 routers |
+| Migrations | 22, head `0022_doc_content_hash_uq`, forward and reverse tested |
 | Architecture decisions | 15 ADRs |
-| Commits | 380 (`git rev-list --count master`) |
+| Commits | 414 (`git rev-list --count master`) |
 
-Measured on `c3073dc` (2026-08-15), not carried forward from an earlier run. The backend
-figure is `pytest --collect-only` under `CALLOSUM_RUN_INTEGRATION=1`, which is what this
-machine can establish without the compose stack up; it is the same 631 that PR #130
-reports as its baseline for this commit. The frontend figure is a real `npx jest` run.
+Measured on `a0c1f4d` (2026-08-22), not carried forward. Both test figures are a **real
+run** this time rather than a collection — CI run 32588329583 on `master`, which is the
+same gated suite against real Postgres and Neo4j that a local run executes. The API,
+migration and commit figures are counted from this commit.
 
 **P3 is frozen, not accepted** — of its three exit criteria one is met, one is partial and
 one is not met, because the accessibility and error-state checkpoints were deliberately
@@ -256,13 +257,13 @@ routes. Set `MERIDIAN_API_ORIGIN` if the API is not on `:8000`.
 ```bash
 docker compose up -d && docker compose ps               # all three healthy FIRST
 .venv/bin/callosum eval-mechanism                        # deterministic gate, no LLM
-CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 631 tests, real stores
-cd frontend && npx jest && npm run build                 # 208 tests, 14 suites
+CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 700 tests, real stores
+cd frontend && npx jest && npm run build                 # 218 tests, 15 suites
 ```
 
 `CALLOSUM_RUN_INTEGRATION=1` runs against real Postgres and Neo4j, so the compose stack
-must be up. Without the gate the suite selects 216 tests; with it, 631. Run it with the
-containers stopped and the 415 gated tests fail on connection errors — the failure looks
+must be up. Without the gate the suite selects 235 tests; with it, 700. Run it with the
+containers stopped and the 465 gated tests fail on connection errors — the failure looks
 like a broken build and is a missing database.
 
 ---
