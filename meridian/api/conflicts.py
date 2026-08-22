@@ -6,16 +6,15 @@ All operations execute under RLS and log audit events.
 
 import uuid
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from callosum import conflicts as engine_conflicts
 from callosum import store
 from meridian import audit
 from meridian.api import deps
-from meridian.api.session import AuthenticatedSession
 
 router = APIRouter(prefix="/api/conflicts", tags=["conflicts"])
 
@@ -80,8 +79,8 @@ def list_conflicts(
 @router.post("/{conflict_id}/approve")
 def approve_conflict(
     conflict_id: uuid.UUID,
-    request_session: Annotated[AuthenticatedSession, Depends(deps.current_session)],
-    workspace_id: Annotated[str, Depends(deps.current_workspace)],
+    principal: deps.CurrentPrincipal,
+    workspace_id: deps.CurrentWorkspace,
 ) -> dict[str, Any]:
     """Approve an entity conflict, creating an ALIAS_OF graph edge."""
     # `store.neo()` builds a NEW driver, with its own connection pool, on every
@@ -90,14 +89,14 @@ def approve_conflict(
     try:
         with store.neo() as driver, store.pg(workspace_id) as conn:
             change_id = engine_conflicts.approve_conflict(
-                conn, driver, conflict_id, reviewer_id=uuid.UUID(request_session.principal_id)
+                conn, driver, conflict_id, reviewer_id=principal.id
             )
             audit.record_audit_event(
                 conn,
                 aggregate_type="audit",
                 aggregate_id=conflict_id,
                 action="status_changed",
-                actor_principal_id=request_session.principal_id,
+                actor_principal_id=principal.id,
                 payload={"status": "approved", "change_id": str(change_id)},
                 workspace_id=workspace_id,
             )
@@ -110,21 +109,21 @@ def approve_conflict(
 @router.post("/{conflict_id}/reject")
 def reject_conflict(
     conflict_id: uuid.UUID,
-    request_session: Annotated[AuthenticatedSession, Depends(deps.current_session)],
-    workspace_id: Annotated[str, Depends(deps.current_workspace)],
+    principal: deps.CurrentPrincipal,
+    workspace_id: deps.CurrentWorkspace,
 ) -> dict[str, Any]:
     """Reject an entity conflict, marking the entities as distinct."""
     try:
         with store.pg(workspace_id) as conn:
             engine_conflicts.reject_conflict(
-                conn, conflict_id, reviewer_id=uuid.UUID(request_session.principal_id)
+                conn, conflict_id, reviewer_id=principal.id
             )
             audit.record_audit_event(
                 conn,
                 aggregate_type="audit",
                 aggregate_id=conflict_id,
                 action="status_changed",
-                actor_principal_id=request_session.principal_id,
+                actor_principal_id=principal.id,
                 payload={"status": "rejected"},
                 workspace_id=workspace_id,
             )

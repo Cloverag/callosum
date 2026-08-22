@@ -100,11 +100,11 @@ def _principal_with_identity(subject: str) -> str:
     return pid
 
 
-def _member(principal_id: str, workspace_id: str, clearance: int = 2) -> None:
+def _member(principal_id: str, workspace_id: str, clearance: int = 2, active: bool = True) -> None:
     _admin(
         "INSERT INTO membership (principal_id, workspace_id, role, clearance, active)"
-        " VALUES (%s, %s, 'director', %s, true)",
-        (principal_id, workspace_id, clearance),
+        " VALUES (%s, %s, 'director', %s, %s)",
+        (principal_id, workspace_id, clearance, active),
     )
 
 
@@ -293,6 +293,158 @@ class TestRejection:
             assert response.status_code == 404
         finally:
             _cleanup([pid], [ws])
+
+
+class TestMembershipIsRevalidatedOnWrites:
+    """The listing endpoint resolves a principal; the two write endpoints did not.
+
+    `list_conflicts` took `deps.CurrentPrincipal`, which JOINs to an **active**
+    membership on every request. `approve_conflict` and `reject_conflict` took
+    `deps.current_session` + `deps.current_workspace` instead. Neither of those
+    checks membership: `current_session` reports who the caller *claims* to be from
+    a signed cookie, and `current_workspace` only asserts the id in it parses.
+
+    So revoking a membership stopped a caller from *reading* the queue immediately,
+    and did not stop them from *approving* entries in it until their session
+    expired — up to `MAX_SESSION_LIFETIME_SECONDS` (24h). Approval writes an
+    `ALIAS_OF` edge into an append-only graph, so the window was on the destructive
+    half of the router, not the readable one.
+
+    These assert the *write did not happen*, not merely that a status code changed —
+    a 403 with the row already merged would be the same defect with better manners.
+    """
+
+    def test_a_revoked_member_cannot_reject(self, restore_client):
+        subject = f"sub-{uuid.uuid4()}"
+        pid = _principal_with_identity(subject)
+        ws = _workspace("revoked-reject")
+        _member(pid, ws)
+        cid = _seed_conflict(ws)
+        try:
+            client = _client(subject, ws)
+            # The session is established while the membership is live, which is the
+            # only way to reach the defect: the cookie is minted, *then* access is
+            # revoked. A caller who was never a member could not sign in at all.
+            _admin(
+                "UPDATE membership SET active = false WHERE principal_id = %s AND workspace_id = %s",
+                (pid, ws),
+            )
+
+            response = client.post(f"/api/conflicts/{cid}/reject")
+            assert response.status_code == 403, response.text
+
+            with psycopg.connect(settings().postgres_dsn, row_factory=psycopg.rows.dict_row) as conn:
+                row = conn.execute(
+                    "SELECT status, reviewed_by FROM entity_conflict WHERE id = %s", (cid,)
+                ).fetchone()
+                assert row["status"] == "pending"
+                assert row["reviewed_by"] is None
+        finally:
+            _cleanup([pid], [ws])
+
+    def test_a_revoked_member_cannot_approve(self, restore_client):
+        """Refused in the dependency, so the graph driver is never opened."""
+        subject = f"sub-{uuid.uuid4()}"
+        pid = _principal_with_identity(subject)
+        ws = _workspace("revoked-approve")
+        _member(pid, ws)
+        cid = _seed_conflict(ws)
+        try:
+            client = _client(subject, ws)
+            _admin(
+                "UPDATE membership SET active = false WHERE principal_id = %s AND workspace_id = %s",
+                (pid, ws),
+            )
+
+            response = client.post(f"/api/conflicts/{cid}/approve")
+            assert response.status_code == 403, response.text
+
+            with psycopg.connect(settings().postgres_dsn, row_factory=psycopg.rows.dict_row) as conn:
+                row = conn.execute(
+                    "SELECT status FROM entity_conflict WHERE id = %s", (cid,)
+                ).fetchone()
+                assert row["status"] == "pending"
+        finally:
+            _cleanup([pid], [ws])
+
+    def test_a_refused_write_records_no_audit_event(self, restore_client):
+        """`status_changed` on a refusal would make the trail disagree with the row.
+
+        The audit table is append-only, so an event written beside a mutation that
+        did not happen cannot be taken back.
+        """
+        subject = f"sub-{uuid.uuid4()}"
+        pid = _principal_with_identity(subject)
+        ws = _workspace("revoked-audit")
+        _member(pid, ws)
+        cid = _seed_conflict(ws)
+        try:
+            client = _client(subject, ws)
+            _admin(
+                "UPDATE membership SET active = false WHERE principal_id = %s AND workspace_id = %s",
+                (pid, ws),
+            )
+            assert client.post(f"/api/conflicts/{cid}/reject").status_code == 403
+
+            with psycopg.connect(settings().postgres_dsn, row_factory=psycopg.rows.dict_row) as conn:
+                events = conn.execute(
+                    "SELECT action FROM audit_event WHERE aggregate_id = %s", (cid,)
+                ).fetchall()
+                assert events == []
+        finally:
+            _cleanup([pid], [ws])
+
+    def test_the_reviewer_recorded_is_the_resolved_principal(self, restore_client):
+        """`reviewer_id` now comes from the principal the database resolved.
+
+        It was `uuid.UUID(request_session.principal_id)` — the id the *cookie*
+        carries. On this router the two agree, so nothing observable changes; the
+        assertion is here because attribution sourced from the request and
+        authorization sourced from the database are two facts that can drift, and
+        the audit trail should be stamped with the one that was checked.
+        """
+        subject = f"sub-{uuid.uuid4()}"
+        pid = _principal_with_identity(subject)
+        ws = _workspace("reviewer")
+        _member(pid, ws)
+        cid = _seed_conflict(ws)
+        try:
+            assert _client(subject, ws).post(f"/api/conflicts/{cid}/reject").status_code == 200
+
+            with psycopg.connect(settings().postgres_dsn, row_factory=psycopg.rows.dict_row) as conn:
+                row = conn.execute(
+                    "SELECT reviewed_by FROM entity_conflict WHERE id = %s", (cid,)
+                ).fetchone()
+                assert str(row["reviewed_by"]) == pid
+
+                event = conn.execute(
+                    "SELECT actor_principal_id FROM audit_event WHERE aggregate_id = %s", (cid,)
+                ).fetchone()
+                assert str(event["actor_principal_id"]) == pid
+        finally:
+            _cleanup([pid], [ws])
+
+
+def test_every_write_endpoint_on_this_router_resolves_a_principal():
+    """The generalisation, so a new handler cannot reintroduce the gap silently.
+
+    `current_session` is a legitimate dependency for a handler that genuinely needs
+    only identity, but no mutating endpoint on this router is one of those. Asserted
+    over the signatures rather than by calling each route, so a route added without
+    a test is still covered.
+    """
+    import inspect
+
+    offenders = []
+    for route in conflicts_api.router.routes:
+        methods = getattr(route, "methods", set()) - {"HEAD", "OPTIONS"}
+        if methods <= {"GET"}:
+            continue
+        annotations = inspect.get_annotations(route.endpoint, eval_str=False)
+        if "principal" not in annotations:
+            offenders.append(f"{sorted(methods)} {route.path} -> {route.endpoint.__name__}")
+
+    assert offenders == []
 
 
 def test_every_module_attribute_the_router_reaches_for_exists():
