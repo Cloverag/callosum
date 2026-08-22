@@ -142,7 +142,7 @@ intake has shipped without one.
 | | |
 |---|---|
 | Backend tests | **725** passing, gated suite |
-| Frontend tests | **272** passing, 19 suites |
+| Frontend tests | **273** passing, 19 suites |
 | API | **70 operations** across 53 paths, 12 routers |
 | Migrations | 22, head `0022_doc_content_hash_uq`, forward and reverse tested |
 | Architecture decisions | 15 ADRs |
@@ -258,7 +258,7 @@ routes. Set `MERIDIAN_API_ORIGIN` if the API is not on `:8000`.
 docker compose up -d && docker compose ps               # all three healthy FIRST
 .venv/bin/callosum eval-mechanism                        # deterministic gate, no LLM
 CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 725 tests, real stores
-cd frontend && npx jest && npm run build                 # 272 tests, 19 suites
+cd frontend && npx jest && npm run build                 # 273 tests, 19 suites
 ```
 
 `CALLOSUM_RUN_INTEGRATION=1` runs against real Postgres and Neo4j, so the compose stack

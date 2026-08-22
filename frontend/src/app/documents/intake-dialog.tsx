@@ -84,7 +84,11 @@ export function IntakeDialog({
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
-  const [duplicateOf, setDuplicateOf] = useState<string | null>(null);
+  // A boolean, not the server's message (#147). It used to hold `api.message` and
+  // render it verbatim, which meant the screen disclosed whatever the API happened to
+  // put in a 409 — fine today, and an open channel the moment that text changes.
+  // Duplicate detection reveals that a match exists and nothing about what matched.
+  const [isDuplicate, setIsDuplicate] = useState(false);
 
   const ready = title.trim() !== "" && rawText.trim() !== "" && sensitivity !== null;
 
@@ -95,14 +99,14 @@ export function IntakeDialog({
     setSourceUri("");
     setSensitivity(null);
     setError(null);
-    setDuplicateOf(null);
+    setIsDuplicate(false);
   }
 
   async function submit() {
     if (!ready || sensitivity === null) return;
     setSubmitting(true);
     setError(null);
-    setDuplicateOf(null);
+    setIsDuplicate(false);
     try {
       const doc = await documentsApi.intake({
         title: title.trim(),
@@ -119,7 +123,8 @@ export function IntakeDialog({
       // A duplicate is not a failure. The content hash matched something already in
       // this workspace, which means the document is already in memory — the honest
       // report is recognition, not an error the user must fix.
-      if (api.isConflict) setDuplicateOf(api.message);
+      // The message is deliberately dropped rather than shown. See the state above.
+      if (api.isConflict) setIsDuplicate(true);
       else setError(api);
     } finally {
       setSubmitting(false);
@@ -201,10 +206,14 @@ export function IntakeDialog({
           <Input id="doc-source" value={sourceUri} onChange={(e) => setSourceUri(e.target.value)} placeholder="https://drive.google.com/…" />
         </div>
 
-        {duplicateOf && (
+        {isDuplicate && (
+          /* Fixed copy, carrying no metadata from the matched document — not its
+             title, author, date, sensitivity or id (#147). A low-clearance member who
+             submits leaked content must not learn what the board calls a confidential
+             document merely because dedup fired. */
           <div role="status" className="rounded-[12px] border border-border-strong bg-surface-sunken px-4 py-3 text-sm text-foreground">
-            <span className="font-medium">Already in memory.</span>{" "}
-            This exact text was ingested before, so nothing was duplicated. {duplicateOf}
+            <span className="font-medium">This document matches an existing document.</span>{" "}
+            The same text is already in memory, so nothing was duplicated.
           </div>
         )}
 
