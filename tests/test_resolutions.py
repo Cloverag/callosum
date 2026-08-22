@@ -766,9 +766,14 @@ def test_a_recused_members_vote_never_reaches_the_tally():
         resolutions.record_vote(res.id, b.id, VOTE_FOR, workspace_id=ws)
         resolutions.record_vote(res.id, conflicted.id, VOTE_RECUSED, workspace_id=ws)
 
-        tally = resolutions.tally(res.id, workspace_id=ws)
+        # `tally` is pure and takes the read model, so re-fetch: `res` predates the votes.
+        tally = resolutions.tally(resolutions.get_resolution(res.id, workspace_id=ws))
 
         assert (tally.for_, tally.against, tally.recused) == (2, 0, 1)
+        # The recusal is recorded and does not weigh. `carried` resting on the two
+        # counted votes is the property that matters — a guard that passes while the
+        # outcome is still computed wrong would be worthless.
+        assert tally.carried is True
     finally:
         _cleanup(ws)
 
