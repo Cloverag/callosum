@@ -1,23 +1,16 @@
-"""Document read endpoints (Meridian P3, CP-E — ADR-014).
+"""Document API endpoints (Meridian P4).
 
-1:1 with `meridian/documents.py`, minus `workspace_id` **and** `clearance`, both of
-which come from `deps.current_principal` (ADR-013).
-
-This closes the last mock behind a live surface. The packs page fetched real packs and
-mock documents, so every `board_pack_item.document_id` resolved to nothing and every
-item rendered as a broken reference — a live surface making a false statement about
-real data, which is the failure mode the data-honesty work has been chasing since the
-dashboard's repository-metadata figures.
-
-**Read-only, and that is the boundary not an omission.** Documents enter through
-`callosum.ingest`, on the frozen side. An upload endpoint is P4 intake, and adding one
-here would put the product in the ingestion business without the extraction, quote
-verification or quarantine that makes an ingested document trustworthy.
+Exposes HTTP routes for document intake, clearance-gated document listing, single
+document retrieval, and extraction quarantine inspection.
 """
 
-import uuid
+from __future__ import annotations
 
-from fastapi import APIRouter
+import uuid
+from datetime import datetime
+
+from fastapi import APIRouter, status
+from pydantic import BaseModel, ConfigDict
 
 from meridian import documents as domain
 from meridian.api.deps import CurrentPrincipal
@@ -25,17 +18,50 @@ from meridian.api.deps import CurrentPrincipal
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
 
-@router.get("")
+class DocumentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    title: str
+    doc_type: str
+    source_uri: str | None = None
+    sensitivity: int
+    authored_at: datetime | None = None
+    ingested_at: datetime
+
+
+class QuarantineResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    workspace_id: uuid.UUID
+    document_id: uuid.UUID | None = None
+    chunk_id: uuid.UUID | None = None
+    source: str
+    relation: str
+    target: str
+    quote: str
+    confidence: float
+    reason: str
+    detail: str
+    provider: str
+    extractor_model: str
+    created_at: datetime
+
+
+class IntakeDocumentRequest(BaseModel):
+    title: str
+    doc_type: str
+    raw_text: str
+    sensitivity: int = 0
+    source_uri: str | None = None
+
+
+@router.get("", response_model=list[DocumentResponse])
 def list_documents(
     principal: CurrentPrincipal, doc_type: str | None = None
 ) -> list[domain.Document]:
-    """Documents the caller may read, newest ingestion first.
-
-    `doc_type` is an ordinary filter over data the caller can already see. `clearance`
-    is not a filter and is not accepted — it decides *what may be seen at all*, so it
-    comes from the caller's active membership and `tests/test_openapi_input_guard.py`
-    fails the build if it ever appears in the schema.
-    """
+    """List documents readable by the authenticated principal in their active workspace."""
     return domain.list_documents(
         workspace_id=principal.workspace_id,
         clearance=principal.clearance,
@@ -43,14 +69,41 @@ def list_documents(
     )
 
 
-@router.get("/{document_id}")
-def get_document(document_id: uuid.UUID, principal: CurrentPrincipal) -> domain.Document:
-    """One document.
+@router.get("/quarantine", response_model=list[QuarantineResponse])
+def list_quarantine(principal: CurrentPrincipal) -> list[domain.QuarantineItem]:
+    """Quarantined extractions readable by the caller, at their own clearance.
 
-    A document above the caller's clearance raises `DocumentNotFound` and arrives as a
-    404 — the same answer as one that does not exist. Distinguishing them would confirm
-    that a restricted document exists to someone who may not read it.
+    A quarantine row exposes a quote, a proposed graph fact and a document id, so it is
+    a clearance-filtered surface exactly like the document list — not an internal
+    diagnostics feed.
     """
+    return domain.list_quarantine(
+        workspace_id=principal.workspace_id,
+        clearance=principal.clearance,
+    )
+
+
+@router.get("/{document_id}", response_model=DocumentResponse)
+def get_document(document_id: uuid.UUID, principal: CurrentPrincipal) -> domain.Document:
+    """Retrieve a single document by ID, subject to clearance verification."""
     return domain.get_document(
-        str(document_id), workspace_id=principal.workspace_id, clearance=principal.clearance
+        document_id,
+        workspace_id=principal.workspace_id,
+        clearance=principal.clearance,
+    )
+
+
+@router.post("/intake", status_code=status.HTTP_201_CREATED, response_model=DocumentResponse)
+def intake_document(
+    req: IntakeDocumentRequest, principal: CurrentPrincipal
+) -> domain.Document:
+    """Intake a source document into tenant memory."""
+    return domain.intake_document(
+        title=req.title,
+        doc_type=req.doc_type,
+        raw_text=req.raw_text,
+        sensitivity=req.sensitivity,
+        workspace_id=principal.workspace_id,
+        author_principal_id=principal.id,
+        source_uri=req.source_uri,
     )

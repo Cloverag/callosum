@@ -1,36 +1,48 @@
-"""Document read endpoints (Meridian P3, CP-E).
+"""Document reads and intake lifecycle endpoints (Meridian P3/P4).
 
 Run deliberately: ``CALLOSUM_RUN_INTEGRATION=1 pytest -m integration``.
 
-This closes the last mock sitting behind a live surface. The packs page fetched real
-packs and mock documents, so every `board_pack_item.document_id` resolved to nothing
-and every item rendered as "Document reference could not be resolved" — a live surface
-making a false statement about real data.
-
-The tests that matter are the clearance ones. A document above the caller's level must
-be **absent**, not redacted, not counted, and not distinguishable from one that does
-not exist.
+Verifies:
+  - Clearance gate enforcement: documents above clearance are absent (404), never redacted.
+  - Non-disclosure invariant: body text, content hash, and metadata never reach the client.
+  - Multi-tenant isolation: documents in other workspaces are invisible.
+  - Deduplication: tenant-scoped deduplication on (workspace_id, content_hash).
+  - Option A atomic intake: embedding failure or Neo4j failure aborts with 503 and zero orphan records.
+  - Audit logging: append-only audit event created on intake.
+  - Quarantine reporting.
 """
 
+from __future__ import annotations
+
+import hashlib
+import inspect
 import os
 import uuid
-
-import pytest
-
-if os.environ.get("CALLOSUM_RUN_INTEGRATION") != "1":
-    pytest.skip("set CALLOSUM_RUN_INTEGRATION=1 to run live-store integration tests", allow_module_level=True)
+from unittest.mock import patch
 
 import psycopg
+import psycopg.rows
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.middleware.sessions import SessionMiddleware
 
+if os.environ.get("CALLOSUM_RUN_INTEGRATION") != "1":
+    pytest.skip("set CALLOSUM_RUN_INTEGRATION=1 to run live-store integration tests", allow_module_level=True)
+
+from callosum import llm
 from callosum.config import settings
-from meridian.api import auth
+from meridian import documents
+from meridian.api import auth, errors
 from meridian.api import documents as documents_api
-from meridian.api import errors
 
 pytestmark = pytest.mark.integration
+
+#: The genuine `llm.embed`, captured at import — before the autouse `mock_llm_embed`
+#: fixture below replaces it. `TestProviderBoundary` needs the real implementation:
+#: asserting the boundary's behaviour against the stub that stands in for it would
+#: prove nothing.
+_REAL_EMBED = llm.embed
 
 ISSUER = "https://keycloak.example/realms/meridian"
 
@@ -51,6 +63,71 @@ class _StubClient:
 
     async def authorize_access_token(self, request):
         return {"userinfo": self._claims}
+
+
+@pytest.fixture(autouse=True)
+def mock_llm_embed(monkeypatch):
+    """Provide deterministic test embeddings (1024-dim) in tests when live Ollama is offline."""
+    def _deterministic_embed(texts: list[str], input_type: str = "document") -> list[list[float]]:
+        vectors = []
+        for t in texts:
+            seed = int(hashlib.md5(t.encode("utf-8")).hexdigest()[:8], 16) / 0xFFFFFFFF
+            v = [0.001 * ((i + int(seed * 100)) % 10 + 1) for i in range(1024)]
+            vectors.append(v)
+        return vectors
+
+    monkeypatch.setattr(llm, "embed", _deterministic_embed)
+
+
+@pytest.fixture(autouse=True)
+def stub_extraction(monkeypatch):
+    """Stub the extractor, for the same reason `llm.embed` is stubbed — and it was missed.
+
+    `intake_document` calls `extract.extract()` **once per chunk**, and the default
+    provider is `gpt-oss:120b-cloud`: a cloud model reached over the internet. Measured
+    on 2026-08-15, one call takes **15.3s**, and `OLLAMA_TIMEOUT` allows a 300s read. A
+    dozen intake tests therefore meant minutes of model latency, answers that change run
+    to run, and provider quota spent on every `pytest`.
+
+    None of that was visible before, because the old code wrapped extraction in
+    `except Exception: pass`. With no provider reachable, every call failed at the 5s
+    connect timeout and was silently swallowed — which is why the suite was previously
+    reported at 28s. It was fast because extraction never ran.
+
+    `pyproject.toml` already draws this line: `addopts = "-m 'not llm'"` keeps live-model
+    tests out of the default run. These tests are not marked `llm` and must therefore not
+    reach a model. The stub returns a fixed verified edge plus one quarantined failure, so
+    both `proposed_change` and `extraction_failure` still get exercised.
+    """
+    from callosum import extract
+    from callosum.ontology import FailureReason, RelationType
+
+    def _fake_extract(chunk_text: str):
+        quote = chunk_text[: min(40, len(chunk_text))]
+        rel = extract.Relationship(
+            source="Test Source",
+            type=RelationType.PROPOSED,
+            target="Test Target",
+            evidence=quote,
+            confidence=0.9,
+        )
+        failure = extract.Failure(
+            source="Bad Source",
+            relation="PROPOSED",
+            target="Bad Target",
+            quote="a quote that is not in the chunk",
+            confidence=0.5,
+            reason=FailureReason.QUOTE_NOT_FOUND,
+            detail="stubbed failure",
+        )
+        return extract.VerifiedExtraction(
+            entities=[],
+            relationships=[rel],
+            spans={0: (0, len(quote))},
+            failures=[failure],
+        )
+
+    monkeypatch.setattr(extract, "extract", _fake_extract)
 
 
 @pytest.fixture
@@ -114,6 +191,10 @@ def _document(ws: str, title: str, sensitivity: int, doc_type: str = "board_deck
 
 def _cleanup(principal_ids: list[str], workspace_ids: list[str]) -> None:
     for ws in workspace_ids:
+        _admin("DELETE FROM audit_event WHERE workspace_id = %s", (ws,))
+        _admin("DELETE FROM extraction_failure WHERE workspace_id = %s", (ws,))
+        _admin("DELETE FROM proposed_change WHERE workspace_id = %s", (ws,))
+        _admin("DELETE FROM chunk WHERE workspace_id = %s", (ws,))
         _admin("DELETE FROM document WHERE workspace_id = %s", (ws,))
         _admin("DELETE FROM membership WHERE workspace_id = %s", (ws,))
     for pid in principal_ids:
@@ -195,30 +276,23 @@ class TestClearance:
             response = client.get("/api/documents")
             body = response.json()
             assert [d["title"] for d in body] == ["Public.pdf"]
-            # No count, no placeholder, no total to subtract from.
             assert "Confidential" not in response.text
             assert "withheld" not in response.text.lower()
         finally:
             _cleanup([pid], [ws])
 
     def test_fetching_a_restricted_document_is_404_not_403(self, restore_client):
-        """403 would confirm it exists. 404 is the same answer as "no such document"."""
+        """403 would confirm it exists. 404 is the same answer as 'no such document'."""
         client, pid, ws = _signed_in("oracle", INVESTOR)
         try:
             doc = _document(ws, "Confidential.pdf", CONFIDENTIAL)
             assert client.get(f"/api/documents/{doc}").status_code == 404
-            # And a genuinely absent id answers identically.
             assert client.get(f"/api/documents/{uuid.uuid4()}").status_code == 404
         finally:
             _cleanup([pid], [ws])
 
     def test_clearance_cannot_be_supplied_by_the_client(self, restore_client):
-        """The mock took a `clearance` argument because it filtered its own data.
-
-        The real endpoint does not, and asking for one changes nothing — an unknown
-        query parameter is ignored by FastAPI, so the caller gets their own clearance
-        rather than the one they asked for.
-        """
+        """ADR-013: Clearance cannot be supplied as a query param."""
         client, pid, ws = _signed_in("noclearance", INVESTOR)
         try:
             _document(ws, "Public.pdf", PUBLIC)
@@ -240,17 +314,342 @@ class TestClearance:
 
 
 def test_the_clearance_argument_has_no_default(restore_client):
-    """The defect this module was written to avoid repeating.
+    """Making clearance required turns a forgotten argument into a TypeError.
 
-    `packs.list_packs` shipped with `clearance: int = 4` — the top of the ladder — so
-    any caller who forgot the argument received everything. Making it required turns a
-    forgotten argument into a `TypeError` at the call site instead of a silent
-    disclosure.
+    `list_quarantine` is in this list because it was once missing from it. It took no
+    `clearance` at all, so every quarantine row in the workspace — quote, proposed graph
+    fact and document id — was readable at any clearance. A default would have hidden
+    that just as effectively as the missing parameter did.
     """
-    import inspect
-
-    from meridian import documents
-
-    for fn in (documents.list_documents, documents.get_document):
+    for fn in (documents.list_documents, documents.get_document, documents.list_quarantine):
         parameter = inspect.signature(fn).parameters["clearance"]
         assert parameter.default is inspect.Parameter.empty, f"{fn.__name__} has a default clearance"
+
+
+class TestIntakeLifecycle:
+    def test_intake_document_success(self, restore_client):
+        client, pid, ws = _signed_in("intake_user", CONFIDENTIAL)
+        try:
+            payload = {
+                "title": "Q3 Board Strategy Deck",
+                "doc_type": "transcript",
+                "raw_text": "We discussed enterprise pricing tiers and agreed on $50k annual minimums.",
+                "sensitivity": 2,
+            }
+            res = client.post("/api/documents/intake", json=payload)
+            assert res.status_code == 201
+            data = res.json()
+            assert data["title"] == "Q3 Board Strategy Deck"
+            assert data["doc_type"] == "transcript"
+            assert data["sensitivity"] == 2
+
+            # Assert raw_text and content_hash never leave in response
+            assert "raw_text" not in data
+            assert "content_hash" not in data
+
+            # Verify it shows up in list_documents
+            docs = client.get("/api/documents").json()
+            assert any(d["id"] == data["id"] for d in docs)
+        finally:
+            _cleanup([pid], [ws])
+
+    def test_intake_duplicate_hash_409(self, restore_client):
+        client, pid, ws = _signed_in("dedupe_user", CONFIDENTIAL)
+        try:
+            payload = {
+                "title": "Unique Document 1",
+                "doc_type": "memo",
+                "raw_text": "Identical document content for SHA-256 deduplication test.",
+                "sensitivity": 1,
+            }
+            first = client.post("/api/documents/intake", json=payload)
+            assert first.status_code == 201
+
+            # Second intake with same raw_text in same workspace must yield 409
+            dup = client.post("/api/documents/intake", json=payload)
+            assert dup.status_code == 409
+            err = dup.json()
+            assert err["error"]["code"] == "conflict"
+            assert "already exists in this workspace" in err["error"]["detail"]
+        finally:
+            _cleanup([pid], [ws])
+
+    def test_cross_workspace_identical_content_hash_allowed(self, restore_client):
+        """Cross-tenant isolation: identical text in two different workspaces is allowed."""
+        client_a, pid_a, ws_a = _signed_in("user_a", CONFIDENTIAL)
+        client_b, pid_b, ws_b = _signed_in("user_b", CONFIDENTIAL)
+        try:
+            payload = {
+                "title": "Shared Contract Template",
+                "doc_type": "contract",
+                "raw_text": "Standard mutual NDA agreement clauses across independent companies.",
+                "sensitivity": 1,
+            }
+            res_a = client_a.post("/api/documents/intake", json=payload)
+            assert res_a.status_code == 201
+
+            # Same payload in workspace B succeeds (tenant isolation)
+            res_b = client_b.post("/api/documents/intake", json=payload)
+            assert res_b.status_code == 201
+
+            # Duplicate in workspace A fails (409)
+            res_a_dup = client_a.post("/api/documents/intake", json=payload)
+            assert res_a_dup.status_code == 409
+        finally:
+            _cleanup([pid_a, pid_b], [ws_a, ws_b])
+
+    def test_intake_invalid_sensitivity_422(self, restore_client):
+        client, pid, ws = _signed_in("user", CONFIDENTIAL)
+        try:
+            payload = {
+                "title": "Bad Sensitivity",
+                "doc_type": "memo",
+                "raw_text": "Content",
+                "sensitivity": 99,
+            }
+            res = client.post("/api/documents/intake", json=payload)
+            assert res.status_code == 422
+            assert res.json()["error"]["code"] == "invalid"
+        finally:
+            _cleanup([pid], [ws])
+
+    def test_intake_empty_title_or_text_rejected(self, restore_client):
+        client, pid, ws = _signed_in("user", CONFIDENTIAL)
+        try:
+            res_empty_title = client.post("/api/documents/intake", json={
+                "title": "   ",
+                "doc_type": "memo",
+                "raw_text": "Valid text body.",
+                "sensitivity": 1,
+            })
+            assert res_empty_title.status_code in (400, 422)
+
+            res_empty_text = client.post("/api/documents/intake", json={
+                "title": "Valid Title",
+                "doc_type": "memo",
+                "raw_text": "   ",
+                "sensitivity": 1,
+            })
+            assert res_empty_text.status_code in (400, 422)
+        finally:
+            _cleanup([pid], [ws])
+
+    def test_embedding_failure_fails_intake_without_zero_vectors(self, restore_client):
+        client, pid, ws = _signed_in("fail_user", CONFIDENTIAL)
+        try:
+            # `EmbeddingProviderError`, not a bare `RuntimeError`: `llm.embed` is the
+            # provider boundary and converts every backend failure into that one type,
+            # so intake no longer wraps this call. A test that raises `RuntimeError`
+            # here would be asserting a contract that moved.
+            with patch("callosum.llm.embed", side_effect=llm.EmbeddingProviderError("Ollama offline")):
+                payload = {
+                    "title": "Offline Embedding Test",
+                    "doc_type": "notes",
+                    "raw_text": "Important text that must fail rather than be stored with zero vectors.",
+                    "sensitivity": 1,
+                }
+                res = client.post("/api/documents/intake", json=payload)
+                assert res.status_code == 503
+                assert res.json()["error"]["code"] == "service_unavailable"
+
+                # Assert no document or chunk exists
+                with psycopg.connect(settings().postgres_dsn) as conn:
+                    count = conn.execute(
+                        "SELECT count(*) AS n FROM document WHERE title = 'Offline Embedding Test'"
+                    ).fetchone()[0]
+                    assert count == 0
+        finally:
+            _cleanup([pid], [ws])
+
+    def test_neo4j_bridge_failure_fails_intake(self, restore_client):
+        client, pid, ws = _signed_in("neo_fail_user", CONFIDENTIAL)
+        try:
+            # Patches the underlying per-node write rather than the bridge helper, so
+            # the failure enters through the same door a real Neo4j outage would.
+            with patch("callosum.store.upsert_chunk_node", side_effect=RuntimeError("Neo4j down")):
+                payload = {
+                    "title": "Neo4j Down Test",
+                    "doc_type": "notes",
+                    "raw_text": "Text whose chunks fail to bridge to Neo4j.",
+                    "sensitivity": 1,
+                }
+                res = client.post("/api/documents/intake", json=payload)
+                assert res.status_code == 503
+                assert res.json()["error"]["code"] == "service_unavailable"
+        finally:
+            _cleanup([pid], [ws])
+
+    def test_audit_event_recorded_on_intake(self, restore_client):
+        client, pid, ws = _signed_in("audit_user", CONFIDENTIAL)
+        try:
+            payload = {
+                "title": "Audit Verified Document",
+                "doc_type": "memo",
+                "raw_text": "This document must produce an append-only audit event upon intake.",
+                "sensitivity": 1,
+            }
+            res = client.post("/api/documents/intake", json=payload)
+            assert res.status_code == 201
+            doc_id = res.json()["id"]
+
+            with psycopg.connect(settings().postgres_dsn, row_factory=psycopg.rows.dict_row) as conn:
+                events = conn.execute(
+                    """
+                    SELECT aggregate_type, aggregate_id, action, payload
+                    FROM audit_event
+                    WHERE workspace_id = %s AND aggregate_id = %s
+                    """,
+                    (uuid.UUID(ws), uuid.UUID(doc_id)),
+                ).fetchall()
+                assert len(events) == 1
+                ev = events[0]
+                assert ev["aggregate_type"] == "document"
+                assert ev["action"] == "created"
+                assert ev["payload"]["title"] == "Audit Verified Document"
+                assert ev["payload"]["chunks_count"] >= 1
+        finally:
+            _cleanup([pid], [ws])
+
+    def test_list_quarantine(self, restore_client):
+        client, pid, ws = _signed_in("quarantine_user", CONFIDENTIAL)
+        try:
+            res = client.get("/api/documents/quarantine")
+            assert res.status_code == 200
+            assert isinstance(res.json(), list)
+        finally:
+            _cleanup([pid], [ws])
+
+
+SECRET_QUOTE = "The compensation committee agreed the number in closed session"
+
+
+def _quarantine_row(ws: str, document_id: str, quote: str) -> None:
+    """A rejected edge, as `queue_proposals` would have written it."""
+    _admin(
+        """
+        INSERT INTO extraction_failure
+            (workspace_id, document_id, source, relation, target, quote,
+             confidence, reason, detail, provider, extractor_model)
+        VALUES (%s, %s, 'Priya', 'RECEIVED', 'Compensation', %s,
+                0.9, 'quote_not_found', 'paraphrase', 'ollama', 'test-model')
+        """,
+        (uuid.UUID(ws), uuid.UUID(document_id), quote),
+    )
+
+
+class TestQuarantineClearance:
+    """The quarantine is a clearance-filtered surface, not an internal diagnostics feed.
+
+    A row carries a quote, a proposed graph fact and a document id. Before this,
+    `list_quarantine` took no `clearance` at all — RLS scoped the workspace and nothing
+    scoped the clearance inside it.
+    """
+
+    def test_a_row_from_a_restricted_document_is_not_listed(self, restore_client):
+        client, pid, ws = _signed_in("q_investor", INVESTOR)
+        try:
+            secret = _document(ws, "Compensation.pdf", CONFIDENTIAL)
+            readable = _document(ws, "Minutes.pdf", PUBLIC)
+            _quarantine_row(ws, secret, SECRET_QUOTE)
+            _quarantine_row(ws, readable, "An ordinary sentence")
+
+            body = client.get("/api/documents/quarantine").json()
+
+            assert [r["document_id"] for r in body] == [readable]
+        finally:
+            _cleanup([pid], [ws])
+
+    def test_the_restricted_quote_never_appears_in_the_payload(self, restore_client):
+        """Asserted against the raw response, not the parsed rows.
+
+        A leak that arrives in a field the test does not name is still a leak, so this
+        checks the bytes on the wire rather than a key it remembered to look at.
+        """
+        client, pid, ws = _signed_in("q_leak", INVESTOR)
+        try:
+            secret = _document(ws, "Compensation.pdf", CONFIDENTIAL)
+            _quarantine_row(ws, secret, SECRET_QUOTE)
+
+            res = client.get("/api/documents/quarantine")
+
+            assert res.status_code == 200
+            assert SECRET_QUOTE not in res.text
+            assert secret not in res.text
+        finally:
+            _cleanup([pid], [ws])
+
+    def test_a_cleared_reader_still_sees_it(self, restore_client):
+        """The filter must remove rows, not the feature."""
+        client, pid, ws = _signed_in("q_confidential", CONFIDENTIAL)
+        try:
+            secret = _document(ws, "Compensation.pdf", CONFIDENTIAL)
+            _quarantine_row(ws, secret, SECRET_QUOTE)
+
+            body = client.get("/api/documents/quarantine").json()
+
+            assert len(body) == 1
+            assert body[0]["quote"] == SECRET_QUOTE
+        finally:
+            _cleanup([pid], [ws])
+
+    def test_another_workspaces_quarantine_is_invisible(self, restore_client):
+        client, pid, mine = _signed_in("q_mine", CONFIDENTIAL)
+        theirs = _workspace("q_theirs")
+        try:
+            doc = _document(theirs, "Theirs.pdf", PUBLIC)
+            _quarantine_row(theirs, doc, "Not yours")
+
+            assert client.get("/api/documents/quarantine").json() == []
+        finally:
+            _cleanup([pid], [mine, theirs])
+
+
+class TestProviderBoundary:
+    """`llm.embed` converts backend failures into one type, so callers need not know.
+
+    Without this, the only thing holding the contract asserted in
+    `test_embedding_failure_fails_intake_without_zero_vectors` would be that test's own
+    mock — which would keep passing if `embed` stopped raising `EmbeddingProviderError`
+    tomorrow.
+    """
+
+    def test_an_arbitrary_provider_failure_becomes_embedding_provider_error(self, monkeypatch):
+        import httpx
+
+        def _boom(*a, **kw):
+            raise httpx.ConnectError("connection refused")
+
+        monkeypatch.setattr(llm.httpx, "post", _boom)
+        with pytest.raises(llm.EmbeddingProviderError):
+            _REAL_EMBED(["some text"])
+
+    def test_it_is_a_runtime_error_so_existing_callers_are_unaffected(self):
+        """The CLI and eval paths already handle `RuntimeError` from this module."""
+        assert issubclass(llm.EmbeddingProviderError, RuntimeError)
+
+
+class TestDerivedIds:
+    """Chunk ids are derived, so a crashed intake replays instead of orphaning nodes."""
+
+    def test_the_same_document_in_the_same_workspace_yields_the_same_ids(self):
+        ws = uuid.uuid4()
+        a = documents._chunk_id(ws, "deadbeef", 0)
+        b = documents._chunk_id(ws, "deadbeef", 0)
+        assert a == b, "a retry must MERGE onto the same node, not mint a second one"
+
+    def test_ordinals_do_not_collide(self):
+        ws = uuid.uuid4()
+        assert documents._chunk_id(ws, "deadbeef", 0) != documents._chunk_id(ws, "deadbeef", 1)
+
+    def test_identical_content_in_two_workspaces_yields_different_ids(self):
+        """The reason `workspace_id` is in the key rather than just the content hash.
+
+        Migration `0022` scopes dedup to `(workspace_id, content_hash)` precisely so two
+        tenants may hold byte-identical documents. Derive the id from the hash alone and
+        those two tenants mint the same chunk ids — and `MERGE` fuses their bridge nodes
+        into one. The migration that permits the duplicate would have created the leak.
+        """
+        ws_a, ws_b = uuid.uuid4(), uuid.uuid4()
+        assert documents._chunk_id(ws_a, "deadbeef", 0) != documents._chunk_id(ws_b, "deadbeef", 0)
+        assert documents._document_id(ws_a, "deadbeef") != documents._document_id(ws_b, "deadbeef")
+
