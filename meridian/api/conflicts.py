@@ -5,16 +5,16 @@ All operations execute under RLS and log audit events.
 """
 
 import uuid
-from typing import Annotated, Any
+from datetime import datetime
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from callosum import conflicts as engine_conflicts
 from callosum import store
 from meridian import audit
 from meridian.api import deps
-from meridian.api.session import AuthenticatedSession
 
 router = APIRouter(prefix="/api/conflicts", tags=["conflicts"])
 
@@ -30,17 +30,21 @@ class ConflictResponse(BaseModel):
     quote_b: str | None = None
     sensitivity: int
     status: str = "pending"
+    #: Rendered by the conflict card ("Detected {date}") and declared on
+    #: `EntityConflict` in `frontend/src/lib/api.ts`. It was selected by the query
+    #: below and then dropped from the response, so the card has been formatting
+    #: `new Date(undefined)` for as long as it has existed.
+    created_at: datetime
 
 
 @router.get("", response_model=list[ConflictResponse])
 def list_conflicts(
-    request_session: Annotated[AuthenticatedSession, Depends(deps.current_session)],
-    workspace_id: Annotated[str, Depends(deps.current_workspace)],
+    principal: deps.CurrentPrincipal,
+    workspace_id: deps.CurrentWorkspace,
     status: str = Query("pending", description="Filter by conflict status (pending, approved, rejected)"),
     similarity_min: float = Query(0.0, description="Minimum similarity score (0.0 to 1.0)"),
 ) -> list[dict[str, Any]]:
     """List entity conflicts for the selected workspace."""
-    principal = deps.resolve_principal(request_session.principal_id, workspace_id)
     with store.pg(workspace_id) as conn:
         rows = conn.execute(
             """
@@ -66,6 +70,7 @@ def list_conflicts(
             "quote_b": r["quote_b"],
             "sensitivity": r["sensitivity"],
             "status": r["status"],
+            "created_at": r["created_at"],
         }
         for r in rows
     ]
@@ -74,22 +79,30 @@ def list_conflicts(
 @router.post("/{conflict_id}/approve")
 def approve_conflict(
     conflict_id: uuid.UUID,
-    request_session: Annotated[AuthenticatedSession, Depends(deps.current_session)],
-    workspace_id: Annotated[str, Depends(deps.current_workspace)],
+    principal: deps.CurrentPrincipal,
+    workspace_id: deps.CurrentWorkspace,
 ) -> dict[str, Any]:
     """Approve an entity conflict, creating an ALIAS_OF graph edge."""
-    driver = store.connect_neo4j()
+    # `store.neo()` builds a NEW driver, with its own connection pool, on every
+    # call — the CLI callers are one-shot processes, so nothing there ever had to
+    # close one. A request handler is not, so the driver is scoped to the request.
+    #
+    # `wait=2.0` rather than the 60s default. That default is sized for a CLI run
+    # straight after `docker compose up`, where a fresh container takes 20-30s to
+    # accept Bolt. On an HTTP handler it means a Neo4j outage holds a worker for a
+    # full minute before failing — the request is already lost by then, and the
+    # only thing the wait buys is one fewer worker to serve everyone else.
     try:
-        with store.pg(workspace_id) as conn:
+        with store.neo(wait=2.0) as driver, store.pg(workspace_id) as conn:
             change_id = engine_conflicts.approve_conflict(
-                conn, driver, conflict_id, reviewer_id=uuid.UUID(request_session.principal_id)
+                conn, driver, conflict_id, reviewer_id=principal.id
             )
             audit.record_audit_event(
                 conn,
                 aggregate_type="audit",
                 aggregate_id=conflict_id,
                 action="status_changed",
-                actor_principal_id=request_session.principal_id,
+                actor_principal_id=principal.id,
                 payload={"status": "approved", "change_id": str(change_id)},
                 workspace_id=workspace_id,
             )
@@ -102,21 +115,21 @@ def approve_conflict(
 @router.post("/{conflict_id}/reject")
 def reject_conflict(
     conflict_id: uuid.UUID,
-    request_session: Annotated[AuthenticatedSession, Depends(deps.current_session)],
-    workspace_id: Annotated[str, Depends(deps.current_workspace)],
+    principal: deps.CurrentPrincipal,
+    workspace_id: deps.CurrentWorkspace,
 ) -> dict[str, Any]:
     """Reject an entity conflict, marking the entities as distinct."""
     try:
         with store.pg(workspace_id) as conn:
             engine_conflicts.reject_conflict(
-                conn, conflict_id, reviewer_id=uuid.UUID(request_session.principal_id)
+                conn, conflict_id, reviewer_id=principal.id
             )
             audit.record_audit_event(
                 conn,
                 aggregate_type="audit",
                 aggregate_id=conflict_id,
                 action="status_changed",
-                actor_principal_id=request_session.principal_id,
+                actor_principal_id=principal.id,
                 payload={"status": "rejected"},
                 workspace_id=workspace_id,
             )
