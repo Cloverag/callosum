@@ -53,7 +53,16 @@ class IntakeDocumentRequest(BaseModel):
     title: str
     doc_type: str
     raw_text: str
-    sensitivity: int = 0
+    #: Required, with no default (#143). It used to default to `0` — *public*, the
+    #: widest visibility the system has — so a caller who simply omitted the field
+    #: published the document to everyone. That is fail-open by default on the one
+    #: surface whose purpose is putting confidential material into the system.
+    #:
+    #: Deriving a default from the caller's clearance would be safer than `0` and is a
+    #: reasonable future behaviour, but it is still a guess about a security level.
+    #: Automatic classification is its own product decision; until it is taken, intake
+    #: requires a deliberate one.
+    sensitivity: int
     source_uri: str | None = None
 
 
@@ -103,6 +112,10 @@ def intake_document(
         doc_type=req.doc_type,
         raw_text=req.raw_text,
         sensitivity=req.sensitivity,
+        # The ceiling is enforced in the domain, so the value here is only ever a
+        # request — never a permission. A client that offers the levels a caller may
+        # pick is a convenience; the refusal does not depend on it having done so.
+        author_clearance=principal.clearance,
         workspace_id=principal.workspace_id,
         author_principal_id=principal.id,
         source_uri=req.source_uri,
