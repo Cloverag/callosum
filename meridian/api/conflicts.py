@@ -86,8 +86,14 @@ def approve_conflict(
     # `store.neo()` builds a NEW driver, with its own connection pool, on every
     # call — the CLI callers are one-shot processes, so nothing there ever had to
     # close one. A request handler is not, so the driver is scoped to the request.
+    #
+    # `wait=2.0` rather than the 60s default. That default is sized for a CLI run
+    # straight after `docker compose up`, where a fresh container takes 20-30s to
+    # accept Bolt. On an HTTP handler it means a Neo4j outage holds a worker for a
+    # full minute before failing — the request is already lost by then, and the
+    # only thing the wait buys is one fewer worker to serve everyone else.
     try:
-        with store.neo() as driver, store.pg(workspace_id) as conn:
+        with store.neo(wait=2.0) as driver, store.pg(workspace_id) as conn:
             change_id = engine_conflicts.approve_conflict(
                 conn, driver, conflict_id, reviewer_id=principal.id
             )
