@@ -9,6 +9,7 @@ import { meetingsApi } from "@/lib/meetings";
 import { decisionsApi, type Decision } from "@/lib/decisions";
 import { documentsApi, type Document } from "@/lib/documents";
 import { useSession } from "@/components/session-gate";
+import { transition } from "@/lib/motion";
 
 // Quick shortcuts map to questions the approved memory can actually answer —
 // the rail never offers a prompt it would only abstain on.
@@ -300,7 +301,7 @@ function Turn({ turn, reduce }: { turn: AssistantTurn; reduce: boolean }) {
       className="space-y-3"
       initial={reduce ? false : { opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: reduce ? 0 : 0.2, ease: [0.16, 1, 0.3, 1] }}
+      transition={transition("state", reduce)}
     >
       <div className="flex justify-end">
         <p className="max-w-[85%] rounded-[14px] rounded-br-md bg-accent px-3.5 py-2 text-sm text-accent-foreground">

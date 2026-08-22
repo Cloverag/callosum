@@ -3,6 +3,7 @@
 import * as React from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { transition } from "@/lib/motion";
 
 /**
  * A restrained radial progress ring. One sweep on mount, then still — it reports
@@ -61,7 +62,10 @@ export function Gauge({
           strokeDasharray={c}
           initial={{ strokeDashoffset: reduce ? c - filled : c }}
           animate={{ strokeDashoffset: c - filled }}
-          transition={reduce ? { duration: 0 } : { duration: 1.1, ease: [0.22, 1, 0.36, 1] }}
+          /* L5 reveal. The 1.1s and the ease used to be written here; the tier
+             was named around this value rather than the value retuned to fit a
+             tier, but it now lives in one place with the sparkline and the bar. */
+          transition={transition("reveal", reduce)}
         />
       </svg>
       <div className="absolute inset-0 grid place-items-center text-center">

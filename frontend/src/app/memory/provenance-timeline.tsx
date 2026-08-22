@@ -92,8 +92,16 @@ export function ProvenanceTimeline({
                 <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                   <span className="flex items-center gap-2 text-sm font-medium text-foreground">
                     {entry.label}
+                    {/* `role="img"` is required: an aria-label on a bare <svg> is
+                        not reliably exposed, because svg's implicit role varies by
+                        engine. Without it the only signal that this row is
+                        restricted is a colour and a glyph. */}
                     {entry.restricted && (
-                      <Lock className="size-3 text-warning-emphasis" aria-label="Restricted" />
+                      <Lock
+                        className="size-3 text-warning-emphasis"
+                        role="img"
+                        aria-label="Restricted"
+                      />
                     )}
                   </span>
                   <span className="text-xs tabular-nums text-muted-foreground">
@@ -101,15 +109,26 @@ export function ProvenanceTimeline({
                   </span>
                 </div>
 
-                {/* Contribution, one shared scale across every row. */}
+                {/* Contribution, one shared scale across every row.
+
+                    Emphasis moves within the memory ramp rather than switching
+                    to action blue: this bar is the value-bearing mark, and the
+                    row already reads as active from its border, its wash and
+                    its dot. Solid tokens rather than an `opacity: 0.5`
+                    recession, which measured ~1.9:1 against the track — below
+                    the 3:1 floor for a non-text mark — and whose ordering
+                    inverted under the dark theme's reversed elevation. */}
                 <div
                   className="mt-2 h-1 w-full overflow-hidden rounded-full bg-surface-sunken"
                   role="img"
                   aria-label={`Contributed ${total} records of ${maxContribution} at most`}
                 >
                   <div
-                    className={cn("h-full rounded-full", active ? "bg-accent" : "bg-memory")}
-                    style={{ width: `${(total / maxContribution) * 100}%`, opacity: active ? 1 : 0.5 }}
+                    className={cn(
+                      "h-full rounded-full",
+                      active ? "bg-memory-emphasis" : "bg-memory-soft"
+                    )}
+                    style={{ width: `${(total / maxContribution) * 100}%` }}
                   />
                 </div>
 

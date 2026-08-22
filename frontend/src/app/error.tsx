@@ -2,33 +2,28 @@
 
 import { useEffect } from "react";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 /**
- * State 3 — error. The last resort for a surface that threw during render.
+ * What a route shows when its render throws.
  *
- * ---------------------------------------------------------------------------
- * THIS IS THE NET, NOT THE HANDLER
- * ---------------------------------------------------------------------------
- * Pages already catch their own failed fetches and render `LoadFailed`, which is
- * the better experience: the rest of the page keeps working and only the part
- * that failed says so. This boundary catches what that cannot — a render-time
- * throw, a bad shape from the API that a component destructured, a bug.
+ * There was no boundary anywhere in the app: no `error.tsx`, no
+ * `componentDidCatch`, no `ErrorBoundary`. React's behaviour without one is to
+ * unmount the entire tree, so a property access on an undefined field in a
+ * single card took the whole shell to a blank white screen — the failure mode
+ * that looks to a user like the product is gone rather than like one panel is
+ * broken.
  *
- * Before it existed, those took the whole segment down to React's default,
- * which in production is a blank screen. A blank screen is the same failure the
- * spec names elsewhere: it does not distinguish "broken" from "empty".
+ * This is the same rule `LoadFailed` encodes for failed requests, applied to
+ * failed renders: a crash is not an empty state, and it must say so. The
+ * treatment matches `LoadFailed` deliberately — a second visual language for
+ * failure would make the app look broken in two different ways.
  *
- * It sits inside `layout.tsx`, so the shell survives and the reader can still
- * navigate away instead of being stranded.
- *
- * ---------------------------------------------------------------------------
- * ONE STATEMENT, AT THE TOP
- * ---------------------------------------------------------------------------
- * The spec's rule for this state is that a failure is stated once. Repeating it
- * per widget produces a page of identical red boxes and buries the one fact the
- * reader needs — that nothing on screen can be trusted right now.
+ * Next.js renders this in place of the route segment, so the shell around it
+ * (sidebar, header, assistant rail) survives and the reader can navigate away
+ * instead of reloading.
  */
-export default function SegmentError({
+export default function RouteError({
   error,
   reset,
 }: {
@@ -36,50 +31,38 @@ export default function SegmentError({
   reset: () => void;
 }) {
   useEffect(() => {
-    // Nothing is wired to collect this yet. It goes to the console rather than
-    // nowhere, because a digest with no matching log entry is unactionable —
-    // the digest is the only handle a user can quote back to support.
-    console.error("Unhandled render error", error);
+    // The server strips the message in production and leaves a `digest` to
+    // correlate against the server log; the console is the only place the
+    // client can surface it. There is no error-reporting sink in this project,
+    // and inventing one here would be scope this page does not own.
+    console.error("Route render failed:", error);
   }, [error]);
-
-  /**
-   * `ApiError` survives a client-side throw, but a server-rendered one is
-   * replaced with a bare Error carrying only `digest` — React strips the message
-   * so it cannot leak. So this is duck-typed, and falls back to the generic
-   * wording rather than asserting a cause it cannot actually see.
-   */
-  const isSessionError = error.name === "ApiError" && /session/i.test(error.message);
 
   return (
     <div className="p-8">
-      <Card className="mx-auto max-w-lg p-10 text-center">
+      <Card className="p-10 text-center">
         <p className="text-sm text-foreground">This page could not be displayed.</p>
         <p className="mt-1 text-sm text-muted-foreground">
-          {isSessionError
-            ? "Your session has ended. Sign in again."
-            : "Something went wrong while rendering it. Your data has not been changed."}
+          Something in it failed while rendering. The rest of the application is unaffected —
+          you can retry, or use the navigation to go elsewhere.
         </p>
-
-        {/* The reassurance above is load-bearing on a governance product: the
-            reader's first question after a crash is whether their approval or
-            vote went through. This boundary only ever catches render, never a
-            write in flight, so the answer is always no. */}
-
-        <div className="mt-6 flex items-center justify-center gap-3">
-          <button
-            type="button"
-            onClick={reset}
-            className="rounded-[12px] bg-accent px-4 py-2 text-sm font-medium text-accent-foreground hover:bg-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised"
-          >
-            Try again
-          </button>
-        </div>
-
+        {/* Kept from #138 when the two error boundaries were merged. On a governance
+            product the reader's first question after a crash is whether their approval
+            or vote went through. This boundary only ever catches a render, never a
+            write in flight, so the answer is always no — and saying so is worth a line. */}
+        <p className="mt-1 text-sm text-muted-foreground">
+          Nothing you submitted has been changed.
+        </p>
         {error.digest && (
-          <p className="mt-6 text-xs text-subtle-foreground">
-            Reference <span className="font-mono tabular-nums">{error.digest}</span>
+          <p className="mt-3 font-mono text-[11px] text-subtle-foreground">
+            Reference {error.digest}
           </p>
         )}
+        <div className="mt-6 flex justify-center">
+          <Button variant="secondary" size="sm" onClick={reset}>
+            Try again
+          </Button>
+        </div>
       </Card>
     </div>
   );

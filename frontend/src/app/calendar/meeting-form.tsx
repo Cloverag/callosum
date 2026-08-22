@@ -4,6 +4,14 @@ import * as React from "react";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/vendor/select";
 import { dayKey } from "@/lib/calendar";
 import {
   MEETING_STATUSES,
@@ -30,10 +38,14 @@ type Conflict = {
 
 // Shared native-control styling, token-driven to match <Input>. color-scheme keeps
 // the browser date/time pickers legible in both themes.
+// Radius and focus ring match `ui/input.tsx` deliberately: these native
+// date/time controls sit in the same form as an <Input>, and at `rounded-md`
+// they gave that one form two different corner radii. Meridian's control
+// radius is 12px (DESIGN.md — Radius).
 const field =
-  "h-10 w-full rounded-md border border-border bg-surface-raised px-3 text-sm text-foreground " +
-  "[color-scheme:light] dark:[color-scheme:dark] " +
-  "focus-visible:outline-none focus-visible:border-accent focus-visible:ring-1 focus-visible:ring-focus " +
+  "h-10 w-full rounded-[12px] border border-border bg-surface-raised px-3 text-sm text-foreground " +
+  "transition-colors duration-(--duration-hover) " +
+  "focus-visible:outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-focus/40 " +
   "disabled:opacity-50";
 
 const toDateInput = (iso: string) => dayKey(new Date(iso));
@@ -324,18 +336,32 @@ export function MeetingForm({
             <label htmlFor="mtg-status" className="text-sm font-medium text-foreground">
               Status
             </label>
-            <select
-              id="mtg-status"
+            {/* Base UI's select rather than the native one: the native control
+                renders its list with the OS's own styling, so it was the single
+                surface in the app that ignored the Meridian design language.
+                `items` is what lets the closed trigger show the LABEL while the
+                form state stays the status code. */}
+            <Select
+              items={MEETING_STATUSES.map((s) => ({ label: MEETING_STATUS_LABEL[s], value: s }))}
               value={status}
-              onChange={(e) => setStatus(e.target.value as MeetingStatus)}
-              className={field}
+              onValueChange={(next) => setStatus(next as MeetingStatus)}
             >
-              {MEETING_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {MEETING_STATUS_LABEL[s]}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger
+                id="mtg-status"
+                className="h-10 w-full rounded-[12px] bg-surface-raised data-[size=default]:h-10"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {MEETING_STATUSES.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {MEETING_STATUS_LABEL[s]}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
           </div>
         </div>
       </form>

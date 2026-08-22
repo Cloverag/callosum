@@ -11,7 +11,7 @@ import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
-} from "@/components/animate-ui/components/radix/tooltip";
+} from "@/components/vendor/tooltip";
 import { FieldValue, fieldHint } from "@/components/ui/field-value";
 import { fromNullable } from "@/lib/field-state";
 import type { MemoryHealth as MemoryHealthData } from "@/lib/insights";

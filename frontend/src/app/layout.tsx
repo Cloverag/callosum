@@ -5,6 +5,8 @@ import Sidebar from '@/components/Sidebar';
 import Header from '@/components/Header';
 import { AssistantRail } from '@/components/AssistantRail';
 import { SessionGate } from '@/components/session-gate';
+import { TooltipProvider } from '@/components/vendor/tooltip';
+import { THEME_SCRIPT } from '@/components/theme';
 
 const inter = Inter({ subsets: ['latin'], display: 'swap' });
 
@@ -20,6 +22,15 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        {/*
+          Resolves the stored theme before first paint. Inline and synchronous
+          on purpose: anything deferred runs after the document has already
+          painted with the light tokens, which is the flash of wrong theme.
+          It only ever writes an attribute this app defines.
+        */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       <body className={`${inter.className} h-full antialiased`} suppressHydrationWarning>
         {/*
           The shell renders only for a session that has a principal AND a workspace.
@@ -28,16 +39,25 @@ export default function RootLayout({
           `children` stays a Server Component: it is passed through as rendered output,
           not imported into the gate's module graph.
         */}
-        <SessionGate>
-          <div className="flex h-screen overflow-hidden bg-surface text-foreground">
-            <Sidebar />
-            <div className="flex min-w-0 flex-1 flex-col">
-              <Header />
-              <main className="flex-1 overflow-y-auto">{children}</main>
+        {/*
+          Base UI's tooltip reads its delay from a provider, where the Animate UI
+          component it replaced wrapped each `<Tooltip>` in its own. One provider
+          at the root is the same behaviour with one instance instead of N.
+          `children` still passes through as rendered output, so it stays a
+          Server Component across both client boundaries.
+        */}
+        <TooltipProvider>
+          <SessionGate>
+            <div className="flex h-screen overflow-hidden bg-surface text-foreground">
+              <Sidebar />
+              <div className="flex min-w-0 flex-1 flex-col">
+                <Header />
+                <main className="flex-1 overflow-y-auto">{children}</main>
+              </div>
+              <AssistantRail />
             </div>
-            <AssistantRail />
-          </div>
-        </SessionGate>
+          </SessionGate>
+        </TooltipProvider>
       </body>
     </html>
   );

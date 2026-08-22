@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { LayoutDashboard } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { LoadFailed, asApiError } from "@/components/ui/load-failed";
@@ -20,6 +20,7 @@ import { decisionsApi, type Decision } from "@/lib/decisions";
 import { addDays, startOfDay, startOfWeek } from "@/lib/calendar";
 import { DailyBrief } from "./daily-brief";
 import { MeetingHero } from "./meeting-hero";
+import { InstitutionalMemoryBand } from "./institutional-memory-band";
 import { BoardReadiness } from "./board-readiness";
 import { NeedsYou, type ActionCounts } from "./needs-you";
 import { MemoryHealth } from "./memory-health";
@@ -45,7 +46,12 @@ export default function DashboardPage() {
       })
       .then((d) => setDecisions(d.slice(0, 5)))
       .catch((e) => setError(asApiError(e)));
-    apiClient.getPendingConflicts().then(setConflicts);
+    // Routed into the same `error` as the meetings load, not into an empty array.
+    // This call returned 500 for four days while the page showed "2 name conflicts
+    // awaiting your review" from a client-side fallback — the daily brief and the
+    // Needs You count were both reading invented rows. A count the page cannot
+    // stand behind must not appear at all.
+    apiClient.getPendingConflicts().then(setConflicts).catch((e) => setError(asApiError(e)));
     insightsApi.get().then(setInsights);
     // Newest five. The card links through to /decisions for the rest rather than
     // growing without bound on the dashboard.
@@ -122,23 +128,50 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div className="mt-6">
+      {/*
+       * The entrance choreography — L4, `rules.md` §6 (2026-08-13).
+       *
+       * `--rise-index` is the band's place in the reading order, not a delay in
+       * milliseconds: the page states the order it wants to be read in, and
+       * `globals.css` owns what a beat is worth. Indices are contiguous and
+       * ascend down the page, which is the only thing that makes the effect read
+       * as one movement rather than four unrelated fades.
+       *
+       * It is deliberately on the three BANDS and not on their cards. Twelve
+       * elements arriving one after another is a loading screen impersonating a
+       * page; three is a page settling. The cards inside a band share their
+       * band's beat, and `NeedsYou` keeps its own internal row stagger, which is
+       * a list assembling rather than a second entrance.
+       */}
+      <div className="rise-in mt-6" style={{ "--rise-index": 0 } as CSSProperties}>
         <DailyBrief brief={brief} />
       </div>
 
-      {/* Band A — operational: what needs me now */}
-      <div className="mt-8 grid gap-6 lg:grid-cols-3">
-        <div className="flex flex-col gap-6 lg:col-span-2">
-          <MeetingHero meeting={nextMeeting} loading={meetings === null} />
+      {/* Band A — operational: what needs me now.
+          The hero spans the full width and the two supporting cards sit beneath
+          it at equal weight. Previously all three shared a 2:1 split, which gave
+          the next board meeting the same visual weight as a progress card and
+          left the hero's own content cramped into two thirds. One focal surface,
+          then its supports — hierarchy from size and position, not more colour. */}
+      <div className="rise-in mt-8 flex flex-col gap-6" style={{ "--rise-index": 1 } as CSSProperties}>
+        <MeetingHero meeting={nextMeeting} loading={meetings === null} />
+        <div className="grid gap-6 lg:grid-cols-2">
+          <NeedsYou counts={counts} />
           <BoardReadiness readiness={insights?.readiness ?? null} />
         </div>
-        <NeedsYou counts={counts} />
       </div>
 
-      {/* Band B — system health: can I trust the memory? */}
-      <div className="mt-12">
-        <h2 className="text-[10px] font-semibold uppercase tracking-[0.1em] text-subtle-foreground">Institutional memory</h2>
-        <div className="mt-4 space-y-8">
+      {/* Band B — system health: can I trust the memory?
+          Band separation is 40px (the `2xl` step). It was 48px, which is not a
+          step on the scale DESIGN.md declares — the page was the only thing
+          deciding how far apart its own bands sat.
+
+          The section used to open with a 10px uppercase eyebrow — the quietest
+          type in the system introducing half the page. It now opens on the
+          second focal surface, which is what `--focal-memory` was declared for. */}
+      <div className="rise-in mt-10" style={{ "--rise-index": 2 } as CSSProperties}>
+        <InstitutionalMemoryBand memory={insights?.memory ?? null} />
+        <div className="mt-6 flex flex-col gap-8">
           <MemoryHealth
             memory={insights?.memory ?? null}
             reviewVelocity={insights?.reviewVelocity ?? null}

@@ -16,7 +16,7 @@ export function NavItem({ href, label, icon, active = false }: NavItemProps) {
       href={href}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "group flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-sm transition-colors duration-150",
+        "group flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-sm transition-colors duration-(--duration-hover)",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-surface-elevated",
         // Active nav = soft-blue wash + blue label/icon (brief: sidebar active state).
         active

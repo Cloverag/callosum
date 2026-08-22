@@ -92,6 +92,20 @@ export class ApiError extends Error {
   get needsWorkspace(): boolean {
     return this.status === 409 && this.code === "workspace_not_selected";
   }
+
+  /**
+   * True when the session is valid but the workspace it selected is not (or no
+   * longer) available to this principal.
+   *
+   * The API returns one uniform 403 for "never a member", "membership revoked"
+   * and "that workspace is not yours" — it will not say which, because
+   * distinguishing them confirms to a stranger that a workspace id is real.
+   * The client cannot tell them apart either, which is exactly why the only
+   * sound response is to offer workspace selection again rather than to guess.
+   */
+  get isForbidden(): boolean {
+    return this.status === 403;
+  }
 }
 
 type Params = Record<string, string | undefined>;
@@ -118,6 +132,15 @@ export async function toApiError(response: Response): Promise<ApiError> {
     const error = body?.error;
     if (error?.code) return new ApiError(response.status, error.code, error.detail ?? response.statusText);
     if (body?.detail?.code) return new ApiError(response.status, body.detail.code, body.detail.detail ?? "");
+    // A THIRD shape: FastAPI's own `HTTPException(detail="some string")`, which the
+    // taxonomy does not wrap. `/auth/callback` uses it for an unprovisioned identity
+    // (ADR-011), where the message is deliberately specific — "Ask an administrator"
+    // is the only instruction that path can give. Without this branch it fell through
+    // to the generic case below and the user was told "Forbidden", which is true and
+    // useless. Reported as the client half of #111 C-1.
+    if (typeof body?.detail === "string" && body.detail) {
+      return new ApiError(response.status, "http_error", body.detail);
+    }
   } catch {
     /* fall through to the generic shape */
   }

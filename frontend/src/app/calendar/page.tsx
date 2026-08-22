@@ -48,7 +48,7 @@ function StatusChip({ status, active, onToggle }: { status: MeetingStatus; activ
       onClick={onToggle}
       aria-pressed={active}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors duration-(--duration-hover) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
         active
           ? "border-accent bg-accent-subtle text-accent-emphasis"
           : "border-border bg-surface-elevated text-muted-foreground hover:text-foreground"
@@ -170,7 +170,7 @@ export default function CalendarPage() {
     <div className="p-6">
       <PageHeader
         title="Calendar"
-        description="Board meetings across the Acme Corp workspace."
+        description="Board meetings in this workspace."
         icon={<CalendarDays />}
         actions={
           <>
@@ -182,7 +182,7 @@ export default function CalendarPage() {
                   onClick={() => setView(v)}
                   aria-pressed={view === v}
                   className={cn(
-                    "rounded px-2.5 py-1 text-xs font-medium capitalize transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
+                    "rounded px-2.5 py-1 text-xs font-medium capitalize transition-colors duration-(--duration-hover) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
                     view === v ? "bg-surface-raised text-foreground" : "text-muted-foreground hover:text-foreground"
                   )}
                 >

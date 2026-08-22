@@ -5,7 +5,7 @@ import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
-} from "@/components/animate-ui/components/radix/tooltip";
+} from "@/components/vendor/tooltip";
 import type { GraphQuality, QualityMetric } from "@/lib/insights";
 
 /**
@@ -58,7 +58,7 @@ function MetricRow({ metric }: { metric: QualityMetric }) {
         aria-label={`${metric.label}: ${metric.value} of ${metric.total}, ${Math.round(pct)} percent`}
       >
         <div
-          className="h-full rounded-full transition-[width] duration-500"
+          className="h-full rounded-full transition-[width] duration-(--duration-state)"
           style={{ width: `${pct}%`, background: "var(--memory)" }}
         />
       </div>

@@ -1,20 +1,31 @@
 "use client";
 
+import { useEffect } from "react";
+import "./globals.css";
+import { THEME_SCRIPT } from "@/components/theme";
+
 /**
- * The layout itself failed.
+ * The last resort: a failure in the ROOT LAYOUT itself.
  *
- * This replaces the root layout rather than rendering inside it, which is why it
- * carries its own `<html>` and `<body>` — by the time it runs, the shell that
- * would normally provide them is the thing that threw.
+ * `error.tsx` renders *inside* the layout, so it cannot catch a throw from the
+ * layout — at that point there is no shell left to render into. Next.js
+ * replaces the whole document with this file instead, which is why it must
+ * supply its own `<html>` and `<body>`.
  *
- * That also means no shell, no navigation and no tokens can be relied on: if the
- * stylesheet is what failed, token classes render as nothing. The styling here is
- * inline and literal for that reason alone. It is the only file in the app
- * allowed to hold raw colour values, and it holds the two it cannot do without.
+ * Two consequences of replacing the document, both handled here rather than
+ * left to chance:
  *
- * In practice this is reachable when `SessionGate` throws, since it wraps the
- * whole shell. There is no "try again" that can fix a broken layout mid-session,
- * so the action is a full reload.
+ *   · The layout's `globals.css` import is gone with it, so the token layer is
+ *     imported directly. Without it this page renders as unstyled black text on
+ *     white — in a dark-theme session, a full-screen white flash at the exact
+ *     moment something has already gone wrong.
+ *   · The layout's pre-paint theme script is gone too, so it is repeated. It
+ *     resolves an explicit light/dark choice; without it only the OS preference
+ *     would apply and a user who had chosen dark would get a light page.
+ *
+ * No `Card`, `Button` or font import: every one of those is a module that could
+ * itself be implicated in the failure being reported. A fallback that depends on
+ * the thing it is a fallback for is not a fallback.
  */
 export default function GlobalError({
   error,
@@ -23,40 +34,78 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  useEffect(() => {
+    console.error("Root layout render failed:", error);
+  }, [error]);
+
   return (
-    <html lang="en">
-      <body style={{ margin: 0, background: "#f7f8fa", color: "#111827", fontFamily: "system-ui, sans-serif" }}>
-        <div style={{ display: "flex", minHeight: "100vh", alignItems: "center", justifyContent: "center", padding: "2rem" }}>
-          <div style={{ maxWidth: "28rem", textAlign: "center" }}>
-            <p style={{ margin: 0, fontSize: "0.875rem" }}>Meridian could not start.</p>
-            <p style={{ margin: "0.25rem 0 0", fontSize: "0.875rem", color: "#475569" }}>
-              The application shell failed to load. Reloading usually clears it; if it does not, the
-              server may be unreachable.
-            </p>
-            <button
-              type="button"
-              onClick={reset}
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
+      <body
+        style={{
+          background: "var(--surface)",
+          color: "var(--foreground)",
+          minHeight: "100vh",
+          display: "grid",
+          placeItems: "center",
+          padding: "2rem",
+          fontFamily: "ui-sans-serif, system-ui, sans-serif",
+        }}
+      >
+        <main
+          style={{
+            maxWidth: "32rem",
+            textAlign: "center",
+            background: "var(--surface-raised)",
+            border: "1px solid var(--border)",
+            borderRadius: "16px",
+            padding: "2.5rem",
+            boxShadow: "var(--sh-card)",
+          }}
+        >
+          {/* 1.125rem / 600 is the `section` step on the DESIGN.md ramp. The
+              other literals here are `body` (0.875), `metadata` (0.8125) and
+              `caption` (0.6875) — inline styles, but on the documented scale. */}
+          <h1 style={{ fontSize: "1.125rem", fontWeight: 600, margin: 0, letterSpacing: "-0.01em" }}>
+            Meridian could not start.
+          </h1>
+          <p style={{ margin: "0.5rem 0 0", fontSize: "0.875rem", color: "var(--muted-foreground)" }}>
+            The application shell failed to render, so nothing below it could load. This is not a
+            problem with your data.
+          </p>
+          {error.digest && (
+            <p
               style={{
-                marginTop: "1.5rem",
-                padding: "0.5rem 1rem",
-                fontSize: "0.875rem",
-                fontWeight: 500,
-                color: "#ffffff",
-                background: "#2563eb",
-                border: "none",
-                borderRadius: "12px",
-                cursor: "pointer",
+                margin: "0.75rem 0 0",
+                fontFamily: "ui-monospace, monospace",
+                fontSize: "0.6875rem",
+                color: "var(--subtle-foreground)",
               }}
             >
-              Reload
-            </button>
-            {error.digest && (
-              <p style={{ marginTop: "1.5rem", fontSize: "0.75rem", color: "#64748b" }}>
-                Reference {error.digest}
-              </p>
-            )}
-          </div>
-        </div>
+              Reference {error.digest}
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={reset}
+            style={{
+              marginTop: "1.5rem",
+              height: "2rem",
+              padding: "0 0.875rem",
+              fontSize: "0.8125rem",
+              fontWeight: 500,
+              borderRadius: "12px",
+              border: "1px solid var(--border)",
+              background: "var(--surface-raised)",
+              color: "var(--foreground)",
+              cursor: "pointer",
+            }}
+          >
+            Reload
+          </button>
+        </main>
       </body>
     </html>
   );
