@@ -77,7 +77,7 @@ export default function MeetingsPage() {
 
   return (
     <div className="p-6">
-      <PageHeader title="Meetings" description="Every board meeting in the Acme Corp workspace." icon={<Users />} />
+      <PageHeader title="Meetings" description="Every board meeting in this workspace." icon={<Users />} />
       <div className="mt-6 space-y-6">
         {error ? (
           <LoadFailed what="Meetings" error={error} />

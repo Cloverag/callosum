@@ -110,15 +110,56 @@ describe('EntityConflictsPage', () => {
     expect(document.querySelectorAll('.animate-pulse')).toHaveLength(0);
   });
 
-  it('falls back to the empty state when the request fails', async () => {
+  it('says the load failed, and does NOT show the empty state', async () => {
+    /**
+     * This test used to be called "falls back to the empty state when the request
+     * fails", and it asserted that a failed load rendered "No conflicts pending
+     * review" — a green tick and the sentence "New potential duplicate entities
+     * appear here as documents are ingested."
+     *
+     * `GET /api/conflicts` in fact returned 500 on every call from 2026-08-10
+     * (`deps.resolve_principal` has never existed), so this was the state the page
+     * was actually in, every time, for four days. The suite was certifying it.
+     *
+     * "Nothing needs your review" and "we could not ask" are opposite answers.
+     * Whichever way the fallback is written, one of the two states has to be
+     * unmistakable, and it is this one: an operator who is told the queue is clear
+     * stops looking.
+     */
     (apiClient.getPendingConflicts as jest.Mock).mockRejectedValue(new Error('network'));
     render(<EntityConflictsPage />);
 
-    // The component catches and sets []. Without this the page would sit on
-    // skeletons forever, which reads as "still loading" rather than "failed".
     await waitFor(() => {
-      expect(screen.getByText('No conflicts pending review')).toBeInTheDocument();
+      expect(screen.getByText('Entity conflicts could not be loaded.')).toBeInTheDocument();
     });
+    expect(screen.queryByText('No conflicts pending review')).not.toBeInTheDocument();
+    // Nor is it left sitting on skeletons, which reads as "still loading".
+    expect(document.querySelectorAll('.animate-pulse')).toHaveLength(0);
+  });
+
+  it('keeps the card and reports the failure when a resolution is refused', async () => {
+    /**
+     * The write path had the same shape as the read: `approveConflict` swallowed
+     * the failure client-side and answered `{ status: 'approved' }` from a
+     * module-level array. The card animated away and the operator was told a merge
+     * had been written into an append-only graph that was never touched.
+     *
+     * A card may only leave the list once the server has said it did.
+     */
+    (apiClient.getPendingConflicts as jest.Mock).mockResolvedValue(mockData);
+    (apiClient.approveConflict as jest.Mock).mockRejectedValue(new Error('network'));
+
+    render(<EntityConflictsPage />);
+    await waitFor(() => {
+      expect(screen.getByText('Raj Patel')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Approve merge' })[0]);
+
+    await waitFor(() => {
+      expect(screen.getByText('Entity conflicts could not be loaded.')).toBeInTheDocument();
+    });
+    expect(screen.getByText('Could not reach the server.')).toBeInTheDocument();
   });
 
   it('renders both entities of a conflict with their quotes and similarity', async () => {

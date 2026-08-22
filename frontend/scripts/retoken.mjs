@@ -70,6 +70,32 @@ const RULES = [
     to: "rounded-[16px]",
     why: "Meridian card radius is 16px (DESIGN.md — Radius)",
   },
+  /**
+   * Focus rings. shadcn draws a 3px ring at 50% opacity; DESIGN.md specifies one
+   * consistent 2px ring app-wide, and `shadcn-compat.css` already says so in the
+   * note above `--color-ring`. Two vendored widths (`ring-3` and `ring-[3px]`)
+   * and one translucent colour are rewritten to the house treatment.
+   *
+   * The ring OFFSET is deliberately not injected. Adding `ring-offset-*` by
+   * substitution would have to guess which surface each control sits on, and a
+   * wrong offset colour is more visible than a missing one — the divergence that
+   * actually reads is the width and the 50% alpha, which is what these fix.
+   */
+  {
+    from: /(?<=^|[\s"'`:{])ring-3(?![\w-])/g,
+    to: "ring-2",
+    why: "DESIGN.md specifies a 2px focus ring; shadcn ships 3px",
+  },
+  {
+    from: /(?<=^|[\s"'`:{])ring-\[3px\](?![\w-])/g,
+    to: "ring-2",
+    why: "same 2px rule, written as an arbitrary value by some components",
+  },
+  {
+    from: /(?<=^|[\s"'`:{])ring-ring\/50(?![\w-])/g,
+    to: "ring-focus",
+    why: "a focus ring at 50% alpha can fall under the 3:1 non-text floor",
+  },
 ];
 
 const args = process.argv.slice(2);
@@ -211,20 +237,23 @@ let totalHits = 0;
 let importFixes = 0;
 const importDetail = [];
 const unresolvedImports = [];
-const perRule = new Map(RULES.map((r) => [r.to, 0]));
+/* Keyed by rule INDEX, not by `rule.to`: two rules can share a replacement (the
+   two focus-ring widths both become `ring-2`), and keying by the target made
+   them share a counter and report each other's total. */
+const perRule = new Map(RULES.map((_, i) => [i, 0]));
 
 for (const file of files) {
   const before = readFileSync(file, "utf8");
   let after = before;
   let fileHits = 0;
 
-  for (const rule of RULES) {
+  for (const [i, rule] of RULES.entries()) {
     const hits = (after.match(rule.from) ?? []).length;
     if (hits === 0) continue;
     after = after.replace(rule.from, rule.to);
     fileHits += hits;
 
-    perRule.set(rule.to, perRule.get(rule.to) + hits);
+    perRule.set(i, perRule.get(i) + hits);
   }
 
   const { out, repairs } = repairImports(file, after);
@@ -264,8 +293,8 @@ if (totalHits === 0) {
 }
 
 console.log("");
-for (const rule of RULES) {
-  const n = perRule.get(rule.to);
+for (const [i, rule] of RULES.entries()) {
+  const n = perRule.get(i);
   if (n > 0) console.log(`  → ${rule.to.padEnd(20)} ${String(n).padStart(3)}   ${rule.why}`);
 }
 if (importFixes > 0) {

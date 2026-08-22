@@ -141,7 +141,9 @@ function DocumentList({ documents, onIngest }: { documents: Document[] | null; o
         <span className="mx-auto flex size-12 items-center justify-center rounded-full border border-border bg-surface-elevated text-muted-foreground">
           <FileText className="size-6" />
         </span>
-        <h3 className="mt-3 text-sm font-medium text-foreground">No documents yet</h3>
+        {/* h2: PageHeader renders the h1 and this is the only heading beneath it,
+            so an h3 skips a level. Kept from #112. */}
+        <h2 className="mt-3 text-sm font-medium text-foreground">No documents yet</h2>
         <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
           Ingest a transcript, memo or email to build institutional memory. Every source
           stays attributable and permission-scoped.

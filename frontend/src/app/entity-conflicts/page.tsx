@@ -7,10 +7,12 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/vendor/skeleton";
+import { LoadFailed, asApiError } from "@/components/ui/load-failed";
 import { cn } from "@/lib/utils";
+import type { ApiError } from "@/lib/http";
 import { apiClient, type EntityConflict } from "@/lib/api";
-
-const EASE = [0.16, 1, 0.3, 1] as const;
+import { transition } from "@/lib/motion";
 
 function EntityBlock({ name, quote }: { name: string; quote: string }) {
   return (
@@ -46,21 +48,34 @@ function ConflictCard({
 }) {
   const pct = Math.round(conflict.similarity * 100);
 
+  /*
+   * `layout` is opt-in on reduced motion, not unconditional. It was the one piece
+   * of motion here that ignored the preference outright: resolving a conflict
+   * animates every card below it to a new position, which is exactly the travel a
+   * reader who asked for no motion asked not to see. The fade stays — a crossfade
+   * is the alternative DESIGN.md's hierarchy calls for. The duration was a bare
+   * 0.35 under a `reduce` branch covering only the transforms, so a reduced-motion
+   * reader still got a 350ms animation.
+   */
   return (
     <motion.div
-      layout
+      layout={!reduce}
       initial={reduce ? { opacity: 0 } : { opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       exit={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.97, filter: "blur(6px)" }}
-      transition={{ duration: 0.35, ease: EASE }}
+      transition={transition("entrance", reduce)}
     >
-      <Card className={cn("group relative overflow-hidden", processing && "pointer-events-none opacity-60")}>
-        {/* subtle accent sheen on hover — decorative, token-based */}
-        <div
-          className="pointer-events-none absolute inset-0 bg-gradient-to-br from-accent-subtle to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100"
-          aria-hidden
-        />
-
+      {/* The hover affordance was a blue gradient sheen across the whole card.
+          DESIGN.md §6 bans gradients outside the one named `body::before`
+          exception ("It never appears on a card"), and the One-Action Rule
+          reserves blue for action — a card that is merely hovered is not one.
+          A hairline that firms up says the same thing on doctrine. */}
+      <Card
+        className={cn(
+          "group relative overflow-hidden transition-colors duration-(--duration-hover) hover:border-border-strong",
+          processing && "pointer-events-none opacity-60"
+        )}
+      >
         <div className="relative flex items-center justify-between gap-3 border-b border-border px-5 py-3">
           <div className="flex items-center gap-2">
             <Badge>{conflict.type_a}</Badge>
@@ -96,17 +111,17 @@ function ConflictCard({
 
 function ConflictSkeletons() {
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       {[0, 1].map((i) => (
         <Card key={i} className="overflow-hidden">
           <div className="border-b border-border px-5 py-3">
-            <div className="h-4 w-40 animate-pulse rounded bg-surface-sunken" />
+            <Skeleton className="h-4 w-40" />
           </div>
           <div className="grid gap-6 px-5 py-5 md:grid-cols-2">
             {[0, 1].map((j) => (
-              <div key={j} className="space-y-2">
-                <div className="h-6 w-32 animate-pulse rounded bg-surface-sunken" />
-                <div className="h-16 w-full animate-pulse rounded bg-surface-sunken" />
+              <div key={j} className="flex flex-col gap-2">
+                <Skeleton className="h-6 w-32" />
+                <Skeleton className="h-16 w-full" />
               </div>
             ))}
           </div>
@@ -124,7 +139,8 @@ function EmptyState() {
           <Check className="size-6" />
         </span>
         <div>
-          <h3 className="text-sm font-medium text-foreground">No conflicts pending review</h3>
+          {/* h2: with no conflicts there is no other heading, so h3 skipped a level. */}
+          <h2 className="text-sm font-medium text-foreground">No conflicts pending review</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             New potential duplicate entities appear here as documents are ingested.
           </p>
@@ -136,14 +152,20 @@ function EmptyState() {
 
 export default function EntityConflictsPage() {
   const [conflicts, setConflicts] = useState<EntityConflict[] | null>(null);
+  const [error, setError] = useState<ApiError | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const reduce = useReducedMotion() ?? false;
 
   useEffect(() => {
+    // This was `.catch(() => setConflicts([]))`, which rendered the reassuring
+    // "No conflicts pending review" empty state for a load that had failed —
+    // and it failed on every request from 2026-08-10, because the endpoint
+    // raised `AttributeError`. "Nothing needs your review" and "we could not
+    // ask" are opposite answers and must not share a screen.
     apiClient
       .getPendingConflicts()
       .then(setConflicts)
-      .catch(() => setConflicts([]));
+      .catch((e) => setError(asApiError(e)));
   }, []);
 
   async function resolve(id: string, action: "approve" | "reject") {
@@ -151,20 +173,26 @@ export default function EntityConflictsPage() {
     try {
       if (action === "approve") await apiClient.approveConflict(id);
       else await apiClient.rejectConflict(id);
+      // Removed only after the server confirms. A failed approve used to reject
+      // this promise into nothing — the card stayed, no message appeared, and the
+      // one before it silently kept a fallback's word that the merge had landed.
       setConflicts((prev) => (prev ?? []).filter((c) => c.id !== id));
+    } catch (e) {
+      setError(asApiError(e));
     } finally {
       setProcessingId(null);
     }
   }
 
+  // A page-level gradient wash stood here, added in 71df854 when the token
+  // system was violet/zinc — its comment ("soft violet wash") was accurate at
+  // the time. The v2 pivot (3cf4490) repointed `accent` to blue and this page
+  // was never revisited, so the wash quietly became a blue one: decoration in
+  // the one colour DESIGN.md reserves for action. It was a leftover of that
+  // pivot rather than a decision, and `globals.css` already paints the single
+  // sanctioned ambient wash on `body::before`.
   return (
     <div className="relative p-6">
-      {/* soft violet wash at the top — the requested gradient, kept subtle */}
-      <div
-        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-48 bg-gradient-to-b from-accent-subtle to-transparent"
-        aria-hidden
-      />
-
       <PageHeader
         icon={<ShieldAlert />}
         title="Entity Conflicts"
@@ -172,7 +200,9 @@ export default function EntityConflictsPage() {
       />
 
       <div className="mt-6">
-        {conflicts === null ? (
+        {error ? (
+          <LoadFailed what="Entity conflicts" error={error} />
+        ) : conflicts === null ? (
           <ConflictSkeletons />
         ) : conflicts.length === 0 ? (
           <EmptyState />

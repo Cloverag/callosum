@@ -80,12 +80,99 @@
 
      OPEN DECISION: a categorical palette for NON-memory charts (e.g. meeting
      mix by status) is not settled. Use the status tokens directly for those —
-     they already carry the right meaning — and do not reach for chart-N. */
-  --color-chart-1: var(--memory);        /* violet-700 */
-  --color-chart-2: var(--memory-soft);   /* violet-500 */
-  --color-chart-3: #a78bfa;              /* violet-400 */
-  --color-chart-4: #c4b5fd;              /* violet-300 */
-  --color-chart-5: var(--subtle-foreground); /* neutral "other" */
+     they already carry the right meaning — and do not reach for chart-N.
+
+     The ramp itself now lives in `globals.css` on even L* steps. Two of these
+     were raw hex here (violet-400/300) directly under a header claiming this
+     file contains none — aliases only, now actually true. */
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+}
+
+/* ----------------------------------------------------------------------------
+   React Flow (@xyflow/react) — the knowledge graph on /memory.
+
+   Same job as the block above, for a second vendored vocabulary. React Flow
+   resolves every colour through a fallback chain:
+
+       var(--xy-X-props, var(--xy-X, var(--xy-X-default)))
+
+   so setting the MIDDLE variable from a Meridian token overrides its default
+   and inherits our theming for free — the values below are `var(--token)`, not
+   literals, so they re-resolve when `data-theme` changes.
+
+   WHY NOT `colorMode`. React Flow ships a dark theme keyed on a `.dark` CLASS
+   applied to the flow root by the `colorMode` prop. We must not use it: the top
+   of `globals.css` binds Tailwind's `dark:` variant to `.dark *` precisely so
+   vendored components can never apply a second, uncoordinated adjustment on top
+   of the token flip. Passing `colorMode="dark"` would put that exact class on a
+   wrapper and silently switch `dark:` on for the entire subtree inside the
+   graph. Driving the variables instead keeps one source of truth.
+
+   WHAT THIS FIXES. Without it the controls kept their light defaults in dark
+   mode — `#fefefe` buttons with `currentColor` icons inheriting `--foreground`
+   (`#e3e8f0`), i.e. ~1.06:1: an invisible white slab on a dark canvas.
+   -------------------------------------------------------------------------- */
+.react-flow {
+  /* Zoom / fit controls. */
+  --xy-controls-button-background-color: var(--surface-raised);
+  --xy-controls-button-background-color-hover: var(--surface-sunken);
+  --xy-controls-button-color: var(--muted-foreground);
+  --xy-controls-button-color-hover: var(--foreground);
+  --xy-controls-button-border-color: var(--border);
+  --xy-controls-box-shadow: var(--sh-card);
+
+  /* Canvas. Transparent so the card's own surface shows through. */
+  --xy-background-color: transparent;
+  --xy-background-pattern-dots-color: var(--border);
+  --xy-background-pattern-lines-color: var(--border);
+  --xy-background-pattern-cross-color: var(--border);
+
+  /* Edges. Individual edges override these inline in `knowledge-graph.tsx`;
+     these cover the ones that do not, and the `.selected` state, whose default
+     is a hardcoded `#555`. */
+  --xy-edge-stroke: var(--border-strong);
+  --xy-edge-stroke-selected: var(--accent);
+  --xy-edge-label-background-color: var(--surface-raised);
+  --xy-edge-label-color: var(--muted-foreground);
+  --xy-connectionline-stroke: var(--accent);
+
+  /* Nodes. The graph renders one custom node type, so these are unused today —
+     set anyway, because the defaults are raw hex (`#fff`, `#1a192b`) and any
+     future built-in node type would ship them straight into the UI. */
+  --xy-node-background-color: var(--surface-raised);
+  --xy-node-color: var(--foreground);
+  --xy-node-border: 1px solid var(--border);
+  --xy-node-border-radius: 12px;
+  --xy-node-group-background-color: var(--surface-alt);
+
+  /* Not visible today: handles are `opacity: 0` and drag-selection is off.
+     Both hold raw hex — the selection box is React Flow's OWN blue, which is
+     not our action blue — so they are mapped before anyone enables them. */
+  --xy-handle-background-color: var(--accent);
+  --xy-handle-border-color: var(--surface-raised);
+  --xy-selection-background-color: var(--accent-subtle);
+  --xy-selection-border: 1px dotted var(--accent);
+
+  /* No minimap is rendered; its defaults are three more hardcoded lights. */
+  --xy-minimap-background-color: var(--surface-raised);
+  --xy-minimap-node-background-color: var(--memory-soft);
+  --xy-minimap-node-stroke-color: var(--border);
+  --xy-minimap-mask-background-color: var(--surface-sunken);
+  --xy-minimap-mask-stroke-color: var(--border-strong);
+
+  --xy-attribution-background-color: var(--surface-glass);
+}
+
+/* The attribution link is a RULE, not a variable (`color: #999` in the vendored
+   stylesheet), so it cannot be reached by the block above. Kept visible on
+   purpose — `hideAttribution: false` is a licence courtesy — but it has to obey
+   the theme like everything else. */
+.react-flow__attribution a {
+  color: var(--subtle-foreground);
 }
 
 @layer base {

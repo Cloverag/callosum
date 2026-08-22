@@ -29,9 +29,21 @@ import type { MemoryGrowthPoint } from "@/lib/insights";
  * the design tokens directly — solid hairline grid, no dashes, no theme bridge.
  */
 
+/**
+ * The SVG holds MARKS ONLY — every label is HTML beside it.
+ *
+ * Text inside a `viewBox` scales with the box. At 720 units wide in a full-width
+ * dashboard card (~1240px) that is a 1.7x factor, so 11px tick labels rendered
+ * near 19px and a 2px line near 3.4px: the chart read as coarse next to the
+ * card's own 13px text, and no single viewBox width fixes it, because the same
+ * factor runs the other way on a narrow viewport. Labels in HTML render at their
+ * stated size at every width; `vector-effect="non-scaling-stroke"` does the same
+ * for the strokes. The bars and the curve still scale, which is what should.
+ */
 const VIEW_W = 720;
-const VIEW_H = 240;
-const PAD = { top: 16, right: 16, bottom: 30, left: 34 };
+const VIEW_H = 180;
+/** Small insets so the endpoint marker and the top of the curve are not clipped. */
+const PAD = { top: 8, right: 8, bottom: 4, left: 4 };
 
 export function MemoryGrowth({ growth }: { growth: MemoryGrowthPoint[] | null }) {
   const clipId = useId();
@@ -56,7 +68,12 @@ export function MemoryGrowth({ growth }: { growth: MemoryGrowthPoint[] | null })
 
   // One shared scale for both series — they are the same kind of thing (counts),
   // so a second axis would invent a correlation that is not in the data.
-  const maxY = Math.max(...points.map((p) => Math.max(p.edges, p.entities)));
+  // Edges only. This scaled to `max(edges, entities)` — a holdover from the
+  // version that plotted both. Entities has not been a series since it moved to
+  // the tooltip and the table, so including it only reserved headroom for a
+  // curve nobody draws, and would have squashed the visible one the moment
+  // entities overtook edges.
+  const maxY = Math.max(...points.map((p) => p.edges));
   const niceMax = Math.ceil(maxY / 10) * 10;
   const plotW = VIEW_W - PAD.left - PAD.right;
   const plotH = VIEW_H - PAD.top - PAD.bottom;
@@ -85,7 +102,21 @@ export function MemoryGrowth({ growth }: { growth: MemoryGrowthPoint[] | null })
       </div>
 
       <div className="px-4 pb-4 pt-5">
-        <div className="relative">
+        <div className="flex gap-2">
+          {/* Y ticks in HTML, positioned against the same scale the SVG uses. */}
+          <div className="relative w-7 shrink-0" aria-hidden>
+            {ticks.map((t) => (
+              <span
+                key={t}
+                className="absolute right-0 -translate-y-1/2 text-[11px] tabular-nums text-subtle-foreground"
+                style={{ top: `${(y(t) / VIEW_H) * 100}%` }}
+              >
+                {t}
+              </span>
+            ))}
+          </div>
+
+          <div className="relative min-w-0 flex-1">
           <svg
             viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
             className="w-full"
@@ -101,24 +132,16 @@ export function MemoryGrowth({ growth }: { growth: MemoryGrowthPoint[] | null })
 
             {/* Grid — solid hairlines one step off the surface, never dashed. */}
             {ticks.map((t) => (
-              <g key={t}>
-                <line
-                  x1={PAD.left}
-                  x2={VIEW_W - PAD.right}
-                  y1={y(t)}
-                  y2={y(t)}
-                  stroke="var(--border)"
-                  strokeWidth={1}
-                />
-                <text
-                  x={PAD.left - 8}
-                  y={y(t) + 4}
-                  textAnchor="end"
-                  className="fill-[var(--subtle-foreground)] text-[11px] tabular-nums"
-                >
-                  {t}
-                </text>
-              </g>
+              <line
+                key={t}
+                x1={PAD.left}
+                x2={VIEW_W - PAD.right}
+                y1={y(t)}
+                y2={y(t)}
+                stroke="var(--border)"
+                strokeWidth={1}
+                vectorEffect="non-scaling-stroke"
+              />
             ))}
 
             {/* Per-document contribution. Quiet fill so the cumulative line
@@ -150,11 +173,13 @@ export function MemoryGrowth({ growth }: { growth: MemoryGrowthPoint[] | null })
               strokeLinecap="round"
               strokeLinejoin="round"
               clipPath={`url(#${clipId})`}
+              vectorEffect="non-scaling-stroke"
             />
 
             {/* Endpoint marker with a 2px surface ring. */}
             <circle cx={x(points.length - 1)} cy={y(last.edges)} r={4}
-              fill="var(--memory)" stroke="var(--surface-raised)" strokeWidth={2} />
+              fill="var(--memory)" stroke="var(--surface-raised)" strokeWidth={2}
+              vectorEffect="non-scaling-stroke" />
 
             {/* Crosshair + hovered points. */}
             {active !== null && hovered && (
@@ -162,21 +187,13 @@ export function MemoryGrowth({ growth }: { growth: MemoryGrowthPoint[] | null })
                 <line
                   x1={x(active)} x2={x(active)} y1={PAD.top} y2={PAD.top + plotH}
                   stroke="var(--border-strong)" strokeWidth={1}
+                  vectorEffect="non-scaling-stroke"
                 />
                 <circle cx={x(active)} cy={y(hovered.edges)} r={4}
-                  fill="var(--memory)" stroke="var(--surface-raised)" strokeWidth={2} />
+                  fill="var(--memory)" stroke="var(--surface-raised)" strokeWidth={2}
+                  vectorEffect="non-scaling-stroke" />
               </g>
             )}
-
-            {/* Axis labels — only the ends, so ten labels never collide. */}
-            <text x={PAD.left} y={VIEW_H - 8}
-              className="fill-[var(--subtle-foreground)] text-[11px]">
-              {points[0].label}
-            </text>
-            <text x={VIEW_W - PAD.right} y={VIEW_H - 8} textAnchor="end"
-              className="fill-[var(--subtle-foreground)] text-[11px]">
-              {last.label}
-            </text>
 
             {/* Hit targets, wider than the marks. */}
             {points.map((p, i) => (
@@ -212,12 +229,20 @@ export function MemoryGrowth({ growth }: { growth: MemoryGrowthPoint[] | null })
               </div>
             </div>
           )}
+          </div>
+        </div>
+
+        {/* Axis ends only, so ten labels never collide. `pl-9` clears the tick
+            gutter (w-7 + gap-2) so "first document" sits under the plot origin. */}
+        <div className="mt-1.5 flex justify-between pl-9 text-[11px] text-subtle-foreground">
+          <span>{points[0].label}</span>
+          <span>{last.label}</span>
         </div>
 
         {/* Legend, doubling as the direct label by carrying each series' final
             value. Identity rests on name, value and mark shape — never hue alone.
             Text stays in ink tokens; only the swatch is coloured. */}
-        <div className="mt-1 flex items-center gap-6 px-2 text-xs text-muted-foreground">
+        <div className="mt-3 flex items-center gap-6 pl-9 pr-2 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-2">
             <span className="h-0.5 w-3 rounded-full" style={{ background: "var(--memory)" }} aria-hidden />
             Verified edges, cumulative

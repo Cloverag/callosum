@@ -40,7 +40,9 @@ export function QuarantineList({ items }: { items: QuarantineItem[] | null }) {
         <span className="mx-auto flex size-10 items-center justify-center rounded-full border border-border bg-surface-elevated text-muted-foreground">
           <ShieldAlert className="size-5" />
         </span>
-        <h3 className="mt-3 text-sm font-medium text-foreground">Nothing quarantined</h3>
+        {/* h2: PageHeader renders the h1 and this is the only heading beneath it,
+            so an h3 skips a level. Kept from #112. */}
+        <h2 className="mt-3 text-sm font-medium text-foreground">Nothing quarantined</h2>
         <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
           Every extracted fact so far carried a quote the verifier could locate in its
           source. Rejections are kept here rather than discarded, so this staying empty

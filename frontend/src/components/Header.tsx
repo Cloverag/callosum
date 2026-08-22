@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { useSession } from "./session-gate";
+import { ThemeToggle } from "./theme";
 
 /**
  * The application header: where you are, who you are, and the way out.
@@ -39,10 +39,17 @@ import { useSession } from "./session-gate";
  * graph nodes are withheld. Printing it makes an authorization difference legible from
  * a screenshot rather than requiring narration.
  *
- * The breadcrumb stays static demo copy. `/auth/context` returns a `workspace_id` and
- * no name, so resolving one would mean inventing a lookup that does not exist; "Acme
- * Corp" is the fictional company the seeded corpus is written about, used consistently
- * across `/meetings` and `/calendar`.
+ * **The breadcrumb names no workspace.** It used to read "Acme Corp / Series B" — the
+ * fictional company the seeded corpus is written about — on the reasoning that
+ * `/auth/context` returns a `workspace_id` and no name, so a real one could not be
+ * resolved. That reasoning justifies omitting the name; it does not justify printing a
+ * different one. The workspace this session is actually in is called "Default
+ * Workspace", so the header asserted a fact that was both unmeasured and wrong, in the
+ * one product whose thesis is that it will not do that. "Series B" was worse: nothing
+ * in the domain models a funding stage at all.
+ *
+ * The id is shown instead, because it is the only workspace identity the session
+ * genuinely holds. When the API grows a name, this is the one place to change.
  */
 export default function Header() {
   const session = useSession();
@@ -63,12 +70,17 @@ export default function Header() {
       <nav aria-label="Breadcrumb" className="flex items-center gap-2.5 text-sm">
         <span className="text-muted-foreground">Workspace</span>
         <span className="text-border-strong" aria-hidden>/</span>
-        <span className="font-medium text-foreground">Acme Corp</span>
-        <Badge tone="neutral">Series B</Badge>
+        <span
+          className="font-mono text-[13px] font-medium text-foreground"
+          title={session?.context.workspace_id ?? undefined}
+        >
+          {session ? session.context.workspace_id.slice(0, 8) : "—"}
+        </span>
       </nav>
 
       {session && (
         <div className="flex items-center gap-4">
+          <ThemeToggle />
           <div className="text-right leading-tight">
             <p className="text-sm font-medium text-foreground">{session.context.name}</p>
             <p className="text-xs text-muted-foreground">

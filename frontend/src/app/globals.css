@@ -1,30 +1,48 @@
-@import "tailwindcss";
+/* `source(none)` turns OFF Tailwind v4's automatic content detection, and the
+   `@source` below turns it back on for the only directory that defines UI.
+
+   Auto-detection scans the whole project, markdown and tests included — and a
+   scanner cannot tell a warning from a use. `DESIGN.md` and `rules.md` quote the
+   broken v3 spelling `rounded-[--radius-card]` as the defect they record, and
+   `__tests__/tailwind-var-syntax.test.ts` quotes it as the thing it forbids, so
+   the documentation of the bug was regenerating the bug: the compiled sheet
+   carried `border-radius: --radius-card` again, emitted from the paragraphs
+   explaining why it must not exist.
+
+   Excluding those three files one at a time is a list that loses — the next
+   document to name the pattern reintroduces it. Scoping the scan to `src/`
+   states the true rule instead: classes come from components. */
+@import "tailwindcss" source(none);
+@source "../**/*.{ts,tsx}";
 /* Maps shadcn's token vocabulary onto the semantic layer below, so components
    copied in from the KokonutUI / Animate UI / Bklit registries render in the
    Meridian design language unedited. Read that file before adding a registry. */
 @import "./shadcn-compat.css";
 
-/* Added by `shadcn add`, and KEPT deliberately. Meridian is light-only (the v2
-   pivot removed next-themes entirely), but vendored registry components still
-   ship `dark:` classes. Tailwind v4 defaults `dark:` to prefers-color-scheme,
-   so without this a viewer whose OS is in dark mode would see those components
-   go half-dark inside a light app. Binding the variant to a `.dark` class we
-   never apply means `dark:` can never fire. Do not remove. */
+/* Added by `shadcn add`, and KEPT deliberately — and it matters MORE now that a
+   dark theme exists, not less. Vendored registry components ship their own
+   `dark:` classes. Tailwind v4 defaults that variant to prefers-color-scheme,
+   so without this binding those components would adjust themselves on a dark OS
+   *on top of* the token layer below, which already flipped underneath them —
+   two uncoordinated corrections to the same colour.
+   This app's dark theme is delivered entirely by re-pointing the semantic
+   tokens, so `dark:` must stay inert: it is bound to a `.dark` class we never
+   apply. The theme marker is `data-theme` instead. Do not remove. */
 @custom-variant dark (&:is(.dark *));
 
 /* ============================================================================
-   Meridian Board OS — semantic token layer (v2: blue-on-neutral, light-only)
+   Meridian Board OS — semantic token layer (blue-on-neutral; light + dark)
    The single source of truth for color, radius, elevation, and motion.
    Components consume ONLY these semantic tokens — never a raw hex, never a
    palette step (no `blue-600`, no `slate-100`).
 
    Color doctrine (see DESIGN.md):
      · 95% neutral UI, 5% semantic color. Color communicates meaning.
-     · Blue #2563EB  → ACTION only  (buttons, active nav, links, focus, selected)
-     · Green #16A34A → success / verified / approved / healthy
-     · Amber #F59E0B → attention / pending / draft / awaiting
-     · Red #EF4444   → critical / overdue / failed / quarantined / destructive
-     · Violet #6D28D9 → Institutional Memory ONLY (graph, provenance, memory viz)
+     · Blue #2C70E5  → ACTION only  (buttons, active nav, links, focus, selected)
+     · Green #00873C → success / verified / approved / healthy
+     · Amber #F5A32F → attention / pending / draft / awaiting
+     · Red #D53D3A   → critical / overdue / failed / quarantined / destructive
+     · Violet #855BDC → Institutional Memory ONLY (graph, provenance, memory viz)
    Every text/surface pairing below is verified to WCAG 2.2 AA (>=4.5:1 body).
    ========================================================================== */
 
@@ -83,6 +101,11 @@
   --color-surface-sunken: var(--surface-sunken);      /* inset wells, quote blocks */
   --color-surface-glass: var(--surface-glass);        /* blurred overlay only */
 
+  /* Focal surface (elevation L4) — always ink-based in BOTH themes, so its
+     foreground does not flip with the theme the way the page's does. */
+  --color-focal-foreground: var(--focal-foreground);  /* text/icons ON a focal surface */
+  --color-focal-ink: var(--focal-ink);                /* label on a light fill placed on one */
+
   /* Radius (brief: cards 16, controls 12, modals 20, pills full) ----------- */
   --radius-control: 12px;
   --radius-card: 16px;
@@ -90,62 +113,291 @@
 
   /* Elevation — three levels; cards are sheets on a desk, not floating glass.
      L1 default card · L2 important card (hero / AI panel) · L3 floating (blur). */
-  --shadow-card: 0 1px 2px 0 rgba(15, 23, 42, 0.05);
-  --shadow-raised: 0 1px 2px 0 rgba(15, 23, 42, 0.05), 0 6px 16px -6px rgba(15, 23, 42, 0.12), 0 12px 32px -12px rgba(15, 23, 42, 0.10);
-  --shadow-overlay: 0 16px 48px -12px rgba(15, 23, 42, 0.24), 0 4px 12px -4px rgba(15, 23, 42, 0.12);
+  /* Aliased to per-theme values below rather than written literally here: a
+     shadow tuned for ink on white is nearly invisible on a dark ground, so the
+     dark theme raises the alphas rather than reusing these. */
+  --shadow-card: var(--sh-card);
+  --shadow-raised: var(--sh-raised);
+  --shadow-overlay: var(--sh-overlay);
 
-  /* Motion — L1 hover / L2 state (see DESIGN.md motion hierarchy) ---------- */
+  /* Motion — ONE ease, FOUR duration tiers (see DESIGN.md motion hierarchy).
+     Tokens for the same reason colours are tokens: before this, five durations
+     and two rival ease curves were spread across six components while DESIGN.md
+     published a hierarchy of two durations and one ease. A component picks a
+     tier here; it does not pick a number.
+
+     Mirrored in `src/lib/motion.ts` for the Framer Motion call sites, which
+     animate inline styles from JS and cannot read a custom property.
+     `__tests__/motion-contract.test.ts` asserts the mirror agrees with these. */
   --ease-out-quart: cubic-bezier(0.16, 1, 0.3, 1);
-  --duration-hover: 120ms;
-  --duration-state: 200ms;
+  --duration-hover: 120ms;      /* L1 — hover / press feedback */
+  --duration-state: 200ms;      /* L2 — dialog, reflow, progress fill */
+  --duration-entrance: 400ms;   /* L4 — a band arriving once, on load */
+  --duration-reveal: 1100ms;    /* L5 — a measured figure drawing itself */
+  --stagger-step: 50ms;         /* the beat between staggered siblings */
 }
+
+/* ============================================================================
+   PALETTE REBUILT 2026-08-09 — generated in OKLCH, verified, not eyeballed.
+
+   Three measured defects in the palette this replaces:
+
+   1. THE NEUTRALS CAME FROM TWO HUE FAMILIES. `foreground` and `border` were
+      Tailwind `gray`; `muted-foreground`, `border-strong` and `surface-sunken`
+      were `slate`. Measured hue spread across the neutral ramp: 16.8°. Grey is
+      the colour the eye is least willing to forgive, and text that is bluer
+      than the surface behind it is exactly the drift that reads as "the colours
+      do not fit" without ever naming itself.
+
+   2. `surface-alt` WAS AN INVISIBLE RUNG — ΔL* 0.52 from `surface`, against a
+      just-noticeable difference of about 1.0. A token nobody can see is not a
+      tonal ladder, it is a comment. `surface` -> `surface-sunken` was ΔL* 1.07,
+      only barely at threshold.
+
+   3. `danger-emphasis` FAILED AA at 4.41:1 on `surface-sunken`, while the doc
+      above it claimed every pairing was verified.
+
+   How this one is built: ONE neutral hue anchor (H=255) so every grey agrees;
+   surfaces on visible L* steps (100 / 97.8 / 96.4 / 95.0); and each semantic
+   ink SOLVED for >= 5.5:1 against the darkest surface it can sit on rather than
+   picked by hand. Solving to one target is why they now read as one family —
+   every emphasis ink lands in a 5.5-6.4 band, so no status colour shouts louder
+   than another for reasons nobody chose. Worst pairing in the whole system is
+   5.54:1 against a 4.5 floor.
+
+   The `-subtle` washes are now SOLID, not alpha. As `rgba(...)` they changed
+   value with whatever sat behind them, so a success badge on a sunken well and
+   the same badge on white were not the same colour.
+   ========================================================================== */
 
 @layer base {
   :root {
-    /* Action (blue) ------------------------------------------------------- */
-    --accent: #2563eb;                 /* blue-600 — white label passes AA */
+    /* Tells the browser which way to render native chrome — date and time
+       pickers, scrollbars, spinners. Set once here rather than per-control:
+       `meeting-form.tsx` used to carry `[color-scheme:light]` with a `dark:`
+       counterpart that could never fire, because that variant is bound to a
+       class this app never applies. */
+    color-scheme: light;
+
+    /* Action (blue, H 260.5) ---------------------------------------------- */
+    --accent: #2c70e5;                 /* white label 4.61:1 */
     --accent-foreground: #ffffff;
-    --accent-hover: #1d4ed8;           /* blue-700 */
-    --accent-emphasis: #1d4ed8;        /* AS text/icon on white or soft-blue — AA (>=5:1) */
-    --accent-subtle: #eff6ff;          /* blue-50 — active nav / selected wash */
-    --accent-border: #bfdbfe;          /* blue-200 hairline */
+    --accent-hover: #1b57bb;           /* white label 6.71:1 */
+    --accent-emphasis: #245bb9;        /* AS text/icon — 6.42:1 white, 5.55:1 sunken */
+    --accent-subtle: #eef4ff;          /* active nav / selected wash */
+    --accent-border: #c7dcff;
 
-    /* Status -------------------------------------------------------------- */
-    --success: #16a34a;                --success-foreground: #ffffff;
-    --success-emphasis: #15803d;       --success-subtle: rgba(22, 163, 74, 0.10);
-    --warning: #f59e0b;                --warning-foreground: #78350f; /* dark label on amber */
-    --warning-emphasis: #b45309;       --warning-subtle: rgba(245, 158, 11, 0.14);
-    --danger: #ef4444;                 --danger-foreground: #ffffff;
-    --danger-emphasis: #dc2626;        --danger-subtle: rgba(239, 68, 68, 0.10);
-    --info: #2563eb;                   --info-foreground: #ffffff;
-    --info-emphasis: #1d4ed8;          --info-subtle: #eff6ff;
+    /* Status — every `-emphasis` >= 5.5:1 on the darkest surface ----------- */
+    --success: #00873c;                --success-foreground: #ffffff;
+    --success-emphasis: #016e30;       --success-subtle: #e7faea;
+    /* Amber is the one fill that carries a DARK label (6.68:1), because an
+       amber dark enough for white text stops reading as amber. */
+    --warning: #f5a32f;                --warning-foreground: #422700;
+    --warning-emphasis: #865400;       --warning-subtle: #fff1e3;
+    --danger: #d53d3a;                 --danger-foreground: #ffffff;
+    --danger-emphasis: #ad3230;        --danger-subtle: #fff0ee;
+    --info: #2c70e5;                   --info-foreground: #ffffff;
+    --info-emphasis: #245bb9;          --info-subtle: #eef4ff;
 
-    /* Institutional Memory (violet) — memory viz only --------------------- */
-    --memory: #6d28d9;                 --memory-foreground: #ffffff;
-    --memory-emphasis: #6d28d9;        /* violet-700 on white ~6.6:1 — AA */
-    --memory-soft: #8b5cf6;            /* violet-500 — large / secondary graph only */
-    --memory-subtle: rgba(109, 40, 217, 0.10);
+    /* Institutional Memory (violet, H 295) — memory viz only -------------- */
+    --memory: #855bdc;                 --memory-foreground: #ffffff;
+    --memory-emphasis: #6c4ab3;        /* 6.43:1 on white */
+    --memory-soft: #8f6ce0;            /* large / secondary graph only — 3.90:1, graphic floor 3.0 */
+    --memory-subtle: #f4f2fe;
 
-    /* Text ---------------------------------------------------------------- */
-    --foreground: #111827;             /* gray-900 */
-    --muted-foreground: #475569;       /* slate-600 — AA on every surface */
-    --subtle-foreground: #64748b;      /* slate-500 — large / decorative only */
+    /* Sequential violet ramp for memory charts. Values live here, in the
+       token layer, rather than in `shadcn-compat.css` — which claimed to hold
+       "no raw hex" while holding two. Even L* steps (45/56/67/78) so adjacent
+       series stay separable. */
+    --chart-1: #5f38a7;
+    --chart-2: #7e5acc;
+    --chart-3: #9d80e7;
+    --chart-4: #bca9f7;
+    --chart-5: #647489;                /* neutral "other" bucket */
+
+    /* Text — all on the H=255 neutral anchor ------------------------------ */
+    --foreground: #0f1926;             /* 17.69:1 on white */
+    --muted-foreground: #475567;       /* 7.60:1 — AA on every surface */
+    --subtle-foreground: #647489;      /* large / decorative only */
 
     /* Structure ----------------------------------------------------------- */
-    --border: #e5e7eb;                 /* gray-200 hairline */
-    --border-strong: #cbd5e1;          /* slate-300 */
-    --focus: #2563eb;
+    --border: #e3e7ec;
+    --border-strong: #cdd3dc;
+    --focus: #2c70e5;
 
-    /* Surfaces ------------------------------------------------------------ */
-    --surface: #f7f8fa;                /* page base */
+    /* Surfaces — visible L* steps: 100 / 97.8 / 96.4 / 95.0 --------------- */
+    --surface: #f6f8fa;                /* page base */
     --surface-elevated: #ffffff;       /* sidebar, header, AI rail, panels */
     --surface-raised: #ffffff;         /* cards */
-    --surface-alt: #f8fafc;            /* secondary / nested panel */
-    --surface-sunken: #f1f5f9;         /* slate-100 — inset wells, quote blocks */
+    --surface-alt: #f1f3f6;            /* secondary / nested panel */
+    --surface-sunken: #ebeff3;         /* inset wells, quote blocks */
     /* Loosened 0.80 -> 0.72 (2026-07-26) so chrome reads as glass against the
        ambient ground wash rather than as flat white. */
     --surface-glass: rgba(255, 255, 255, 0.72);
-    --surface-glass-border: rgba(15, 23, 42, 0.08);
+    --surface-glass-border: rgba(15, 25, 38, 0.08);
+
+    --sh-card: 0 1px 2px 0 rgba(15, 25, 38, 0.05);
+    --sh-raised: 0 1px 2px 0 rgba(15, 25, 38, 0.05), 0 6px 16px -6px rgba(15, 25, 38, 0.12), 0 12px 32px -12px rgba(15, 25, 38, 0.10);
+    --sh-overlay: 0 16px 48px -12px rgba(15, 25, 38, 0.24), 0 4px 12px -4px rgba(15, 25, 38, 0.12);
+
+    /* Ambient ground wash, per theme (see body::before). */
+    --wash-a: rgba(133, 91, 220, 0.05);
+    --wash-b: rgba(44, 112, 229, 0.045);
+
+    /* Focal surfaces — elevation level 4 (rules.md §6, 2026-08-13). At most two
+       per page. Deep-ink based and anchored to a semantic family: `action` for
+       the operational hero that carries the primary button, `memory` for the
+       institutional-memory band. Every stop clears 7:1 against
+       `--focal-foreground`, asserted in __tests__/palette-contrast.test.ts —
+       the worst stop is checked, never the midpoint. */
+    --focal-foreground: #ffffff;
+    --focal-ink: #101a28;
+    --focal-sheen: rgba(255, 255, 255, 0.08);
+    --focal-action: linear-gradient(135deg, #101a28 0%, #1d4285 100%);
+    --focal-memory: linear-gradient(135deg, #101a28 0%, #4a2e8c 100%);
+  }
+
+  /* ==========================================================================
+     DARK THEME — added 2026-08-09 (owner's decision, recorded in rules.md §4).
+
+     Generated the same way as the light palette, not inverted from it. Three
+     things differ on purpose:
+
+     · ELEVATION RUNS THE OTHER WAY. On a dark ground a raised surface is
+       LIGHTER, and an inset well is DARKER, so the ladder reverses:
+       sunken L* 17 < surface 20.5 < raised 24.5 < alt 28.5.
+     · CHROMA COMES DOWN. Saturated colour on a dark ground muddies rather than
+       enriches, so the neutrals carry slightly less chroma than their light
+       counterparts and the inks are lighter rather than more saturated.
+     · FILLS CARRY A DARK LABEL. An accent light enough to read on this ground
+       cannot also hold white text.
+
+     Each coloured ink is solved for >= 5.5:1 against `surface-alt`, the
+     LIGHTEST surface it can sit on and therefore the worst case here — the
+     mirror of the light theme, where the darkest surface was. Zero failures
+     across 7 inks x 9 surfaces; worst pairing 5.14:1 against a 4.5 floor.
+
+     Components need no change at all: they consume semantic tokens, so the
+     theme is entirely a matter of what those tokens resolve to. Note that
+     Tailwind's `dark:` variant stays bound to a `.dark` class we never apply
+     (see the top of this file) — vendored registry components must NOT get a
+     second, uncoordinated adjustment on top of this one.
+     ========================================================================== */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+
+      --accent: #4c81dc;                 --accent-foreground: #050911;
+      --accent-hover: #6695e5;           --accent-emphasis: #73a3f4;
+      --accent-subtle: #1f2e47;          --accent-border: #354d76;
+
+      --success: #21954a;                --success-foreground: #040b05;
+      --success-emphasis: #5ab371;       --success-subtle: #1a3520;
+      --warning: #b57301;                --warning-foreground: #0e0802;
+      --warning-emphasis: #d6933b;       --warning-subtle: #3e290f;
+      --danger: #d35e56;                 --danger-foreground: #100605;
+      --danger-emphasis: #ed847b;        --danger-subtle: #442320;
+      --info: #4c81dc;                   --info-foreground: #050911;
+      --info-emphasis: #73a3f4;          --info-subtle: #1f2e47;
+
+      --memory: #8e71d6;                 --memory-foreground: #0a0811;
+      --memory-emphasis: #ab93ed;        --memory-soft: #9d85de;
+      --memory-subtle: #302844;
+
+      --chart-1: #ab93ed;                --chart-2: #9d85de;
+      --chart-3: #8e71d6;                --chart-4: #7358c4;
+      --chart-5: #7b8491;
+
+      --foreground: #e3e8f0;
+      --muted-foreground: #a3acb6;
+      --subtle-foreground: #7b8491;
+
+      --border: #30363e;
+      --border-strong: #49515b;
+      --focus: #73a3f4;
+
+      --surface: #13181d;
+      --surface-elevated: #1c2127;
+      --surface-raised: #1c2127;
+      --surface-alt: #252b32;
+      --surface-sunken: #0c1015;
+      --surface-glass: rgba(28, 33, 39, 0.72);
+      --surface-glass-border: rgba(255, 255, 255, 0.08);
+
+      /* Deeper and wider than the light theme's: a shadow tuned for white
+         surfaces disappears entirely against a dark ground. */
+      --sh-card: 0 1px 2px 0 rgba(0, 0, 0, 0.5);
+      --sh-raised: 0 1px 2px 0 rgba(0, 0, 0, 0.5), 0 6px 16px -6px rgba(0, 0, 0, 0.6), 0 12px 32px -12px rgba(0, 0, 0, 0.5);
+      --sh-overlay: 0 16px 48px -12px rgba(0, 0, 0, 0.7), 0 4px 12px -4px rgba(0, 0, 0, 0.5);
+
+      --wash-a: rgba(142, 113, 214, 0.08);
+      --wash-b: rgba(76, 129, 220, 0.07);
+
+      /* Focal surfaces: the ramps NARROW in dark rather than brighten, so a
+         focal card reads as a material and not a light source. */
+      --focal-foreground: #e3e8f0;
+      --focal-ink: #0c1015;
+      --focal-sheen: rgba(227, 232, 240, 0.08);
+      --focal-action: linear-gradient(135deg, #0c1015 0%, #16233a 100%);
+      --focal-memory: linear-gradient(135deg, #0c1015 0%, #2b1f4d 100%);
+    }
+  }
+
+  /* The explicit choice wins in both directions. */
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+
+    --accent: #4c81dc;                 --accent-foreground: #050911;
+    --accent-hover: #6695e5;           --accent-emphasis: #73a3f4;
+    --accent-subtle: #1f2e47;          --accent-border: #354d76;
+
+    --success: #21954a;                --success-foreground: #040b05;
+    --success-emphasis: #5ab371;       --success-subtle: #1a3520;
+    --warning: #b57301;                --warning-foreground: #0e0802;
+    --warning-emphasis: #d6933b;       --warning-subtle: #3e290f;
+    --danger: #d35e56;                 --danger-foreground: #100605;
+    --danger-emphasis: #ed847b;        --danger-subtle: #442320;
+    --info: #4c81dc;                   --info-foreground: #050911;
+    --info-emphasis: #73a3f4;          --info-subtle: #1f2e47;
+
+    --memory: #8e71d6;                 --memory-foreground: #0a0811;
+    --memory-emphasis: #ab93ed;        --memory-soft: #9d85de;
+    --memory-subtle: #302844;
+
+    --chart-1: #ab93ed;                --chart-2: #9d85de;
+    --chart-3: #8e71d6;                --chart-4: #7358c4;
+    --chart-5: #7b8491;
+
+    --foreground: #e3e8f0;
+    --muted-foreground: #a3acb6;
+    --subtle-foreground: #7b8491;
+
+    --border: #30363e;
+    --border-strong: #49515b;
+    --focus: #73a3f4;
+
+    --surface: #13181d;
+    --surface-elevated: #1c2127;
+    --surface-raised: #1c2127;
+    --surface-alt: #252b32;
+    --surface-sunken: #0c1015;
+    --surface-glass: rgba(28, 33, 39, 0.72);
+    --surface-glass-border: rgba(255, 255, 255, 0.08);
+
+    --sh-card: 0 1px 2px 0 rgba(0, 0, 0, 0.5);
+    --sh-raised: 0 1px 2px 0 rgba(0, 0, 0, 0.5), 0 6px 16px -6px rgba(0, 0, 0, 0.6), 0 12px 32px -12px rgba(0, 0, 0, 0.5);
+    --sh-overlay: 0 16px 48px -12px rgba(0, 0, 0, 0.7), 0 4px 12px -4px rgba(0, 0, 0, 0.5);
+
+    --wash-a: rgba(142, 113, 214, 0.08);
+    --wash-b: rgba(76, 129, 220, 0.07);
+
+    /* Focal surfaces: the ramps NARROW in dark rather than brighten, so a
+       focal card reads as a material and not a light source. */
+    --focal-foreground: #e3e8f0;
+    --focal-ink: #0c1015;
+    --focal-sheen: rgba(227, 232, 240, 0.08);
+    --focal-action: linear-gradient(135deg, #0c1015 0%, #16233a 100%);
+    --focal-memory: linear-gradient(135deg, #0c1015 0%, #2b1f4d 100%);
   }
 }
 
@@ -174,8 +426,8 @@
     z-index: -1;
     pointer-events: none;
     background:
-      radial-gradient(60rem 40rem at 12% -8%, rgba(109, 40, 217, 0.05), transparent 60%),
-      radial-gradient(52rem 36rem at 92% 4%, rgba(37, 99, 235, 0.045), transparent 62%);
+      radial-gradient(60rem 40rem at 12% -8%, var(--wash-a), transparent 60%),
+      radial-gradient(52rem 36rem at 92% 4%, var(--wash-b), transparent 62%);
   }
 
   /* One consistent focus treatment across the app: a 2px blue ring, never
@@ -184,6 +436,40 @@
     background-color: var(--accent-subtle);
     color: var(--accent-emphasis);
   }
+}
+
+/* ============================================================================
+   KEYFRAMES — declared at the top level rather than inside a layer, because a
+   layered `@keyframes` is a portability trap nobody gains anything from.
+
+   Four, and no more. Each ends at the element's NATURAL state (opacity 1, no
+   transform, a fully drawn stroke), which is what lets `prefers-reduced-motion`
+   switch the animation off outright and land on a correct render — rather than
+   the global rule's duration collapse, which would leave a 10px jump.
+   ========================================================================== */
+
+/* L4 entrance: a band arrives. 10px of travel, once. */
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* L5 reveal: a stroke draws along its own length. Requires `pathLength="1"` on
+   the path, which normalises it so ONE dasharray works for any geometry. */
+@keyframes draw-in {
+  from { stroke-dashoffset: 1; }
+  to   { stroke-dashoffset: 0; }
+}
+
+/* L5 reveal: a proportional bar grows from its leading edge. */
+@keyframes grow-in {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 @layer utilities {
@@ -204,6 +490,146 @@
     background: var(--surface-glass);
     backdrop-filter: blur(16px) saturate(1.4);
     -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  }
+
+  /* Level 4 — the focal surface (rules.md §6, 2026-08-13). AT MOST TWO per page:
+     `action` for the operational hero, `memory` for the institutional-memory
+     band. Exposed as utilities so no component ever writes a gradient itself —
+     the ramps stay in the token layer where the contrast gate can read them. */
+  .surface-focal-action {
+    background-image: var(--focal-action);
+  }
+
+  .surface-focal-memory {
+    background-image: var(--focal-memory);
+  }
+
+  .surface-focal-action,
+  .surface-focal-memory {
+    position: relative;
+    /* Creates the stacking context the sheen's negative z-index needs, so it
+       paints ABOVE this element's background image but BELOW its content. */
+    isolation: isolate;
+    color: var(--focal-foreground);
+    box-shadow: var(--shadow-raised);
+    transition:
+      transform var(--duration-state) var(--ease-out-quart),
+      box-shadow var(--duration-state) var(--ease-out-quart);
+  }
+
+  /* Pointer sheen — the ramp catching light, so a focal surface reads as a
+     material rather than a painted rectangle. Deliberately NOT a custom cursor:
+     the native pointer keeps its affordances, and the effect stays inside the one
+     surface instead of becoming a page-wide device.
+
+     The alpha is SOLVED, not chosen. A white sheen lightens the ground under
+     white text, so it spends contrast. At the light ramp's lightest stop the
+     measured floor is: 0.08 -> 7.79:1, 0.10 -> 7.36:1, 0.12 -> 6.94:1, which
+     fails the 7:1 gate. 0.08 is the value with headroom, and
+     palette-contrast.test.ts asserts the composite rather than trusting it. */
+  .surface-focal-action::after,
+  .surface-focal-memory::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity var(--duration-state) var(--ease-out-quart);
+    background: radial-gradient(
+      22rem 22rem at var(--pointer-x, 50%) var(--pointer-y, 50%),
+      var(--focal-sheen),
+      transparent 70%
+    );
+  }
+
+  .surface-focal-action:hover,
+  .surface-focal-memory:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-overlay);
+  }
+
+  .surface-focal-action:hover::after,
+  .surface-focal-memory:hover::after {
+    opacity: 1;
+  }
+
+  /* The global reduced-motion rule collapses transition DURATION, which would
+     leave the lift as an instant 2px jump — worse than no lift. Removed outright
+     instead; the sheen still crossfades, which is the "instant/crossfade"
+     alternative DESIGN.md's motion hierarchy calls for. */
+  @media (prefers-reduced-motion: reduce) {
+    .surface-focal-action:hover,
+    .surface-focal-memory:hover {
+      transform: none;
+    }
+  }
+
+  /* ==========================================================================
+     L4 — ENTRANCE (rules.md §6, 2026-08-13).
+
+     A band arrives once, on load, and is then still. This exists because the
+     dashboard used to appear all at once as a wall of twelve surfaces, which
+     gives the eye no order to read them in — the page had a hierarchy but no
+     way to show it in time as well as in space.
+
+     Staggered by an INDEX rather than a hand-written delay per element:
+     `--rise-index: 2` reads as "third in the order", so a reordered page cannot
+     end up with two bands sharing a beat or a gap where one was deleted.
+
+     Delay is capped at the fourth beat. Entrance choreography is a first
+     impression, not a queue to sit through — and an uncapped stagger means the
+     last card on a long page is still fading in after the operator has started
+     reading the first.
+     ========================================================================== */
+  .rise-in {
+    animation: rise-in var(--duration-entrance) var(--ease-out-quart) both;
+    animation-delay: calc(min(var(--rise-index, 0), 3) * var(--stagger-step));
+  }
+
+  /* ==========================================================================
+     L5 — REVEAL.
+
+     A measured figure draws itself: the gauge sweeps, the sparkline draws along
+     its own length, a distribution bar grows from its leading edge. This is the
+     one tier where motion is not feedback — it walks the eye along the axis the
+     number is measured on, which is the axis a reader has to travel anyway.
+
+     One pass, then still. Nothing here loops: a figure that keeps moving after
+     it has been read is asking for attention it has no further claim on.
+     ========================================================================== */
+  .reveal-draw {
+    stroke-dasharray: 1;
+    animation: draw-in var(--duration-reveal) var(--ease-out-quart) both;
+  }
+
+  .reveal-fade {
+    animation: fade-in var(--duration-reveal) var(--ease-out-quart) both;
+  }
+
+  .reveal-grow {
+    transform-origin: left center;
+    animation: grow-in var(--duration-reveal) var(--ease-out-quart) both;
+    animation-delay: calc(min(var(--rise-index, 0), 3) * var(--stagger-step));
+  }
+
+  /* Switched OFF rather than shortened, for the reason given above the keyframes:
+     each one ends at the natural state, so removing the animation renders the
+     finished frame. The global rule below only collapses DURATION, which for a
+     `both`-filled animation with a delay would hold the element invisible for the
+     delay and then pop it in — motion replaced by a flash, which is worse. */
+  @media (prefers-reduced-motion: reduce) {
+    .rise-in,
+    .reveal-fade,
+    .reveal-grow,
+    .reveal-draw {
+      animation: none;
+    }
+
+    .reveal-draw {
+      stroke-dasharray: none;
+    }
   }
 }
 

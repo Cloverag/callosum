@@ -47,7 +47,7 @@ export function DayView({
             <li key={m.id}>
               <button
                 onClick={() => onSelect(m)}
-                className="flex w-full items-center gap-4 px-5 py-3 text-left transition-colors duration-150 hover:bg-surface-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus"
+                className="flex w-full items-center gap-4 px-5 py-3 text-left transition-colors duration-(--duration-hover) hover:bg-surface-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus"
               >
                 <span className="w-28 shrink-0 text-sm tabular-nums text-muted-foreground">
                   {formatTime(m.scheduled_start)} – {formatTime(m.scheduled_end)}
