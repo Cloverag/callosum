@@ -36,10 +36,11 @@ const MEETING: Meeting = {
   created_by: null,
   created_at: "2026-08-01T09:00:00Z",
   updated_at: "2026-08-01T09:00:00Z",
-  // Added by 0020_meeting_importance and mirrored into the Meeting type by #127.
-  // The cross-language contract test compares this type against the Python, so a
-  // fixture that omits it stops compiling the moment the backend field lands.
-  importance: "standard",
+  // Added when `importance` became a required field on `Meeting` (9289897).
+  // "routine" is the backend's own default — `meridian/meetings.py`
+  // ROUTINE_IMPORTANCE — so the fixture matches what the API would return for
+  // a meeting created without one.
+  importance: "routine",
 };
 
 function stubFetch(status: number, body: unknown) {

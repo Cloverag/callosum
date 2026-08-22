@@ -197,23 +197,41 @@ class BridgeCommitmentRequest(BaseModel):
     due_date: uuid.UUID | str | None = None
 
 
-@router.get("/{resolution_id}/policy-check")
-def check_resolution_policy(
-    resolution_id: uuid.UUID,
-    total_voting_members: int = 5,
-    policy_type: str = domain.POLICY_SIMPLE_MAJORITY,
-    quorum_percent: float = 50.0,
-    principal: CurrentPrincipal = None,
-) -> dict:
-    """Evaluates voting quorum and policy thresholds for a resolution."""
-    ws_id = principal.workspace_id if principal else domain.DEFAULT_WORKSPACE_ID
-    res = domain.get_resolution(str(resolution_id), workspace_id=ws_id)
-    return domain.evaluate_resolution_policy(
-        res,
-        total_voting_members=total_voting_members,
-        policy_type=policy_type,
-        quorum_percent=quorum_percent,
-    )
+# ---------------------------------------------------------------------------
+# There is deliberately NO `GET /{resolution_id}/policy-check` here.
+#
+# It existed, added in #119, and returned `quorum_met`, `threshold_passed` and
+# `passed`. It is removed rather than fixed, because **#58 decision 2 says this
+# product does not issue that verdict**:
+#
+#     The vote tally does not decide the outcome. `VoteTally.carried` is a simple
+#     majority and explicitly advisory; a human sets `status`. Quorum and
+#     supermajority rules vary per board and we have nowhere to record them, so
+#     inferring the result would assert governance nobody configured.
+#
+# `record_vote` above and `transition_resolution` in the domain both restate it.
+# The endpoint sat three functions below the docstring forbidding it.
+#
+# `domain.evaluate_resolution_policy` is KEPT, and its shape is now the one
+# decision 2 sanctions: a pure function with no endpoint, exactly like
+# `resolutions.tally`. A caller who has a board's standing orders in hand can
+# evaluate against them; the API does not do it on their behalf and does not
+# certify the result.
+#
+# The arithmetic was not sound either, which is why the denominator could not be
+# fixed on its own. Measured against the live database on 2026-08-14:
+#
+#     roster : 1 voting, 1 non_voting, 1 standing-recused
+#     votes  : voting→for, non_voting→recused, standing-recused→for
+#     => quorum_percent_actual = 300.0%
+#
+# `total_participants` counts every recorded vote including `recused`, while
+# `record_vote` permits a `non_voting` member to minute a recusal and does not
+# restrain a standing-`recused` member at all. Any denominator narrower than the
+# whole roster can therefore exceed 100%. Settling that needs `record_vote`'s
+# guard, the numerator's definition and a stored policy decided together — see
+# the decision issue.
+# ---------------------------------------------------------------------------
 
 
 @router.post("/{resolution_id}/bridge-commitment", status_code=status.HTTP_201_CREATED)

@@ -46,6 +46,13 @@ export default function RouteError({
           Something in it failed while rendering. The rest of the application is unaffected —
           you can retry, or use the navigation to go elsewhere.
         </p>
+        {/* Kept from #138 when the two error boundaries were merged. On a governance
+            product the reader's first question after a crash is whether their approval
+            or vote went through. This boundary only ever catches a render, never a
+            write in flight, so the answer is always no — and saying so is worth a line. */}
+        <p className="mt-1 text-sm text-muted-foreground">
+          Nothing you submitted has been changed.
+        </p>
         {error.digest && (
           <p className="mt-3 font-mono text-[11px] text-subtle-foreground">
             Reference {error.digest}

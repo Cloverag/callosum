@@ -19,7 +19,7 @@ import psycopg
 
 from callosum.config import settings
 from meridian import board_members, decisions, meetings, resolutions
-from meridian.board_members import DIRECTOR, NON_VOTING, OBSERVER, VOTING
+from meridian.board_members import DIRECTOR, NON_VOTING, OBSERVER, RECUSED, VOTING
 from meridian.resolutions import (
     ADOPTED,
     DRAFT,
@@ -645,3 +645,148 @@ def test_deleting_a_board_member_who_has_voted_is_refused():
             conn.rollback()
     finally:
         _cleanup(ws)
+
+
+# ---------------------------------------------------------------------------
+# A standing-recused member cannot cast a counted vote (#139)
+#
+# `recused` was added as a third standing state in `0012_board_member` and never
+# exercised in `record_vote`. The guard tested `== "non_voting"`, so a standing-recused
+# director could cast `for` and it landed in `_COUNTED_VOTES` — measured on a live
+# database as part of #131, where a three-member roster reported 300% quorum.
+#
+# Independent of quorum policy: this is wrong data in `resolution_vote` and a wrong bar
+# on /resolutions whether or not any endpoint publishes a verdict.
+# ---------------------------------------------------------------------------
+
+
+def test_a_standing_recused_member_cannot_cast_a_counted_vote():
+    """The defect, stated directly. Fails against the previous guard."""
+    ws = _new_workspace()
+    try:
+        _, res = _resolution(ws)
+        conflicted = board_members.create_member(
+            "Recused Director", DIRECTOR, voting=RECUSED, workspace_id=ws
+        )
+
+        for vote in (VOTE_FOR, VOTE_AGAINST):
+            with pytest.raises(ResolutionValidationError):
+                resolutions.record_vote(res.id, conflicted.id, vote, workspace_id=ws)
+    finally:
+        _cleanup(ws)
+
+
+def test_a_standing_recused_member_cannot_abstain_either():
+    """`abstain` is uncounted but not therefore permitted.
+
+    An abstention is a deliberate choice by someone entitled to vote. A member who has
+    stood down from a conflict is not choosing to abstain; recording it that way would
+    put a decision in the minutes they did not make.
+    """
+    ws = _new_workspace()
+    try:
+        _, res = _resolution(ws)
+        conflicted = board_members.create_member(
+            "Recused Director", DIRECTOR, voting=RECUSED, workspace_id=ws
+        )
+
+        with pytest.raises(ResolutionValidationError):
+            resolutions.record_vote(res.id, conflicted.id, VOTE_ABSTAIN, workspace_id=ws)
+    finally:
+        _cleanup(ws)
+
+
+def test_a_standing_recused_member_may_still_minute_the_recusal():
+    """The filter must remove the counted vote, not the member from the record.
+
+    A resolution whose record is silent about a director cannot distinguish "recused"
+    from "absent", and those are different facts in minutes.
+    """
+    ws = _new_workspace()
+    try:
+        _, res = _resolution(ws)
+        conflicted = board_members.create_member(
+            "Recused Director", DIRECTOR, voting=RECUSED, workspace_id=ws
+        )
+
+        recusal = resolutions.record_vote(
+            res.id, conflicted.id, VOTE_RECUSED, workspace_id=ws
+        )
+
+        assert recusal.vote == VOTE_RECUSED
+        assert resolutions.get_resolution(res.id, workspace_id=ws).votes[0].vote == VOTE_RECUSED
+    finally:
+        _cleanup(ws)
+
+
+def test_the_refusal_names_which_standing_status_refused_it():
+    """`non_voting` and `recused` are refused for different reasons.
+
+    The enum exists to keep that difference (`0012_board_member`); collapsing both into
+    one message would throw it away at the boundary where someone reads it.
+    """
+    ws = _new_workspace()
+    try:
+        _, res = _resolution(ws)
+        observer = board_members.create_member(
+            "Observer", OBSERVER, voting=NON_VOTING, workspace_id=ws
+        )
+        conflicted = board_members.create_member(
+            "Recused Director", DIRECTOR, voting=RECUSED, workspace_id=ws
+        )
+
+        with pytest.raises(ResolutionValidationError) as observer_err:
+            resolutions.record_vote(res.id, observer.id, VOTE_FOR, workspace_id=ws)
+        with pytest.raises(ResolutionValidationError) as recused_err:
+            resolutions.record_vote(res.id, conflicted.id, VOTE_FOR, workspace_id=ws)
+
+        assert NON_VOTING in str(observer_err.value)
+        assert RECUSED in str(recused_err.value)
+        assert NON_VOTING not in str(recused_err.value)
+    finally:
+        _cleanup(ws)
+
+
+def test_a_recused_members_vote_never_reaches_the_tally():
+    """End to end: the bar on /resolutions, not just the guard.
+
+    Two directors vote for, one recused member minutes a recusal. `carried` must rest on
+    the two counted votes alone.
+    """
+    ws = _new_workspace()
+    try:
+        _, res = _resolution(ws)
+        a = board_members.create_member("Director A", DIRECTOR, voting=VOTING, workspace_id=ws)
+        b = board_members.create_member("Director B", DIRECTOR, voting=VOTING, workspace_id=ws)
+        conflicted = board_members.create_member(
+            "Recused Director", DIRECTOR, voting=RECUSED, workspace_id=ws
+        )
+
+        resolutions.record_vote(res.id, a.id, VOTE_FOR, workspace_id=ws)
+        resolutions.record_vote(res.id, b.id, VOTE_FOR, workspace_id=ws)
+        resolutions.record_vote(res.id, conflicted.id, VOTE_RECUSED, workspace_id=ws)
+
+        # `tally` is pure and takes the read model, so re-fetch: `res` predates the votes.
+        tally = resolutions.tally(resolutions.get_resolution(res.id, workspace_id=ws))
+
+        assert (tally.for_, tally.against, tally.recused) == (2, 0, 1)
+        # The recusal is recorded and does not weigh. `carried` resting on the two
+        # counted votes is the property that matters — a guard that passes while the
+        # outcome is still computed wrong would be worthless.
+        assert tally.carried is True
+    finally:
+        _cleanup(ws)
+
+
+def test_the_refused_set_is_derived_from_the_enum_not_listed():
+    """Guards the fix against the shape of the bug it replaces.
+
+    The defect was a hardcoded literal that could not know about a state added later.
+    Deriving from `ALLOWED_VOTING` means a fourth standing state is excluded from casting
+    until someone deliberately admits it, rather than admitted until someone remembers to
+    exclude it.
+    """
+    assert resolutions._CANNOT_CAST == board_members.ALLOWED_VOTING - {VOTING}
+    assert RECUSED in resolutions._CANNOT_CAST
+    assert NON_VOTING in resolutions._CANNOT_CAST
+    assert VOTING not in resolutions._CANNOT_CAST
