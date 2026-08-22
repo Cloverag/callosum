@@ -28,6 +28,52 @@ import psycopg
 from neo4j import Driver
 from rapidfuzz import fuzz
 
+#: The top of the clearance ladder seeded by `schema/postgres.sql` — 0 public,
+#: 1 investor, 2 internal, 3 confidential, 4 restricted.
+#:
+#: Used as the FALLBACK sensitivity, not as a normal value. See `_entity_sensitivity`.
+MAX_SENSITIVITY = 4
+
+
+def _entity_sensitivity(entity: dict) -> int:
+    """The sensitivity of the chunk an entity was mentioned in, failing CLOSED.
+
+    This value decides who may read the conflict's `quote_a` / `quote_b` through
+    `GET /api/conflicts`, and those are verbatim spans of source documents. A missing
+    or null sensitivity therefore cannot be treated as a low one.
+
+    It used to read `entity.get("sensitivity", 1)`. `1` is *investor* — a mid-ladder
+    guess that would have exposed confidential quotes to an investor-clearance reviewer
+    if the key ever went absent. It was unreachable, because `GraphGateway.entity_mentions`
+    aliases `c.sensitivity` (so the key is always present) and `store.upsert_chunk_node`
+    takes `sensitivity` as a required keyword-only argument (so every Chunk node has one).
+
+    Unreachable is a property of two other modules that nobody is obliged to preserve,
+    and it is not a reason for a security fallback to be permissive. The correct
+    fallback for "I do not know how sensitive this is" is the most restrictive level
+    there is: the pair is then visible only to a reviewer who could have seen either
+    source anyway.
+
+    `None` is handled separately from an absent key on purpose — `dict.get(k, default)`
+    returns the *value* when the key exists, so a Cypher `RETURN c.sensitivity` over a
+    node without the property yields `None` and skips the default entirely. That is the
+    path a `.get(..., 1)` reading misses.
+    """
+    value = entity.get("sensitivity")
+    return MAX_SENSITIVITY if value is None else int(value)
+
+
+def pair_sensitivity(entity_a: dict, entity_b: dict) -> int:
+    """A conflict is as sensitive as the more sensitive of its two sources.
+
+    Public rather than underscore-private so a test can assert the real derivation
+    instead of restating it — the previous test computed
+    `max(a.get("sensitivity", 1), b.get("sensitivity", 1))` itself, so it would have
+    passed unchanged had the production default become `0`.
+    """
+    return max(_entity_sensitivity(entity_a), _entity_sensitivity(entity_b))
+
+
 from callosum import store
 from callosum.graph import GraphContext, GraphGateway
 from callosum.ontology import ONTOLOGY_VERSION, RelationType
@@ -159,11 +205,10 @@ def detect_conflicts(
         quote_a = _chunk_quote(conn, chunk_id_a) if chunk_id_a else None
         quote_b = _chunk_quote(conn, chunk_id_b) if chunk_id_b else None
 
-        # Sensitivity of the conflict = max of the two source chunks.
-        # A reviewer needs clearance >= this to see the pair.
-        sensitivity = max(
-            entity_a.get("sensitivity", 1), entity_b.get("sensitivity", 1)
-        )
+        # Sensitivity of the conflict = max of the two source chunks, failing closed
+        # when either is unknown. A reviewer needs clearance >= this to see the pair,
+        # and the pair carries verbatim quotes from both sources.
+        sensitivity = pair_sensitivity(entity_a, entity_b)
 
         try:
             conn.execute(

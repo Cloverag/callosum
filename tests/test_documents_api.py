@@ -653,3 +653,185 @@ class TestDerivedIds:
         assert documents._chunk_id(ws_a, "deadbeef", 0) != documents._chunk_id(ws_b, "deadbeef", 0)
         assert documents._document_id(ws_a, "deadbeef") != documents._document_id(ws_b, "deadbeef")
 
+
+
+# ---------------------------------------------------------------------------
+# Sensitivity authorization (#143)
+#
+# The invariant: the ladder defined by the schema, intake validation and the
+# authorization rules must be consistent, and intake must not create a
+# less-protected state by default.
+#
+# Every read path in `meridian/documents.py` has always filtered on clearance,
+# fail-closed. The write path consulted it nowhere. These three groups are the
+# three ways that showed up.
+# ---------------------------------------------------------------------------
+
+
+class TestSensitivityCeiling:
+    """Criterion 1 — a principal may not file above their own clearance."""
+
+    def test_a_principal_cannot_file_above_their_clearance(self, restore_client):
+        client, pid, ws = _signed_in("low", INVESTOR)  # clearance 1
+        try:
+            res = client.post(
+                "/api/documents/intake",
+                json={
+                    "title": "Compensation Review",
+                    "doc_type": "memo",
+                    "raw_text": "Salary bands for the executive team.",
+                    "sensitivity": CONFIDENTIAL,  # 3, above their 1
+                },
+            )
+            assert res.status_code == 403
+            assert res.json()["error"]["code"] == "forbidden"
+        finally:
+            _cleanup([pid], [ws])
+
+    def test_the_refusal_is_a_refusal_and_not_a_clamp(self, restore_client):
+        """The document must not exist at *any* level.
+
+        A silent downgrade would be worse than the bug: the caller is told their
+        document is confidential while it sits at investor level, readable by
+        people they excluded. The listing is the check that matters — a 403 with
+        a row behind it would still be a disclosure.
+        """
+        client, pid, ws = _signed_in("noclamp", INVESTOR)
+        try:
+            client.post(
+                "/api/documents/intake",
+                json={
+                    "title": "Should Not Exist",
+                    "doc_type": "memo",
+                    "raw_text": "Filed above the caller's clearance.",
+                    "sensitivity": CONFIDENTIAL,
+                },
+            )
+            listing = client.get("/api/documents")
+            assert listing.status_code == 200
+            assert all(d["title"] != "Should Not Exist" for d in listing.json())
+        finally:
+            _cleanup([pid], [ws])
+
+    def test_a_principal_may_file_at_or_below_their_clearance(self, restore_client):
+        client, pid, ws = _signed_in("ok", CONFIDENTIAL)  # clearance 3
+        try:
+            for level in (PUBLIC, INVESTOR, 2, CONFIDENTIAL):
+                res = client.post(
+                    "/api/documents/intake",
+                    json={
+                        "title": f"Allowed At {level}",
+                        "doc_type": "memo",
+                        "raw_text": f"Distinct body for level {level} so dedup does not fire.",
+                        "sensitivity": level,
+                    },
+                )
+                assert res.status_code == 201, res.json()
+                assert res.json()["sensitivity"] == level
+        finally:
+            _cleanup([pid], [ws])
+
+    def test_the_refusal_names_the_authority_rule_not_the_comparison(self, restore_client):
+        """An out-of-range value and an unauthorised one are different answers.
+
+        A client that cannot tell them apart cannot tell the user whether to pick
+        a lower level or to ask for clearance.
+        """
+        client, pid, ws = _signed_in("distinct", INVESTOR)
+        try:
+            unauthorised = client.post(
+                "/api/documents/intake",
+                json={"title": "A", "doc_type": "memo", "raw_text": "Body A.", "sensitivity": 3},
+            )
+            out_of_range = client.post(
+                "/api/documents/intake",
+                json={"title": "B", "doc_type": "memo", "raw_text": "Body B.", "sensitivity": 99},
+            )
+            assert unauthorised.status_code == 403
+            assert out_of_range.status_code == 422
+            assert unauthorised.json()["error"]["code"] != out_of_range.json()["error"]["code"]
+        finally:
+            _cleanup([pid], [ws])
+
+
+class TestSensitivityIsRequired:
+    """Criterion 2 — a missing classification is an error, never a public document."""
+
+    def test_omitted_sensitivity_is_rejected(self, restore_client):
+        client, pid, ws = _signed_in("omit", CONFIDENTIAL)
+        try:
+            res = client.post(
+                "/api/documents/intake",
+                json={
+                    "title": "No Classification",
+                    "doc_type": "memo",
+                    "raw_text": "Filed without saying how sensitive it is.",
+                },
+            )
+            assert res.status_code == 422
+            # The same envelope an out-of-range value produces. A missing field must
+            # not answer in a different format than an invalid one.
+            assert res.json()["error"]["code"] == "invalid"
+            assert "sensitivity" in res.json()["error"]["detail"]
+        finally:
+            _cleanup([pid], [ws])
+
+    def test_omitting_sensitivity_does_not_create_a_public_document(self, restore_client):
+        """The defect this criterion exists for.
+
+        The field used to default to 0 — *public*, the widest visibility in the
+        system — so omitting it published the document to everyone. The status
+        code alone would not catch a regression here; the absence of the row is
+        the assertion that matters.
+        """
+        client, pid, ws = _signed_in("nopublic", CONFIDENTIAL)
+        try:
+            client.post(
+                "/api/documents/intake",
+                json={
+                    "title": "Unclassified Memo",
+                    "doc_type": "memo",
+                    "raw_text": "Confidential board matter filed without a level.",
+                },
+            )
+            listing = client.get("/api/documents")
+            assert all(d["title"] != "Unclassified Memo" for d in listing.json())
+        finally:
+            _cleanup([pid], [ws])
+
+
+class TestReservedLevelFour:
+    """Criterion 3 — `4 restricted` is reserved, and the gap is deliberate."""
+
+    def test_level_four_is_not_creatable_through_intake(self, restore_client):
+        client, pid, ws = _signed_in("founder", 4)
+        try:
+            res = client.post(
+                "/api/documents/intake",
+                json={
+                    "title": "Founder Only",
+                    "doc_type": "memo",
+                    "raw_text": "Reserved tier.",
+                    "sensitivity": 4,
+                },
+            )
+            # 422, not 403: the caller's clearance is not the objection — the level
+            # is not offered by intake at all, to anyone, pending the policy in #143.
+            assert res.status_code == 422
+            assert res.json()["error"]["code"] == "invalid"
+        finally:
+            _cleanup([pid], [ws])
+
+    def test_the_gap_between_the_ladder_and_intake_is_exactly_one_reserved_level(self):
+        """Guards the mismatch against becoming accidental again.
+
+        `LADDER_LEVELS` mirrors `schema/postgres.sql`. If a level is added to the
+        schema, or intake's accepted set is widened without a decision, this fails
+        rather than the two drifting apart silently — which is how a documented
+        five-level ladder ended up with a four-level intake that read as an
+        off-by-one.
+        """
+        assert documents.LADDER_LEVELS == (0, 1, 2, 3, 4)
+        assert documents.ACCEPTED_SENSITIVITIES == (0, 1, 2, 3)
+        reserved = set(documents.LADDER_LEVELS) - set(documents.ACCEPTED_SENSITIVITIES)
+        assert reserved == {4}, "level 4 is reserved by decision (#143); widening it needs the policy first"

@@ -1,0 +1,32 @@
+Meridian Inc — Board Meeting 17
+Date: 2027-03-11
+Attendees: Raj Malhotra (CEO), Priya Nair (CFO), Marcus Webb (board), Tom Fischer (board)
+
+Note: this transcript was reconstructed from a recording with a failed auto-transcribe
+pass. Speaker labels are inconsistent because three people took notes. Typos are as
+recorded and have not been corrected.
+
+PRIYA: Before we start — the Northwind minimum-spend floor came back. Their procurement
+wants the floor droped to forty thousand, not fifty.
+RAJ: That changes the usage-based pricing decision we approved in Meeting 13.
+P. Nair: It does. I am asking the board to supersede the usage-based pricing decision
+with a tiered floor at forty thousand for enterprise accounts.
+MARCUS: Hold on, is that the same thing Tom raised —
+TOM: — no, mine was the migration path, different item.
+MARCUS: — right, different item, withdrawn.
+RAJ: Priya, say it plainly for the minutes.
+Priya N.: The board supersedes the usage-based pricing decision from Meeting 13. The
+new decision is a tiered minimum-spend floor at forty thousand for enterprise accounts.
+RAJ: I approve the tiered minimum-spend floor decision.
+MARCUS: Approved.
+TOM: Approved. Note that this does not reopen the earlier motion.
+RAJ: Which earlier motion?
+TOM: The one we deferred. I will not name it here; check the Meeting 16 minutes.
+PRIYA: Recording that as ambiguous rather than guessing.
+
+RAJ: Second item. The vendor-security questionnaire.
+P. Nair: Still a follow-up, still not a resolution. I own it.
+MARCUS: And the internatonal expansion motion?
+TOM: Unchanged. Deferred.
+RAJ: Fine. Priya owns the tiered minimum-spend floor decision as well.
+Priya N.: Noted. I will bring the rollout plan to Meeting 18.
