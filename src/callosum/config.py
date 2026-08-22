@@ -30,7 +30,8 @@ class Settings(BaseSettings):
     provider: Provider = Provider.OLLAMA
 
     # --- Ollama (default, free) ---
-    ollama_host: str = "http://localhost:11434"
+    # `127.0.0.1`, not `localhost` — see the note on the store DSNs below.
+    ollama_host: str = "http://127.0.0.1:11434"
     ollama_model: str = "gpt-oss:120b-cloud"
     ollama_embedding_model: str = "bge-m3"
 
@@ -50,9 +51,44 @@ class Settings(BaseSettings):
     #   postgres_app_dsn  — the `callosum_app` non-superuser (created by migration 0004).
     #                       Every runtime connection (store.pg) uses this, so RLS is
     #                       actually enforced. Requires migrations to have run first.
-    postgres_dsn: str = "postgresql://callosum:callosum@localhost:5433/callosum"
-    postgres_app_dsn: str = "postgresql://callosum_app:callosum_app@localhost:5433/callosum"
-    neo4j_uri: str = "bolt://localhost:7687"
+    #
+    # ---------------------------------------------------------------------------
+    # `127.0.0.1`, NEVER `localhost`, AND `connect_timeout` IS NOT OPTIONAL
+    # ---------------------------------------------------------------------------
+    # `localhost` resolves to BOTH `::1` and `127.0.0.1`, and `getaddrinfo` returns
+    # the IPv6 address first. `docker-compose.yml` publishes these services on IPv4
+    # only — `"127.0.0.1:5433:5432"` — so nothing is listening on `::1`. Every
+    # connection therefore opened against a dead address, waited out a timeout, and
+    # only then fell back to IPv4.
+    #
+    # Measured on Windows 11 / Docker Desktop, 2026-08-15:
+    #
+    #     127.0.0.1  ->  0.03s
+    #     localhost  ->  8.15s   (exactly the connect_timeout supplied)
+    #
+    # `store.pg()` opens a fresh connection per call, so the gated suite paid that
+    # stall hundreds of times and appeared to hang rather than run.
+    #
+    # `connect_timeout` matters independently of the host. libpq's default is 0,
+    # meaning *wait forever*: with a half-up database — Docker Desktop starting, a
+    # container paused, a port proxy accepting but not forwarding — a connection
+    # blocks indefinitely and the failure presents as a hang with no error to read.
+    # Ten seconds is far longer than a local connection ever legitimately needs and
+    # far shorter than a person's patience.
+    #
+    # Overridable as always: set POSTGRES_DSN / POSTGRES_APP_DSN / NEO4J_URI in
+    # `.env` for a remote or differently-bound database.
+    postgres_dsn: str = (
+        "postgresql://callosum:callosum@127.0.0.1:5433/callosum?connect_timeout=10"
+    )
+    postgres_app_dsn: str = (
+        "postgresql://callosum_app:callosum_app@127.0.0.1:5433/callosum?connect_timeout=10"
+    )
+    # No timeout parameter here: the Neo4j driver takes `connection_timeout` as a
+    # keyword argument and rejects unknown URI query parameters, so a `?`-suffix
+    # would be a startup error rather than a shorter wait. `store.neo()` already
+    # takes an explicit `wait`.
+    neo4j_uri: str = "bolt://127.0.0.1:7687"
     neo4j_user: str = "neo4j"
     neo4j_password: str = "callosum123"
 

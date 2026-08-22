@@ -31,6 +31,7 @@ from datetime import datetime
 
 from callosum import store
 from callosum.store import DEFAULT_WORKSPACE_ID
+from meridian import board_members
 
 DRAFT = "draft"
 ADOPTED = "adopted"
@@ -57,6 +58,18 @@ ALLOWED_VOTES = frozenset({VOTE_FOR, VOTE_AGAINST, VOTE_ABSTAIN, VOTE_RECUSED})
 # not weigh: an abstention is a deliberate non-vote, and a recusal is a declared
 # conflict. Counting either as opposition would misreport the board.
 _COUNTED_VOTES = frozenset({VOTE_FOR, VOTE_AGAINST})
+
+# Standing states that may not cast a counted vote — DERIVED, not listed.
+#
+# The bug this replaces (#139) was a hardcoded `== "non_voting"`, written when
+# `voting` had the two states that mattered to its author. `recused` was already a
+# third state in `0012_board_member`, and the literal could not know that.
+#
+# Subtracting from `ALLOWED_VOTING` inverts the failure mode: a fourth standing state
+# added to the enum is excluded from casting until someone deliberately admits it,
+# rather than silently admitted until someone remembers to exclude it. The enum stays
+# the single source of truth for what standing statuses exist.
+_CANNOT_CAST = board_members.ALLOWED_VOTING - {board_members.VOTING}
 
 # Meeting statuses where resolution creation/mutation is locked.
 #
@@ -437,11 +450,24 @@ def record_vote(
             # exists in a workspace whose directory they may not be reading.
             raise BoardMemberNotFound(str(board_member_id))
 
-        if member["voting"] == "non_voting" and vote != VOTE_RECUSED:
-            # An observer or adviser has no vote to cast. `recused` stays permitted
-            # so that a standing recusal can still be minuted against the motion.
+        # Two standing states cannot cast a counted vote, for different reasons, and
+        # `board_member.voting` is an enum rather than a boolean precisely so the
+        # difference survives (`0012_board_member.py`). `non_voting` is an observer or
+        # adviser who never had a vote; `recused` is a director who has one in principle
+        # and stands down from a persistent conflict.
+        #
+        # `recused` was missing here, so a standing-recused director could cast `for` and
+        # it landed in `_COUNTED_VOTES` — wrong data in the table and a wrong bar on
+        # /resolutions, independent of any quorum policy (#139).
+        #
+        # Both may still record VOTE_RECUSED. That is not a formality: a resolution whose
+        # record is silent about a director cannot distinguish "recused" from "absent",
+        # and those are different facts in minutes.
+        if member["voting"] in _CANNOT_CAST and vote != VOTE_RECUSED:
             raise ResolutionValidationError(
-                f"board member {board_member_id} is non_voting and cannot cast {vote!r}"
+                f"board member {board_member_id} is {member['voting']} and cannot cast "
+                f"{vote!r}; only {VOTE_RECUSED!r} may be recorded for a standing "
+                f"{member['voting']} member"
             )
 
         row = conn.execute(

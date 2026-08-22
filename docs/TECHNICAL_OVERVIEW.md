@@ -516,20 +516,19 @@ Stated in full, because a limitation an evaluator finds is worse than one they a
 4. **CP-F and CP-G were intentionally deferred** (#93), with CP-H, to P9. Failed and
    loading states are handled on five surfaces but have no systematic treatment.
 
-5. **Composite-FK protection covers 1 relationship of 10** (#41). The rest are safe by
-   convention — an RLS-scoped existence check in Python — which is a real defence that
-   every future author has to remember.
-
-6. **`graph` and `assistant` are snapshots, not live reads** (#100). Both show real
+5. **`graph` and `assistant` are snapshots, not live reads** (#100). Both show real
    data derived from the gold graph; neither is wired to the engine at runtime.
 
-7. **Grounding precision is 50%** on abstention negatives. The linker does not reliably
+6. **Grounding precision is 50%** on abstention negatives. The linker does not reliably
    refuse a question with no referent.
 
-8. **No CI.** Every verification in this document is a local run against real Postgres
-   and Neo4j. There is no automated gate on pull requests.
+7. **CI runs the gated suite; the mechanism gate does not.**
+   `.github/workflows/ci.yml` runs pytest with `CALLOSUM_RUN_INTEGRATION=1` against
+   Postgres and Neo4j service containers on every pull request. The mechanism gate is
+   **not** part of it, so every byte-identity claim in this document is still a local
+   run.
 
-9. **Single-corpus, single-run figures.** The evaluation numbers come from one corpus
+8. **Single-corpus, single-run figures.** The evaluation numbers come from one corpus
    and, for the LLM-dependent tier, one run of one model. Multi-run stability has not
    been characterised.
 

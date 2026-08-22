@@ -16,17 +16,18 @@ security cases), updated docs/status, runnable verification commands, and a revi
 No checkpoint may weaken evidence verification, human approval, RBAC, provenance, or audit
 requirements.
 
-## Current progress — 2026-08-01
+## Current progress — 2026-08-22
 
 | Track | Completed | Active | Remaining |
 |---|---:|---|---:|
 | Research engine | **14 / 14** accepted (`R0`–`R13`) | — research track CLOSED 2026-07-18, baseline frozen at `6ed5ed5` | 0 |
-| Meridian product | **3 / 13** accepted (`P0`, `P1`, `P2`) | **P3 FROZEN** — feature-complete through CP-E; exit gate not claimed (CP-F/G/H deferred, #93) | **10** (`P3`–`P12`) |
+| Meridian product | **3 / 13** accepted (`P0`, `P1`, `P2`) | **P3 FROZEN**, exit gate not claimed (CP-F/G/H deferred, #93) · **P4 IN PROGRESS** — source intake merged, versions and meeting assignment not started | **10** (`P3`–`P12`) |
 
 The counts must not be combined into one percentage: the research track validates the
 memory engine; the product track makes it a deployable board operating system. P3 gave the
-product an authenticated API and an OIDC identity, but both are **frozen and locally
-verified only** — there is no CI, no public deployment, no integration layer, and no pilot.
+product an authenticated API and an OIDC identity. CI has run the gated suite against real
+Postgres and Neo4j on every pull request since #120, but the mechanism gate is not part of
+it, and there is still no public deployment, no integration layer, and no pilot.
 
 ### P2 checkpoint status
 
@@ -384,7 +385,23 @@ observability.
 **Exit:** users access only authorized workspaces; UI distinguishes draft/approved/withheld/
 failed states; primary flows pass keyboard and accessibility smoke checks.
 
-## P4 — Board workspace, members, and source intake
+## P4 — Board workspace, members, and source intake — 🟩 IN PROGRESS
+
+Source intake merged 2026-08-22 (PR #128). **Not accepted:** the exit gate has not been
+attempted, and `rules.md` §4 is explicit that only an exit gate advances the accepted count,
+so the product track stays at 3 of 13. Checkpoint detail in [phase.md](./phase.md#product-p4--board-workspace-members-and-source-intake--in-progress).
+
+| Work item | State |
+|---|---|
+| Members | ✅ shipped early as P2 CP5a / CP5b |
+| Document intake / import · metadata / sensitivity · duplicates · quarantine state | ✅ merged (#128) |
+| Versions | ⬜ not started |
+| Workspace / meeting assignment | ⬜ not started |
+| Exit gate | ⬜ not attempted |
+
+**Recorded gap, undecided:** intake applies no sensitivity ceiling — a clearance-1 principal
+may file a sensitivity-3 document. Raised in #128's review and deliberately left as a
+decision rather than patched in. It is live behaviour.
 
 **Goal:** Establish a single source of truth for board participants and material.
 

@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
@@ -11,14 +12,25 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from "@/components/vendor/tooltip";
+import { FieldValue, fieldHint } from "@/components/ui/field-value";
+import { fromNullable } from "@/lib/field-state";
 import type { MemoryHealth as MemoryHealthData } from "@/lib/insights";
 
 /**
- * What a row shows when the underlying signal has no measurement behind it.
- * An em dash rather than a zero: a number here would be read as a result, and
- * "we did not measure this" is a different statement from "the count is nought".
+ * Why these two counts have no number, written once each.
+ *
+ * They used to live inside a ternary in each `Row`'s `hint`, which meant the
+ * *measured* explanation of the metric was written twice per field and the
+ * unmeasured half was written where only a hovering mouse would ever find it.
+ * `fieldHint` now joins the meaning to whichever reason applies, so rewording
+ * the definition cannot leave one branch behind. The em dash itself moved to
+ * `FieldValue` — see `lib/field-state.ts` for why this is a type and not a
+ * `number | null`.
  */
-const notMeasured = "—";
+const PENDING_REVIEW_UNMEASURED =
+  "the graph shown here was seeded deterministically, so no approval queue was ever created. Wires up with the API at P3.";
+const QUARANTINED_UNMEASURED =
+  "the seeded graph bypasses extraction, so nothing was ever rejected. Wires up with the API at P3.";
 
 /**
  * A compact label/value row. `dot` marks quality categories; `tone` tints the label.
@@ -34,7 +46,7 @@ function Row({
   hint,
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   dot?: string;
   tone?: string;
   hint?: string;
@@ -80,6 +92,14 @@ export function MemoryHealth({
   reviewVelocity: number[] | null;
   statusSegments: StatSegment[];
 }) {
+  /**
+   * `memory === null` is the loading case and renders the skeleton below, so
+   * these are only ever read once it is present. Written here rather than inline
+   * so the reason travels with the value instead of being restated per branch.
+   */
+  const pendingReview = fromNullable(memory?.pendingReview, PENDING_REVIEW_UNMEASURED);
+  const quarantined = fromNullable(memory?.quarantined, QUARANTINED_UNMEASURED);
+
   return (
     <Card className="overflow-hidden">
       <div className="flex items-baseline justify-between gap-4 border-b border-border px-6 py-4">
@@ -133,25 +153,23 @@ export function MemoryHealth({
                   as "clean run" rather than "never ran". Say "not measured". */}
               <Row
                 label="Pending review"
-                value={memory.pendingReview === null ? notMeasured : String(memory.pendingReview)}
+                value={<FieldValue state={pendingReview} />}
                 dot="bg-warning"
                 tone="text-warning-emphasis"
-                hint={
-                  memory.pendingReview === null
-                    ? "Facts that passed verification and are waiting for a human to approve them. Not measured on this dataset: the graph shown here was seeded deterministically, so no approval queue was created. Wires up with the API at P3."
-                    : "Facts that passed verification and are waiting for a human to approve them. Nothing enters memory unapproved."
-                }
+                hint={fieldHint(
+                  pendingReview,
+                  "Facts that passed verification and are waiting for a human to approve them. Nothing enters memory unapproved.",
+                )}
               />
               <Row
                 label="Quarantined"
-                value={memory.quarantined === null ? notMeasured : String(memory.quarantined)}
+                value={<FieldValue state={quarantined} />}
                 dot="bg-danger"
                 tone="text-danger-emphasis"
-                hint={
-                  memory.quarantined === null
-                    ? "Extractions the verifier rejected — kept, not deleted, so the failures stay auditable. Not measured on this dataset: the seeded graph bypasses extraction, so nothing was ever rejected. Wires up with the API at P3."
-                    : "Extractions the verifier rejected — kept, not deleted, so the failures stay auditable."
-                }
+                hint={fieldHint(
+                  quarantined,
+                  "Extractions the verifier rejected — kept, not deleted, so the failures stay auditable.",
+                )}
               />
             </div>
             <div className="mt-4 text-[10px] font-semibold uppercase tracking-[0.08em] text-subtle-foreground">Coverage</div>
