@@ -1,0 +1,18 @@
+# Line-ending policy.
+#
+# The default (no `text` attribute, no `core.autocrlf`) stores bytes as committed,
+# which is what the corpus below depends on. This file exists to make that a
+# *decision* rather than a property of whoever happened to commit first — a
+# contributor on Windows, or anyone adding `* text=auto`, would otherwise normalise
+# these two files and silently delete the thing they are for.
+
+# CRLF ON PURPOSE. Every other document in data/demo/ is LF, so nothing in the corpus
+# could exercise a \r-sensitive code path. That is not hypothetical: the locate() fix
+# in #90 hinged on \r, and the version proposed in #86 omitted it — which would have
+# silently failed to locate every quote in a CRLF document, dropping edges rather than
+# erroring. 461 tests passed and the mechanism gate was byte-identical.
+#
+# `tests/test_corpus_properties.py` asserts these are still CRLF. If that test fails,
+# something normalised them; restore the line endings rather than relaxing the test.
+data/demo/messy_board_meeting_17_transcript.txt -text
+data/demo/messy_vendor_followup_email.md        -text
