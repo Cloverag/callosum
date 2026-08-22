@@ -77,6 +77,8 @@ The core engine. This is where the thesis contribution lives; the future items e
 | Feature | State |
 |---|---|
 | RBAC clearance ladder (0 public → 4 restricted), **fail-closed** permission gate | ✅ |
+| Intake clearance ceiling — a principal cannot file above their own clearance | ✅ |
+| Intake at `4 restricted` (founder-only) | 🔒 **reserved** — see below |
 | Per-object ACL grants (escape hatch) | ✅ (schema) |
 | Full RBAC role hierarchy + inheritance | ⬜ |
 | SSO / SAML / OAuth login | ⬜ |
@@ -85,6 +87,20 @@ The core engine. This is where the thesis contribution lives; the future items e
 | GDPR / "right to be forgotten" deletion across both stores | ⬜ |
 | Comprehensive audit logging | ⬜ |
 | SOC 2 / compliance posture | 🔒 (product concern, not thesis) |
+
+**`4 restricted` is not creatable through intake, by decision.** The ladder in
+`schema/postgres.sql` has five levels; `meridian/documents.py` accepts `0..3`. The gap is
+deliberate and reserved pending the policy questions in #143 — who may create restricted
+documents, whether founder-only is a role, a clearance level or a workflow approval, and
+what audit that carries. Widening the bound without answering those would open the
+write-side hole the clearance ceiling exists to close, at the most sensitive tier there
+is. `documents.LADDER_LEVELS` and `documents.ACCEPTED_SENSITIVITIES` are asserted against
+each other in `tests/test_documents_api.py` so the two cannot drift apart silently again.
+
+Sensitivity is also **required** at intake, with no default. It previously defaulted to
+`0` — *public* — so a caller who omitted the field published the document at the widest
+visibility in the system. Automatic classification is a future product decision; until it
+is taken, intake requires a deliberate one rather than guessing a security level.
 
 ## 6. Frontend / UX
 

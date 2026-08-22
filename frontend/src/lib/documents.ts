@@ -1,4 +1,4 @@
-import { apiGet, apiGetOrNull } from "@/lib/http";
+import { apiGet, apiGetOrNull, apiPost } from "@/lib/http";
 
 /**
  * Documents — the readable columns of the core `document` table.
@@ -84,6 +84,82 @@ export type Document = {
  * something real to withhold.
  */
 
+
+// --- Intake ----------------------------------------------------------------
+
+/**
+ * The sensitivity levels intake accepts.
+ *
+ * **Four, not five.** `4 restricted` exists in the ladder and is deliberately not
+ * creatable through intake — reserved pending the policy in #143 (who may create
+ * restricted documents, whether founder-only is a role or a clearance, what audit it
+ * carries). `SENSITIVITY_LABEL` still carries all five, because a document *filed*
+ * elsewhere at level 4 must still render its label when a founder reads the list.
+ */
+export const INTAKE_SENSITIVITIES: readonly Sensitivity[] = [0, 1, 2, 3];
+
+/**
+ * What intake sends.
+ *
+ * `sensitivity` is REQUIRED and has no default here, mirroring the API. It used to
+ * default to `0` — *public* — server-side, so a caller who said nothing published the
+ * document at the widest visibility in the system. A default on the client would
+ * reintroduce exactly that, one layer up: the form would submit a classification the
+ * user never chose. See #143.
+ */
+export type IntakeRequest = {
+  title: string;
+  doc_type: DocType;
+  raw_text: string;
+  sensitivity: Sensitivity;
+  source_uri?: string | null;
+};
+
+/** Why the evidence verifier refused an edge — `callosum.ontology.FailureReason`. */
+export type FailureReason =
+  | "quote_not_found"
+  | "quote_empty"
+  | "entity_not_extracted"
+  | "self_reference"
+  | string;
+
+/**
+ * Plain-language failure reasons. A director reading the quarantine queue is not
+ * expected to know what `entity_not_extracted` means, and the raw enum is the kind of
+ * label that makes a real safety mechanism look like a malfunction.
+ */
+export const FAILURE_REASON_LABEL: Record<string, string> = {
+  quote_not_found: "Quote not found in the source",
+  quote_empty: "No evidence quote offered",
+  entity_not_extracted: "Referenced something never extracted",
+  self_reference: "Linked a thing to itself",
+};
+
+/**
+ * A rejected extraction, kept rather than deleted.
+ *
+ * Mirrors `QuarantineResponse` in `meridian/api/documents.py`. The quote is the point:
+ * quarantine is not an error log, it is the record of what the verifier refused and
+ * why, and a count alone would be a summary of exactly the thing this product exists
+ * not to summarise.
+ */
+export type QuarantineItem = {
+  id: string;
+  workspace_id: string;
+  document_id: string | null;
+  chunk_id: string | null;
+  source: string;
+  relation: string;
+  target: string;
+  quote: string;
+  confidence: number;
+  reason: FailureReason;
+  detail: string;
+  provider: string;
+  extractor_model: string;
+  created_at: string; // ISO
+};
+
 // --- API client ------------------------------------------------------------
 
 /**
@@ -112,5 +188,33 @@ export const documentsApi = {
    */
   async get(id: string): Promise<Document | null> {
     return apiGetOrNull<Document>(`/documents/${encodeURIComponent(id)}`);
+  },
+
+  /**
+   * File a source document.
+   *
+   * **The clearance ceiling is not checked here, and cannot be.** `/auth/me`
+   * deliberately does not return the caller's clearance — it is per-workspace and
+   * resolved per request, so reporting it from a session read would be reporting a
+   * cached authorization. The client therefore offers every level intake accepts and
+   * lets the server refuse: a 403 carries the level the caller may actually use.
+   *
+   * That is the right shape rather than a limitation. A filtered list would be a
+   * convenience the server must not trust anyway, and building one would need an
+   * endpoint that publishes clearance to the browser.
+   */
+  async intake(req: IntakeRequest): Promise<Document> {
+    return apiPost<Document>("/documents/intake", req);
+  },
+
+  /**
+   * Rejected extractions, at the caller's clearance.
+   *
+   * A clearance-filtered surface exactly like the document list, not an internal
+   * diagnostic — a quarantined quote is a verbatim span of a source document, so it
+   * carries the sensitivity of whatever it was quoted from.
+   */
+  async quarantine(): Promise<QuarantineItem[]> {
+    return apiGet<QuarantineItem[]>("/documents/quarantine");
   },
 };
