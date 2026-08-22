@@ -131,3 +131,56 @@ record, not an embarrassment to tidy away. What follows describes that column.
   writer anywhere in the repo, so the widened predicate was inert during the run, and
   `evaluate.py` seeds the gold graph positionally, so the changed `workspace_id` parameter fell
   through to its old behaviour. The gate was structurally unable to reach either change.
+
+## Product P4 — Board workspace, members, and source intake — 🟩 IN PROGRESS
+
+**Not accepted, and the 3/13 count does not move.** `rules.md` §4's 2026-08-13 amendment
+makes phase order advisory — a phase may begin before the previous one's exit gate is
+claimed — but it is explicit that only an exit gate advances the accepted count. P3's gate
+is unclaimed and P4's has not been attempted, so the product track stays at **3 of 13**.
+
+| P4 work item | State |
+|---|---|
+| Members | ✅ shipped early, as P2 CP5a / CP5b |
+| Document intake / import | ✅ merged (PR #128) |
+| Metadata / sensitivity | ✅ merged (#128) — clearance ladder 0–3 |
+| Duplicates | ✅ merged (#128) — SHA-256, tenant-scoped by `0022_doc_content_hash_uq` |
+| Processing / quarantine state | ✅ merged (#128) — `GET /api/documents/quarantine` |
+| Versions | ⬜ not started |
+| Workspace / meeting assignment | ⬜ not started |
+| P4 exit gate | ⬜ not attempted |
+
+**Exit criteria, and where they stand.** The phase exits when "membership is
+authorized/audited; document lifecycle is visible; restricted titles, text, quotes, graph
+facts, and hints cannot leak." The third is the one recent work moved most: `list_quarantine`
+took no `clearance` argument at all, so a quarantine row's quote, proposed graph fact and
+document id were readable at any clearance within the workspace (#128). Membership
+authorisation was also not re-derived per request on the `prep` router, including its write
+(#134). Neither is evidence the gate passes — they are two defects that would have failed it.
+
+- **Source intake is deliberately text-only.** `IntakeDocumentRequest` takes `raw_text`;
+  there is no multipart upload. `FEATURES.md` still lists PDF/DOCX/PPTX parsing and OCR as
+  future work, so this is scope, not omission — see #140.
+- **Recorded gap, no owner yet: intake has no sensitivity ceiling.** A clearance-1 principal
+  may file a sensitivity-3 document. Raised during #128's review and deliberately not decided
+  there; it is live behaviour now and wants a call rather than a quiet patch.
+- **Chunk and document ids are derived** (`uuid5` over workspace + content hash + ordinal),
+  so a crashed intake replays onto the same graph nodes rather than orphaning a second set.
+  The workspace is in the key because `0022` permits two tenants to hold byte-identical
+  documents, and keying on the hash alone would have made `MERGE` fuse their bridge nodes.
+
+## Measured on `a0c1f4d` (2026-08-22)
+
+CI run 32588329583 on `master` — a real run against Postgres and Neo4j, not a collection.
+
+| | |
+|---|---|
+| Backend, gated | **700 passed**, 5 deselected |
+| Backend, ungated selection | 235 |
+| Frontend | **218 passed**, 15 suites |
+| API | **70 operations** / 53 paths / 12 routers |
+| Migration head | `0022_doc_content_hash_uq` (22) |
+| Commits | 414 |
+
+The mechanism gate is **not** part of CI and was not re-run for this figure; the byte-identity
+claim recorded above still belongs to the run it names.
