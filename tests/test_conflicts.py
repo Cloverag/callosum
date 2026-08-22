@@ -279,9 +279,21 @@ class TestRejectConflict:
 # ---------------------------------------------------------------------------
 
 class TestSensitivityInheritance:
+    """What decides who may read a conflict's quotes.
+
+    `quote_a` and `quote_b` are verbatim spans of source documents, surfaced by
+    `GET /api/conflicts` to any reviewer whose clearance is at or above the row's
+    sensitivity. So this derivation is an access-control decision, not bookkeeping.
+
+    The previous test here restated the production expression —
+    `max(a.get("sensitivity", 1), b.get("sensitivity", 1))` — and asserted its own
+    copy. It would have passed unchanged if the default had become `0`. These call
+    the real function.
+    """
+
     def test_max_sensitivity_used(self):
-        """Conflict sensitivity = max of the two source chunks."""
-        from callosum.conflicts import _candidate_pairs
+        """A conflict is as sensitive as the more sensitive of its two sources."""
+        from callosum.conflicts import _candidate_pairs, pair_sensitivity
 
         entities = [
             {"name": "Raj Malhotra", "type": "Person",
@@ -291,6 +303,42 @@ class TestSensitivityInheritance:
         ]
         pairs = list(_candidate_pairs(entities, 80.0))
         assert len(pairs) == 1
-        a, b, score = pairs[0]
-        expected_sensitivity = max(a.get("sensitivity", 1), b.get("sensitivity", 1))
-        assert expected_sensitivity == 3
+        a, b, _score = pairs[0]
+        assert pair_sensitivity(a, b) == 3
+
+    def test_a_missing_sensitivity_fails_closed(self):
+        """An absent key means "unknown", and unknown must be the most restrictive.
+
+        `1` — the old fallback — is *investor*, so a pair whose source sensitivity
+        went missing would have had its quotes readable by an investor-clearance
+        reviewer.
+        """
+        from callosum.conflicts import MAX_SENSITIVITY, pair_sensitivity
+
+        assert pair_sensitivity({"name": "A"}, {"name": "B"}) == MAX_SENSITIVITY
+        # One known-public source does not make the pair public: the other is unknown,
+        # and the pair carries a quote from it.
+        assert pair_sensitivity({"sensitivity": 0}, {"name": "B"}) == MAX_SENSITIVITY
+
+    def test_a_null_sensitivity_fails_closed(self):
+        """`None` is the path a `.get(key, default)` reading misses entirely.
+
+        `dict.get` returns the *value* when the key is present, so a Cypher
+        `RETURN c.sensitivity` over a node without the property yields `None` and
+        never reaches the default. The old code would have passed `None` into
+        `max()` and raised a TypeError mid-scan.
+        """
+        from callosum.conflicts import MAX_SENSITIVITY, pair_sensitivity
+
+        assert pair_sensitivity({"sensitivity": None}, {"sensitivity": None}) == MAX_SENSITIVITY
+        assert pair_sensitivity({"sensitivity": None}, {"sensitivity": 2}) == MAX_SENSITIVITY
+
+    def test_the_fallback_is_the_top_of_the_ladder(self):
+        """Pinned to `schema/postgres.sql`, which seeds levels 0..4.
+
+        If a level is ever added, this fails rather than the fallback silently
+        ceasing to be the most restrictive one.
+        """
+        from callosum.conflicts import MAX_SENSITIVITY
+
+        assert MAX_SENSITIVITY == 4
