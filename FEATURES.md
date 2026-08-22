@@ -78,6 +78,7 @@ The core engine. This is where the thesis contribution lives; the future items e
 |---|---|
 | RBAC clearance ladder (0 public → 4 restricted), **fail-closed** permission gate | ✅ |
 | Intake clearance ceiling — a principal cannot file above their own clearance | ✅ |
+| Duplicate detection discloses existence only, never the matched document | ✅ |
 | Intake at `4 restricted` (founder-only) | 🔒 **reserved** — see below |
 | Per-object ACL grants (escape hatch) | ✅ (schema) |
 | Full RBAC role hierarchy + inheritance | ⬜ |
