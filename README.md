@@ -141,17 +141,16 @@ intake has shipped without one.
 
 | | |
 |---|---|
-| Backend tests | **725** passing, gated suite |
+| Backend tests | **731** passing, gated suite |
 | Frontend tests | **272** passing, 19 suites |
 | API | **70 operations** across 53 paths, 12 routers |
-| Migrations | 22, head `0022_doc_content_hash_uq`, forward and reverse tested |
-| Architecture decisions | 15 ADRs |
-| Commits | 414 (`git rev-list --count master`) |
+| Migrations | 23, head `0023_audit_intake_refused`, forward and reverse tested |
+| Architecture decisions | 16 ADRs |
+| Commits | 463 (`git rev-list --count master`) |
 
-Measured on `a0c1f4d` (2026-08-22), not carried forward. Both test figures are a **real
-run** this time rather than a collection — CI run 32588329583 on `master`, which is the
-same gated suite against real Postgres and Neo4j that a local run executes. The API,
-migration and commit figures are counted from this commit.
+Measured on 2026-08-22, not carried forward. Both test figures come from a **real run**
+rather than a collection — CI run 32600873617, the gated suite against real Postgres and
+Neo4j. The API, migration, ADR and commit figures are counted from this commit.
 
 **P3 is frozen, not accepted** — of its three exit criteria one is met, one is partial and
 one is not met, because the accessibility and error-state checkpoints were deliberately
