@@ -44,6 +44,18 @@ log = logging.getLogger(__name__)
 #: Columns a board reader may see. Excludes raw_text, content_hash, and metadata.
 _COLUMNS = "id, title, doc_type, source_uri, sensitivity, authored_at, ingested_at"
 
+#: The full clearance ladder, from `schema/postgres.sql`. Mirrored as a constant so the
+#: gap below is checkable in a test rather than being two numbers in two files that
+#: drift apart silently.
+LADDER_LEVELS = (0, 1, 2, 3, 4)  # public, investor, internal, confidential, restricted
+
+#: What intake accepts. **Deliberately narrower than the ladder** — `4 restricted` is
+#: founder-only and reserved pending the policy questions in #143: who may create at
+#: that level, whether founder-only is a role or a clearance, and what audit it carries.
+#: Widening this without answering them would open the write-side hole that
+#: `SensitivityAboveClearanceError` exists to close, at the most sensitive tier there is.
+ACCEPTED_SENSITIVITIES = (0, 1, 2, 3)
+
 #: Namespace for the deterministic document/chunk ids minted below. A fixed constant,
 #: never regenerated — changing it would make every future retry mint new ids and
 #: silently break the replay-safety this exists to provide.
@@ -103,7 +115,31 @@ class DuplicateDocumentError(DocumentError):
 
 
 class InvalidSensitivityError(DocumentError):
-    """Sensitivity level outside the valid clearance ladder (0..3)."""
+    """Sensitivity level outside the range intake accepts (0..3).
+
+    **Not the full ladder.** `schema/postgres.sql` defines five levels, 0..4, and
+    `4 restricted` (founder-only) is deliberately not reachable through intake — see
+    the decision on #143. Until it is settled who may create restricted documents,
+    whether founder-only is a role or a clearance, and what audit that carries, the
+    bound stays at 3 by decision rather than by oversight.
+
+    This docstring used to read "the valid clearance ladder (0..3)", which is what made
+    an intentional bound look like an off-by-one against a five-level ladder.
+    """
+
+
+class SensitivityAboveClearanceError(DocumentError):
+    """A principal tried to file a document above their own clearance.
+
+    Named for the authority rule rather than the comparison: the caller is not
+    permitted to create at that level, which is a different statement from the value
+    being out of range (`InvalidSensitivityError`). The two must stay distinguishable —
+    a client that cannot tell them apart cannot tell the user whether to pick a lower
+    level or ask for clearance.
+
+    **The refusal is a refusal, never a clamp** (#143). Filing at a lower level than
+    asked would tell the caller their document is protected at a level it is not.
+    """
 
 
 @dataclass(frozen=True)
@@ -215,6 +251,7 @@ def intake_document(
     doc_type: str,
     raw_text: str,
     sensitivity: int,
+    author_clearance: int,
     workspace_id: str = DEFAULT_WORKSPACE_ID,
     author_principal_id: str | None = None,
     source_uri: str | None = None,
@@ -236,8 +273,17 @@ def intake_document(
     """
     if not title or not title.strip():
         raise DocumentError("Document title cannot be empty.")
-    if sensitivity not in (0, 1, 2, 3):
+    if sensitivity not in ACCEPTED_SENSITIVITIES:
         raise InvalidSensitivityError(f"Invalid sensitivity: {sensitivity}. Must be 0, 1, 2, or 3.")
+    # Enforced here rather than at the API boundary so it holds for every caller, not
+    # only the HTTP one. The read paths have always filtered on clearance; until #143
+    # this write path consulted it nowhere, so a clearance-1 principal could file a
+    # confidential document and then be unable to read back what they had just created.
+    if sensitivity > author_clearance:
+        raise SensitivityAboveClearanceError(
+            f"Sensitivity {sensitivity} is above your clearance ({author_clearance}). "
+            f"You may file at level {author_clearance} or below."
+        )
 
     clean_text = raw_text.strip()
     if not clean_text:

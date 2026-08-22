@@ -95,6 +95,12 @@ _EXPLICIT: tuple[tuple[type[BaseException], int, str, str | None], ...] = (
     (meetings.InvalidTransition, HTTPStatus.CONFLICT, CONFLICT, None),
     (documents.DuplicateDocumentError, HTTPStatus.CONFLICT, CONFLICT, None),
     (documents.InvalidSensitivityError, HTTPStatus.UNPROCESSABLE_ENTITY, INVALID, None),
+    # 403, not 422: the request is well-formed and the value is in range — the caller
+    # simply may not create at that level (#143). The detail is NOT suppressed to
+    # `_FORBIDDEN_DETAIL` the way the others are, because the only thing it discloses is
+    # the caller's own clearance, which is theirs to know, and without it a client
+    # cannot tell them to pick a lower level rather than request access.
+    (documents.SensitivityAboveClearanceError, HTTPStatus.FORBIDDEN, FORBIDDEN, None),
     # Infrastructure, not domain. A provider being down or a graph write failing is not
     # the caller's mistake, so 503 rather than a 4xx — see `test_api_errors.py`, which
     # asserts no *domain* exception falls through to a 500. These two are exempt by
@@ -197,7 +203,7 @@ def install_exception_handlers(app) -> None:
     handler and `IdentityNotProvisioned` by the `PrincipalNotFound` one — subclasses
     added later are covered without being registered.
     """
-    from fastapi.exceptions import HTTPException
+    from fastapi.exceptions import HTTPException, RequestValidationError
     from fastapi.responses import JSONResponse
 
     async def handle(_request, exc: BaseException):
@@ -242,3 +248,32 @@ def install_exception_handlers(app) -> None:
         app.add_exception_handler(base, handle)
 
     app.add_exception_handler(HTTPException, handle_http_exception)
+
+    # Request-shape failures answered in the SAME envelope as domain failures.
+    #
+    # Without this, FastAPI replies to a missing field with its own
+    # `{"detail": [{"loc": ..., "msg": ...}]}` body, so a client switching on
+    # `error.code` — which every surface in this repo does — sees nothing it
+    # recognises and reports the error as unknown.
+    #
+    # This became load-bearing when `sensitivity` stopped having a default (#143): the
+    # decision requires a missing value to be refused with a *clear* validation error,
+    # and `test_intake_invalid_sensitivity_422` already fixes the shape of that answer
+    # for an out-of-range value. A missing one must not answer in a different format
+    # than an invalid one.
+    async def handle_request_validation(_request, exc: RequestValidationError):
+        errors = exc.errors()
+        if errors:
+            first = errors[0]
+            # `loc` is ("body", "sensitivity"); the field name is the tail. Naming the
+            # field is the difference between an actionable error and "invalid input".
+            location = ".".join(str(part) for part in first.get("loc", ()) if part != "body")
+            detail = f"{location}: {first.get('msg', 'invalid value')}" if location else str(first.get("msg", "Invalid request."))
+        else:
+            detail = "Invalid request."
+        return JSONResponse(
+            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+            content={"error": {"code": INVALID, "detail": detail}},
+        )
+
+    app.add_exception_handler(RequestValidationError, handle_request_validation)
