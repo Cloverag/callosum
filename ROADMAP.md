@@ -395,7 +395,7 @@ so the product track stays at 3 of 13. Checkpoint detail in [phase.md](./phase.m
 |---|---|
 | Members | ✅ shipped early as P2 CP5a / CP5b |
 | Document intake / import · metadata / sensitivity · duplicates · quarantine state | ✅ merged (#128) |
-| Versions | ✅ built 2026-08-23 (`0023_document_version`, ADR-017) |
+| Versions | ✅ built 2026-08-23 (`0024_document_version`, ADR-017) |
 | Workspace / meeting assignment | ⬜ not started |
 | Exit gate | ⬜ not attempted |
 

@@ -220,7 +220,7 @@ class Document:
     sensitivity: int
     authored_at: datetime | None
     ingested_at: datetime
-    #: 1-based position in the supersession chain (`0023_document_version`). A document
+    #: 1-based position in the supersession chain (`0024_document_version`). A document
     #: filed by ordinary intake is revision 1 and stays there.
     revision: int = 1
     #: The revision that replaced this one, or None.

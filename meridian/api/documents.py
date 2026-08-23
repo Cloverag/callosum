@@ -28,7 +28,7 @@ class DocumentResponse(BaseModel):
     sensitivity: int
     authored_at: datetime | None = None
     ingested_at: datetime
-    #: 1-based position in the supersession chain (`0023_document_version`).
+    #: 1-based position in the supersession chain (`0024_document_version`).
     revision: int = 1
     #: The revision that replaced this one, or null if this is the current revision.
     superseded_by_id: str | None = None

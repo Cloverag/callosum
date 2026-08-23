@@ -15,8 +15,15 @@ tell which is current.
 `document_id_workspace_uq`, `0022` replaced its content-hash constraint. Both left the
 frozen file alone.
 
-Revision ID: 0023_document_version
-Revises: 0022_doc_content_hash_uq
+Slot moved 0023 -> 0024 on 2026-08-23. PR #153 claimed `0023` first with the same parent
+(`0022_doc_content_hash_uq`), and two revisions sharing a parent give Alembic two heads —
+`alembic upgrade head` then fails outright rather than picking one. This one moved because
+#153 was opened first and the backend is its author's under `rules.md` §5, not because
+either change depends on the other: they are independent, and the order between them is
+arbitrary.
+
+Revision ID: 0024_document_version
+Revises: 0023_audit_intake_refused
 Create Date: 2026-08-23
 
 """
@@ -24,8 +31,8 @@ Create Date: 2026-08-23
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "0023_document_version"
-down_revision = "0022_doc_content_hash_uq"
+revision = "0024_document_version"
+down_revision = "0023_audit_intake_refused"
 branch_labels = None
 depends_on = None
 

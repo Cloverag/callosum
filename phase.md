@@ -146,7 +146,7 @@ is unclaimed and P4's has not been attempted, so the product track stays at **3 
 | Metadata / sensitivity | ✅ merged (#128) — clearance ladder 0–3 |
 | Duplicates | ✅ merged (#128) — SHA-256, tenant-scoped by `0022_doc_content_hash_uq` |
 | Processing / quarantine state | ✅ merged (#128) — `GET /api/documents/quarantine` |
-| Versions | ✅ built (`0023_document_version`, ADR-017) — **not** an exit gate |
+| Versions | ✅ built (`0024_document_version`, ADR-017) — **not** an exit gate |
 | Workspace / meeting assignment | ⬜ not started |
 | P4 exit gate | ⬜ not attempted |
 
@@ -194,7 +194,7 @@ branch is unmerged, and the #150 review hold stands.
 | Backend, ungated selection | 252 | **253** | +1 |
 | Frontend | 272, 19 suites | **281 passed**, 19 suites | +9 |
 | API | 70 ops / 53 paths / 12 routers | **72 ops / 55 paths / 12 routers** | +2 ops |
-| Migration head | `0022_doc_content_hash_uq` (22) | **`0023_document_version`** (23) | +1 |
+| Migration head | `0022_doc_content_hash_uq` (22) | **`0024_document_version`** (23) | +1 |
 | ADRs | 15 | **16** (016 reserved for #153) | +1 |
 
 **The +21 reconciles to 20, and the extra one is not a miscount.** `tests/test_document_versions.py`
