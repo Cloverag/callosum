@@ -28,6 +28,10 @@ class DocumentResponse(BaseModel):
     sensitivity: int
     authored_at: datetime | None = None
     ingested_at: datetime
+    #: 1-based position in the supersession chain (`0023_document_version`).
+    revision: int = 1
+    #: The revision that replaced this one, or null if this is the current revision.
+    superseded_by_id: str | None = None
 
 
 class QuarantineResponse(BaseModel):
@@ -64,6 +68,33 @@ class IntakeDocumentRequest(BaseModel):
     #: requires a deliberate one.
     sensitivity: int
     source_uri: str | None = None
+
+
+class SupersedeDocumentRequest(IntakeDocumentRequest):
+    """The corrected revision's content.
+
+    Identical to intake, because a supersession *is* an intake plus a link — the new
+    revision is chunked, embedded, bridged and extracted exactly like any other document.
+    Subclassing rather than restating keeps `sensitivity` required with no default, which
+    is the decision recorded on the parent (#143); a copied model is a copy that can
+    quietly reacquire a default.
+    """
+
+
+class DocumentChainResponse(BaseModel):
+    """One document's revision history, as this caller is permitted to see it."""
+
+    #: Readable revisions, oldest first.
+    revisions: list[DocumentResponse]
+    #: How many revisions in this chain the caller may not see. The whole disclosure —
+    #: never a title, an id, or a date (`rules.md` §2, P4's exit criterion).
+    withheld: int
+    #: The current revision's id, or null when the current revision is withheld.
+    #:
+    #: Null rather than the newest *readable* revision. That fallback would mark a
+    #: superseded document as current, which is worse than saying nothing: the reader
+    #: would act on a document the board has already corrected, with no signal.
+    current_id: str | None
 
 
 @router.get("", response_model=list[DocumentResponse])
@@ -120,3 +151,56 @@ def intake_document(
         author_principal_id=principal.id,
         source_uri=req.source_uri,
     )
+
+
+@router.get("/{document_id}/versions", response_model=DocumentChainResponse)
+def get_version_chain(document_id: uuid.UUID, principal: CurrentPrincipal) -> domain.DocumentChain:
+    """Every revision of one document, filtered to what this caller may read.
+
+    404 when the named document is above the caller's clearance — a chain read must not
+    be a way around `get_document`'s gate.
+
+    Registered *after* `/{document_id}`, unlike `/quarantine`, which had to come first.
+    The extra path segment makes this unambiguous: `/quarantine` could be read as a
+    document id, `/{id}/versions` cannot.
+    """
+    return domain.version_chain(
+        str(document_id),
+        workspace_id=principal.workspace_id,
+        clearance=principal.clearance,
+    )
+
+
+@router.post(
+    "/{document_id}/supersede",
+    status_code=status.HTTP_201_CREATED,
+    response_model=DocumentResponse,
+)
+def supersede_document(
+    document_id: uuid.UUID, req: SupersedeDocumentRequest, principal: CurrentPrincipal
+) -> domain.Document:
+    """File a corrected revision of an existing document.
+
+    Returns the **new** revision, matching what `POST /intake` returns and what a 201
+    means: this is the resource that was created. The predecessor is unchanged apart from
+    its forward link, and the caller can re-read it or the chain if they want it.
+
+    There is no `expected_version`. `document` carries no version counter, and that is
+    deliberate: a document's mutable state is one nullable pointer, so "already
+    superseded" *is* the concurrency conflict and it answers 409 like any other.
+    """
+    new_document, _old_document = domain.supersede_document(
+        str(document_id),
+        title=req.title,
+        doc_type=req.doc_type,
+        raw_text=req.raw_text,
+        sensitivity=req.sensitivity,
+        # As on intake: the ceiling is enforced in the domain, so this is a request and
+        # never a permission. The downgrade floor is enforced there too, against the
+        # predecessor's own level rather than anything the client sent.
+        author_clearance=principal.clearance,
+        workspace_id=principal.workspace_id,
+        author_principal_id=principal.id,
+        source_uri=req.source_uri,
+    )
+    return new_document
