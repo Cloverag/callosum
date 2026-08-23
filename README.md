@@ -263,8 +263,8 @@ cd frontend && npx jest && npm run build                 # 273 tests, 19 suites
 ```
 
 `CALLOSUM_RUN_INTEGRATION=1` runs against real Postgres and Neo4j, so the compose stack
-must be up. Without the gate the suite selects 253 tests; with it, 746. Run it with the
-containers stopped and the 493 gated tests fail on connection errors — the failure looks
+must be up. Without the gate the suite selects 253 tests; with it, 750. Run it with the
+containers stopped and the 497 gated tests fail on connection errors — the failure looks
 like a broken build and is a missing database.
 
 ---
