@@ -268,7 +268,7 @@ bound this decision rests on.
 > reader does not go looking for a record that was never lost.
 
 ## ADR-017 — A document is corrected by supersession, and a revision may never lower sensitivity
-**Decision:** `document` gains `superseded_by_id` and `revision` (`0023_document_version`). A correction is a **new document** linked to the one it replaces; the predecessor's text, chunks and extracted graph facts are never edited. `supersede_document` refuses a revision below its predecessor's sensitivity, refuses a second successor, and answers 404 — not 403 — for a predecessor above the caller's clearance. `superseded_by_id` is **nulled per caller** when the successor is above their clearance, and `version_chain` discloses withheld revisions as a **count** with `current_id: null` when the current revision is one of them.
+**Decision:** `document` gains `superseded_by_id` and `revision` (`0024_document_version`). A correction is a **new document** linked to the one it replaces; the predecessor's text, chunks and extracted graph facts are never edited. `supersede_document` refuses a revision below its predecessor's sensitivity, refuses a second successor, and answers 404 — not 403 — for a predecessor above the caller's clearance. `superseded_by_id` is **nulled per caller** when the successor is above their clearance, and `version_chain` discloses withheld revisions as a **count** with `current_id: null` when the current revision is one of them.
 
 **Alternatives:** (a) edit the document in place and bump a version counter; (b) allow any sensitivity on a revision and rely on review; (c) return the raw `superseded_by_id` and let the 404 on lookup protect it; (d) fall back to the newest *readable* revision as `current_id`; (e) filter the chain walk by clearance in SQL.
 
@@ -285,4 +285,4 @@ bound this decision rests on.
 - There is **no `expected_version`**. `document` carries no version counter: its mutable state is one nullable pointer, so "already superseded" *is* the concurrency conflict and answers 409. The link is written with `AND superseded_by_id IS NULL` in the `WHERE` clause, with `uq_document_superseded_by` catching the same race from the other side.
 - Supersession is **audited with both sensitivities**, so "was anything declassified?" is answerable from the append-only trail without joining back to rows that may have moved since.
 
-**Status:** Accepted (P4, `0023_document_version`). This is the *implementation* of one P4 work item and does **not** claim P4's exit gate — see `ROADMAP.md`.
+**Status:** Accepted (P4, `0024_document_version`). This is the *implementation* of one P4 work item and does **not** claim P4's exit gate — see `ROADMAP.md`.
