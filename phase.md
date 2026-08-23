@@ -209,7 +209,7 @@ branch is unmerged, and the #150 review hold stands.
 **The +25 reconciles exactly, and none of it is a miscount.** `tests/test_document_versions.py`
 contributes 20 and `tests/test_p4_leak_sweep.py` contributes 4; the 25th is
 `test_an_applied_migration_is_unchanged`, which is parametrized per migration file, so
-`0023` adds one case (22 → 23). The ungated selection moves by that one case alone, because
+`0024` adds one case (22 → 23). The ungated selection moves by that one case alone, because
 both new files skip at module level without `CALLOSUM_RUN_INTEGRATION=1`. Every figure comes
 from diffing the gated collection against a worktree at `master`, because a count derived by
 arithmetic is exactly the kind that has been wrong here before.
