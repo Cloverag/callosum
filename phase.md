@@ -89,7 +89,7 @@ exit criteria, and nothing here says P3 failed.
 | Frontend | 180 passed | 208 passed, 14 suites | **208 passed, 14 suites** |
 | API surface | 61 ops / 44 paths / 10 routers | 69 ops / 52 paths / 12 routers | **69 ops / 52 paths / 12 routers** |
 | Migration head | `0017_principal_identity` | `0020_meeting_importance` | **`0021_fix_composite_fk_cascades`** (21) |
-| ADRs | 15 | 15 | 15 |
+| ADRs | 15 | 15 | 15 |  <!-- superseded by the 2026-08-23 block above; kept as the record of that date -->
 
 **Master is green again as of `fda0be2`.** The middle column is kept rather than overwritten,
 because a regression that existed for four days and was found by measurement is part of the
@@ -146,7 +146,7 @@ is unclaimed and P4's has not been attempted, so the product track stays at **3 
 | Metadata / sensitivity | ✅ merged (#128) — clearance ladder 0–3 |
 | Duplicates | ✅ merged (#128) — SHA-256, tenant-scoped by `0022_doc_content_hash_uq` |
 | Processing / quarantine state | ✅ merged (#128) — `GET /api/documents/quarantine` |
-| Versions | ⬜ not started |
+| Versions | ✅ built (`0023_document_version`, ADR-017) — **not** an exit gate |
 | Workspace / meeting assignment | ⬜ not started |
 | P4 exit gate | ⬜ not attempted |
 
@@ -164,10 +164,48 @@ authorisation was also not re-derived per request on the `prep` router, includin
 - **Recorded gap, no owner yet: intake has no sensitivity ceiling.** A clearance-1 principal
   may file a sensitivity-3 document. Raised during #128's review and deliberately not decided
   there; it is live behaviour now and wants a call rather than a quiet patch.
+- **Versions shipped 2026-08-23 (ADR-017).** A document is corrected by supersession, never
+  by mutation: `superseded_by_id` + `revision` on `document`, `POST /api/documents/{id}/supersede`,
+  `GET /api/documents/{id}/versions`, and the revision chain on `/documents`. Three refusals
+  hold it: a revision may **never lower** sensitivity (a corrected confidential document filed
+  as public would republish its lineage a rung down, and content-hash dedup cannot catch it —
+  the bytes differ by construction); a second successor is a 409; and a predecessor above the
+  caller's clearance answers **404, not 403**, so supersede is not an existence oracle.
+- **A leak was found in this work and fixed inside it.** `superseded_by_id` was returned
+  unconditionally, and because a chain's sensitivity may *rise*, it handed out the id of a
+  withheld document. That is not a dangling handle: `_document_id` is `uuid5` over a **public**
+  namespace constant plus the content hash, so a holder of candidate plaintext can derive the
+  id and compare — a content-confirmation oracle, the #147 scenario without needing intake.
+  Every read path now nulls the pointer when the successor is above the caller's clearance.
+  Found by a test asserting against the **raw response body**, not by review.
 - **Chunk and document ids are derived** (`uuid5` over workspace + content hash + ordinal),
   so a crashed intake replays onto the same graph nodes rather than orphaning a second set.
   The workspace is in the key because `0022` permits two tenants to hold byte-identical
   documents, and keying on the hash alone would have made `MERGE` fuse their bridge nodes.
+
+## Measured on `feat/p4-document-versions` (2026-08-23)
+
+A real local run against Postgres 16.14 and Neo4j, not a collection. Not on `master`: the
+branch is unmerged, and the #150 review hold stands.
+
+| | On `master` `8ac1266` | This branch | Δ |
+|---|---|---|---|
+| Backend, gated | 725 | **746 passed**, 5 deselected | +21 |
+| Backend, ungated selection | 252 | **253** | +1 |
+| Frontend | 272, 19 suites | **281 passed**, 19 suites | +9 |
+| API | 70 ops / 53 paths / 12 routers | **72 ops / 55 paths / 12 routers** | +2 ops |
+| Migration head | `0022_doc_content_hash_uq` (22) | **`0023_document_version`** (23) | +1 |
+| ADRs | 15 | **16** (016 reserved for #153) | +1 |
+
+**The +21 reconciles to 20, and the extra one is not a miscount.** `tests/test_document_versions.py`
+contributes 20 tests; the 21st is `test_an_applied_migration_is_unchanged`, which is
+parametrized per migration file, so `0023` adds one case (22 → 23). Both figures come from
+diffing the gated collection against a worktree at `master`, because a count derived by
+arithmetic is exactly the kind that has been wrong here before.
+
+**The product track does not move.** P4 Versions is a *work item*, not an exit gate;
+`rules.md` §4 is explicit that only an exit gate advances the accepted count, which stays
+at **3 of 13**.
 
 ## Measured on `a0c1f4d` (2026-08-22)
 

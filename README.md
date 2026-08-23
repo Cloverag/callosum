@@ -137,7 +137,7 @@ intake has shipped without one.
 | Track | State |
 |---|---|
 | **Research engine** (`src/callosum/`) | **14 / 14 checkpoints accepted**, frozen at `eval-baseline-v3` |
-| **Product** (`meridian/`, `frontend/`) | **3 / 13 phases accepted**; P3 frozen, exit gate not claimed · P4 source intake merged, exit gate not claimed |
+| **Product** (`meridian/`, `frontend/`) | **3 / 13 phases accepted**; P3 frozen, exit gate not claimed · P4 source intake + versions built, exit gate not claimed |
 
 | | |
 |---|---|
@@ -263,8 +263,8 @@ cd frontend && npx jest && npm run build                 # 273 tests, 19 suites
 ```
 
 `CALLOSUM_RUN_INTEGRATION=1` runs against real Postgres and Neo4j, so the compose stack
-must be up. Without the gate the suite selects 252 tests; with it, 725. Run it with the
-containers stopped and the 465 gated tests fail on connection errors — the failure looks
+must be up. Without the gate the suite selects 253 tests; with it, 746. Run it with the
+containers stopped and the 493 gated tests fail on connection errors — the failure looks
 like a broken build and is a missing database.
 
 ---
@@ -306,7 +306,7 @@ Stated because a limitation a reader finds is worth less than one they are told.
 | `eval/` | gold questions, results, the deterministic gate log |
 | `docs/TECHNICAL_OVERVIEW.md` | the full engineering write-up |
 | `docs/findings.md` | the running research log — every experiment, including the failures |
-| `docs/ARCHITECTURE_DECISIONS.md` | 15 ADRs |
+| `docs/ARCHITECTURE_DECISIONS.md` | 16 ADRs |
 | `ROADMAP.md` | phase gates and what is deliberately deferred |
 | `CONTRIBUTING.md` | the frozen-file list and the rule protecting it |
 

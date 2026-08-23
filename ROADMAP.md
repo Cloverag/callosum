@@ -387,21 +387,31 @@ failed states; primary flows pass keyboard and accessibility smoke checks.
 
 ## P4 — Board workspace, members, and source intake — 🟩 IN PROGRESS
 
-Source intake merged 2026-08-22 (PR #128). **Not accepted:** the exit gate has not been
-attempted, and `rules.md` §4 is explicit that only an exit gate advances the accepted count,
+Source intake merged 2026-08-22 (PR #128); versions built 2026-08-23. **Not accepted:** the
+exit gate has not been attempted, and `rules.md` §4 is explicit that only an exit gate advances the accepted count,
 so the product track stays at 3 of 13. Checkpoint detail in [phase.md](./phase.md#product-p4--board-workspace-members-and-source-intake--in-progress).
 
 | Work item | State |
 |---|---|
 | Members | ✅ shipped early as P2 CP5a / CP5b |
 | Document intake / import · metadata / sensitivity · duplicates · quarantine state | ✅ merged (#128) |
-| Versions | ⬜ not started |
+| Versions | ✅ built 2026-08-23 (`0023_document_version`, ADR-017) |
 | Workspace / meeting assignment | ⬜ not started |
 | Exit gate | ⬜ not attempted |
 
-**Recorded gap, undecided:** intake applies no sensitivity ceiling — a clearance-1 principal
-may file a sensitivity-3 document. Raised in #128's review and deliberately left as a
-decision rather than patched in. It is live behaviour.
+**Recorded gap — CLOSED.** Intake applied no sensitivity ceiling: a clearance-1 principal
+could file a sensitivity-3 document. Raised in #128's review, decided in #143 and shipped in
+#144 (`SensitivityAboveClearanceError`, 403, a refusal rather than a clamp). Kept here as the
+record of a gap that was decided rather than patched in quietly.
+
+**Versions, 2026-08-23 — built, and it does not move the count.** A document is corrected by
+supersession, never by mutation (ADR-017). The load-bearing rule is that a revision may
+**never lower** sensitivity: a corrected confidential document filed as public would
+republish its lineage a clearance rung down, and content-hash dedup cannot catch it because
+a correction differs by construction. Withheld revisions in a chain are disclosed as a
+**count**, never a title, and `current_id` is null rather than promoting a superseded
+revision. `rules.md` §4 is explicit that only an exit gate advances the accepted count, so
+the product track stays at **3 of 13**.
 
 **Goal:** Establish a single source of truth for board participants and material.
 
