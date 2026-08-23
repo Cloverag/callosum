@@ -220,7 +220,19 @@ function DocumentList({
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3.5">
                 <span
                   className={cn(
-                    "min-w-0 flex-1 truncate text-sm font-medium",
+                    // `basis-[18rem]` with `flex-wrap` on the row, NOT `min-w-0`.
+                    //
+                    // A browser pass found this: `min-w-0 flex-1` lets the title collapse
+                    // to whatever is left after the badges, type, date and two actions have
+                    // taken theirs. On a 1280px window with the sidebar and the AI rail open
+                    // — the default — titles rendered as "V..", "Ven..." and "Q3 r...".
+                    // Every test passed, because a truncated title is still in the DOM and
+                    // `toBeInTheDocument()` cannot see a two-character column.
+                    //
+                    // A flex basis makes the row wrap the METADATA to a second line instead
+                    // of shrinking the one thing a reader scans by. `truncate` still applies
+                    // past 18rem, so a very long title degrades rather than reflowing forever.
+                    "flex-1 basis-[18rem] truncate text-sm font-medium",
                     // Superseded rows read quieter, because they are still the record and
                     // still readable — the point is that they are no longer in force, not
                     // that they are less real. Nothing is hidden or struck through.
