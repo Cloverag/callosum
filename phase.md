@@ -178,6 +178,15 @@ authorisation was also not re-derived per request on the `prep` router, includin
   id and compare — a content-confirmation oracle, the #147 scenario without needing intake.
   Every read path now nulls the pointer when the successor is above the caller's clearance.
   Found by a test asserting against the **raw response body**, not by review.
+- **`tests/test_p4_leak_sweep.py` generalises that finding into P4's exit criterion.** It
+  does not name endpoints: it walks `app.openapi()`, calls every reachable document-bearing
+  GET as a low-clearance caller, and asserts that nothing identifying a confidential
+  document appears in the raw bytes. A route added later joins the sweep by existing, which
+  is the property a hand-written list cannot have — and the leak above was in a *new field*,
+  which no list would have covered. **Both redaction paths were mutation-tested**: disabling
+  the SQL one fails the sweep on `/api/documents` and the single-document GET, disabling the
+  in-memory one fails it on `/versions`. A negative test that has never been seen to fail is
+  not evidence.
 - **Chunk and document ids are derived** (`uuid5` over workspace + content hash + ordinal),
   so a crashed intake replays onto the same graph nodes rather than orphaning a second set.
   The workspace is in the key because `0022` permits two tenants to hold byte-identical
@@ -190,17 +199,19 @@ branch is unmerged, and the #150 review hold stands.
 
 | | On `master` `8ac1266` | This branch | Δ |
 |---|---|---|---|
-| Backend, gated | 725 | **746 passed**, 5 deselected | +21 |
+| Backend, gated | 725 | **750 passed**, 5 deselected | +25 |
 | Backend, ungated selection | 252 | **253** | +1 |
 | Frontend | 272, 19 suites | **281 passed**, 19 suites | +9 |
 | API | 70 ops / 53 paths / 12 routers | **72 ops / 55 paths / 12 routers** | +2 ops |
 | Migration head | `0022_doc_content_hash_uq` (22) | **`0024_document_version`** (23) | +1 |
 | ADRs | 15 | **16** (016 reserved for #153) | +1 |
 
-**The +21 reconciles to 20, and the extra one is not a miscount.** `tests/test_document_versions.py`
-contributes 20 tests; the 21st is `test_an_applied_migration_is_unchanged`, which is
-parametrized per migration file, so `0023` adds one case (22 → 23). Both figures come from
-diffing the gated collection against a worktree at `master`, because a count derived by
+**The +25 reconciles exactly, and none of it is a miscount.** `tests/test_document_versions.py`
+contributes 20 and `tests/test_p4_leak_sweep.py` contributes 4; the 25th is
+`test_an_applied_migration_is_unchanged`, which is parametrized per migration file, so
+`0023` adds one case (22 → 23). The ungated selection moves by that one case alone, because
+both new files skip at module level without `CALLOSUM_RUN_INTEGRATION=1`. Every figure comes
+from diffing the gated collection against a worktree at `master`, because a count derived by
 arithmetic is exactly the kind that has been wrong here before.
 
 **The product track does not move.** P4 Versions is a *work item*, not an exit gate;
