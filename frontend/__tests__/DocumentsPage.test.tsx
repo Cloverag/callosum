@@ -1,4 +1,4 @@
-import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
+import { act, render, screen, waitFor, fireEvent, within } from "@testing-library/react";
 import DocumentsPage from "../src/app/documents/page";
 import { documentsApi, type Document, type QuarantineItem } from "../src/lib/documents";
 import { ApiError } from "../src/lib/http";
@@ -22,6 +22,8 @@ jest.mock("../src/lib/documents", () => {
       get: jest.fn(),
       intake: jest.fn(),
       quarantine: jest.fn(),
+      versions: jest.fn(),
+      supersede: jest.fn(),
     },
   };
 });
@@ -36,6 +38,8 @@ const DOC: Document = {
   sensitivity: 1,
   authored_at: null,
   ingested_at: "2026-08-01T09:00:00Z",
+  revision: 1,
+  superseded_by_id: null,
 };
 
 const QUARANTINED: QuarantineItem = {
@@ -59,6 +63,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   api.list.mockResolvedValue([DOC]);
   api.quarantine.mockResolvedValue([]);
+  api.versions.mockResolvedValue({ revisions: [DOC], withheld: 0, current_id: DOC.id });
 });
 
 async function openIntake() {
@@ -217,5 +222,137 @@ describe("the document list", () => {
 
     await waitFor(() => expect(screen.getByText("Freshly Ingested")).toBeInTheDocument());
     expect(api.list).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * Document versions (P4, ADR-017).
+ *
+ * The withholding assertions are the ones that matter. A revision may sit ABOVE its
+ * predecessor's sensitivity, so a chain a reader can enter may continue past their
+ * clearance — and what they are told then is a count, never a title, a date or an id.
+ */
+describe("the version chain", () => {
+  async function openHistory() {
+    render(<DocumentsPage />);
+    await waitFor(() => expect(screen.getByText("Q3 Board Transcript")).toBeInTheDocument());
+    // `act`, because expanding the row mounts `VersionChain`, whose effect resolves a
+    // promise in a microtask that `fireEvent`'s own act() wrapper has already left. The
+    // assertions pass either way — this is here so the suite's output stays readable,
+    // and an act warning that is always present is one nobody reads when it matters.
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /history/i }));
+    });
+  }
+
+  it("discloses a withheld revision as a count and nothing else", async () => {
+    api.versions.mockResolvedValue({
+      revisions: [DOC],
+      withheld: 2,
+      current_id: null,
+    });
+
+    await openHistory();
+
+    await waitFor(() => expect(screen.getByText(/2 withheld/i)).toBeInTheDocument());
+    expect(screen.getByText(/above your clearance/i)).toBeInTheDocument();
+  });
+
+  it("says the current revision is unknown rather than promoting a superseded one", async () => {
+    // The failure this guards: marking the newest READABLE revision as current would
+    // badge a document the board has already corrected as the one in force, and the
+    // reader would have no signal at all. Worse news, true statement.
+    api.versions.mockResolvedValue({ revisions: [DOC], withheld: 1, current_id: null });
+
+    await openHistory();
+
+    await waitFor(() =>
+      expect(screen.getByText(/current revision is not visible to you/i)).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/^Current$/)).not.toBeInTheDocument();
+  });
+
+  it("marks the current revision when it is visible", async () => {
+    const v2: Document = { ...DOC, id: "55555555-5555-5555-5555-555555555555", title: "Q3 Board Transcript (corrected)", revision: 2 };
+    api.versions.mockResolvedValue({ revisions: [DOC, v2], withheld: 0, current_id: v2.id });
+
+    await openHistory();
+
+    await waitFor(() => expect(screen.getByText("Q3 Board Transcript (corrected)")).toBeInTheDocument());
+    expect(screen.getByText("Current")).toBeInTheDocument();
+    expect(screen.getByText("v1")).toBeInTheDocument();
+    expect(screen.getByText("v2")).toBeInTheDocument();
+  });
+
+  it("calls a chain of one the ordinary case, not an empty state", async () => {
+    await openHistory();
+    await waitFor(() => expect(screen.getByText(/only revision/i)).toBeInTheDocument());
+  });
+
+  it("marks a superseded row without hiding it", async () => {
+    api.list.mockResolvedValue([{ ...DOC, superseded_by_id: "99999999-9999-9999-9999-999999999999" }]);
+
+    render(<DocumentsPage />);
+
+    await waitFor(() => expect(screen.getByText("Superseded")).toBeInTheDocument());
+    // Still readable. It is still the record; it is simply no longer in force.
+    expect(screen.getByText("Q3 Board Transcript")).toBeInTheDocument();
+  });
+});
+
+describe("filing a revision", () => {
+  async function openRevision() {
+    render(<DocumentsPage />);
+    await waitFor(() => expect(screen.getByText("Q3 Board Transcript")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /revise/i }));
+    return screen.getByLabelText(/classification/i) as HTMLSelectElement;
+  }
+
+  it("does not offer a classification below the document being revised", async () => {
+    // DOC is sensitivity 1. Level 0 would be a downgrade, which the server refuses —
+    // offering it would invite a 403 the user cannot act on. The filter is a
+    // convenience; the refusal is the rule.
+    const select = await openRevision();
+    const values = Array.from(select.options).map((o) => o.value);
+    expect(values).toEqual(["", "1", "2", "3"]);
+  });
+
+  it("still pre-selects nothing, including the predecessor's own level", async () => {
+    // Carrying the level over would look helpful and would quietly re-file at a
+    // classification nobody re-considered.
+    const select = await openRevision();
+    expect(select.value).toBe("");
+  });
+
+  it("posts to supersede rather than intake, and links the predecessor in place", async () => {
+    const v2: Document = { ...DOC, id: "66666666-6666-6666-6666-666666666666", title: "Corrected", revision: 2 };
+    api.supersede.mockResolvedValue(v2);
+
+    const select = await openRevision();
+    fireEvent.change(screen.getByLabelText(/^title$/i), { target: { value: "Corrected" } });
+    fireEvent.change(screen.getByLabelText(/source text/i), { target: { value: "Fixed body." } });
+    fireEvent.change(select, { target: { value: "1" } });
+    fireEvent.click(screen.getByRole("button", { name: /file revision/i }));
+
+    await waitFor(() => expect(api.supersede).toHaveBeenCalledWith(DOC.id, expect.objectContaining({ title: "Corrected" })));
+    expect(api.intake).not.toHaveBeenCalled();
+    // The predecessor's badge appears without a refetch — the id is not invented, this
+    // caller just filed the revision and is cleared for it.
+    await waitFor(() => expect(screen.getByText("Superseded")).toBeInTheDocument());
+    expect(api.list).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces a refused downgrade verbatim", async () => {
+    api.supersede.mockRejectedValue(
+      new ApiError(403, "forbidden", "Sensitivity 0 is below the document being revised (1)."),
+    );
+
+    const select = await openRevision();
+    fireEvent.change(screen.getByLabelText(/^title$/i), { target: { value: "Corrected" } });
+    fireEvent.change(screen.getByLabelText(/source text/i), { target: { value: "Fixed body." } });
+    fireEvent.change(select, { target: { value: "1" } });
+    fireEvent.click(screen.getByRole("button", { name: /file revision/i }));
+
+    await waitFor(() => expect(screen.getByText(/below the document being revised/i)).toBeInTheDocument());
   });
 });

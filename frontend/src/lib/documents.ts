@@ -71,6 +71,45 @@ export type Document = {
   sensitivity: Sensitivity;
   authored_at: string | null; // ISO — when written, not when ingested
   ingested_at: string; // ISO
+  /** 1-based position in the supersession chain (`0023_document_version`). */
+  revision: number;
+  /**
+   * The revision that replaced this one, or `null`.
+   *
+   * **`null` also means "replaced by something you may not read."** A chain's
+   * sensitivity may rise, so a document you can read may be superseded by one you
+   * cannot, and the server nulls this rather than handing back an id — an id here is
+   * derivable from the plaintext (`uuid5` over a public namespace), so returning one
+   * would confirm content rather than merely dangle an unusable handle.
+   *
+   * The consequence for this client is that `superseded_by_id === null` is NOT the same
+   * question as "is this the current revision". Ask `versions()` for that; its
+   * `withheld` count is where a caller learns later revisions exist.
+   */
+  superseded_by_id: string | null;
+};
+
+/**
+ * One document's revision history, as this caller is permitted to see it.
+ *
+ * Mirrors `DocumentChainResponse` in `meridian/api/documents.py`.
+ */
+export type DocumentChain = {
+  /** Readable revisions, oldest first. */
+  revisions: Document[];
+  /**
+   * How many revisions this caller may not see. The whole disclosure — never a title,
+   * an id or a date (`rules.md` §2, P4's exit criterion).
+   */
+  withheld: number;
+  /**
+   * The current revision's id, or `null` when the current revision is withheld.
+   *
+   * `null` rather than the newest readable revision, deliberately. That fallback would
+   * mark a superseded document as current, and the reader would act on something the
+   * board has already corrected with no signal that they were.
+   */
+  current_id: string | null;
 };
 
 // --- Mock store ------------------------------------------------------------
@@ -216,5 +255,38 @@ export const documentsApi = {
    */
   async quarantine(): Promise<QuarantineItem[]> {
     return apiGet<QuarantineItem[]>("/documents/quarantine");
+  },
+
+  /**
+   * Every revision of one document, filtered to what this caller may read.
+   *
+   * Answers 404 for a document above the caller's clearance, exactly as `get` does — a
+   * chain read is not a way around the clearance gate. Uses `apiGet`, not
+   * `apiGetOrNull`: the caller asked about a document they were looking at, so a 404
+   * here is a real failure to surface rather than an ordinary absence.
+   */
+  async versions(id: string): Promise<DocumentChain> {
+    return apiGet<DocumentChain>(`/documents/${encodeURIComponent(id)}/versions`);
+  },
+
+  /**
+   * File a corrected revision of an existing document.
+   *
+   * Returns the NEW revision, matching what a 201 means. The predecessor is unchanged
+   * apart from its forward link.
+   *
+   * **The client does not check the sensitivity floor, and must not be trusted to.** The
+   * dialog raises its selector's floor to the predecessor's level as a convenience, for
+   * the same reason it offers only the four levels intake accepts — but the server
+   * refuses a downgrade with a 403 naming the floor, and that refusal is what holds. A
+   * client-side check is a hint, never the rule.
+   *
+   * Three refusals a caller can act on:
+   *   403 — below the predecessor's sensitivity, or above your own clearance
+   *   409 — already superseded (re-read the chain and supersede its current revision)
+   *   404 — no such document, or one you may not read
+   */
+  async supersede(id: string, req: IntakeRequest): Promise<Document> {
+    return apiPost<Document>(`/documents/${encodeURIComponent(id)}/supersede`, req);
   },
 };
