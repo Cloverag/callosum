@@ -42,7 +42,43 @@ from meridian import audit
 log = logging.getLogger(__name__)
 
 #: Columns a board reader may see. Excludes raw_text, content_hash, and metadata.
-_COLUMNS = "id, title, doc_type, source_uri, sensitivity, authored_at, ingested_at"
+_COLUMNS = (
+    "id, title, doc_type, source_uri, sensitivity, authored_at, ingested_at, "
+    "revision, superseded_by_id"
+)
+
+#: Every clearance-filtered read of a document, with the successor pointer redacted.
+#:
+#: ---------------------------------------------------------------------------
+#: WHY `superseded_by_id` IS NOT SAFE TO RETURN UNCONDITIONALLY
+#: ---------------------------------------------------------------------------
+#: A revision may sit ABOVE its predecessor's sensitivity (`supersede_document` refuses
+#: a downgrade, not an upgrade). So a document a caller may read can be superseded by
+#: one they may not, and returning the raw pointer hands them its id.
+#:
+#: An id looks harmless -- it resolves to 404 for them, and the withheld COUNT already
+#: discloses that a revision exists. It is not harmless, because these ids are not
+#: opaque. `_document_id` is `uuid5(_INTAKE_NAMESPACE, f"{workspace_id}:{content_hash}")`
+#: and the namespace is a fixed public constant in this file. Anyone holding a candidate
+#: plaintext can compute the id and compare it. That turns "here is an id you cannot
+#: resolve" into a **content-confirmation oracle** for a document above their clearance:
+#: guess the text, derive the id, check for a match. It is the leaked-memo scenario from
+#: #147 without even needing intake.
+#:
+#: So the pointer is resolved through a LEFT JOIN and nulled when the successor is above
+#: the caller's clearance. The join also nulls it when the successor is gone (`0023`'s
+#: `ON DELETE SET NULL` leaves no row to join), which is the correct answer there too.
+#:
+#: The FIRST bound parameter is always the caller's clearance.
+_DOCUMENT_SELECT = """
+    SELECT d.id, d.title, d.doc_type, d.source_uri, d.sensitivity, d.authored_at,
+           d.ingested_at, d.revision,
+           CASE WHEN s.sensitivity <= %s THEN d.superseded_by_id END AS superseded_by_id
+      FROM document d
+      LEFT JOIN document s
+             ON s.id = d.superseded_by_id
+            AND s.workspace_id = d.workspace_id
+"""
 
 #: The full clearance ladder, from `schema/postgres.sql`. Mirrored as a constant so the
 #: gap below is checkable in a test rather than being two numbers in two files that
@@ -142,6 +178,39 @@ class SensitivityAboveClearanceError(DocumentError):
     """
 
 
+class DocumentAlreadySupersededError(DocumentError):
+    """This document has already been replaced; the chain admits one successor.
+
+    A 409 rather than a 422 (registered explicitly in `meridian/api/errors.py`, because
+    the name carries none of the suffixes the taxonomy's naming pass recognises). The
+    request was well-formed and the caller may well be permitted; the *state* refuses it,
+    and the caller's move is to re-read the chain and supersede its head instead of
+    fixing their input.
+
+    `document` has no `version` column and therefore no `expected_version` and no stale
+    check. That is deliberate rather than an omission: a document's mutable state is
+    exactly one nullable pointer, so "already superseded" IS the concurrency conflict.
+    Adding a version counter would model a lost-update problem this table cannot have.
+    """
+
+
+class SensitivityDowngradeError(DocumentError):
+    """A revision may not be filed below the sensitivity of the document it replaces.
+
+    **The security core of supersession.** A corrected copy of a confidential document
+    filed as public republishes its lineage -- the text, the title, and the fact the board
+    holds such a document -- one clearance rung down. Content-hash dedup cannot catch it,
+    because a correction is by definition different bytes.
+
+    A refusal, never a clamp, for the reason recorded on `SensitivityAboveClearanceError`
+    (#143): filing at a level the caller did not choose tells them their document is
+    protected at a level it is not.
+
+    A revision may go *up*. Discovering that a document is more sensitive than first
+    thought is a legitimate correction, and it withdraws access rather than granting it.
+    """
+
+
 @dataclass(frozen=True)
 class Document:
     id: str
@@ -151,6 +220,17 @@ class Document:
     sensitivity: int
     authored_at: datetime | None
     ingested_at: datetime
+    #: 1-based position in the supersession chain (`0023_document_version`). A document
+    #: filed by ordinary intake is revision 1 and stays there.
+    revision: int = 1
+    #: The revision that replaced this one, or None.
+    #:
+    #: **None also means "replaced by something you may not read."** Every read path
+    #: resolves this through `_DOCUMENT_SELECT`, which nulls it when the successor is
+    #: above the caller's clearance -- see the note there for why an unresolvable id is a
+    #: content-confirmation oracle rather than a harmless handle. `version_chain`'s
+    #: `withheld` count is where a caller learns that later revisions exist.
+    superseded_by_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -180,6 +260,11 @@ def _row_to_document(row: dict[str, Any]) -> Document:
         sensitivity=row["sensitivity"],
         authored_at=row["authored_at"],
         ingested_at=row["ingested_at"],
+        # `.get`, not `[...]`: `intake_document`'s INSERT ... RETURNING names its columns
+        # explicitly and predates these two. A KeyError there would fail an intake over a
+        # field the caller never asked about.
+        revision=row.get("revision", 1) or 1,
+        superseded_by_id=str(row["superseded_by_id"]) if row.get("superseded_by_id") else None,
     )
 
 
@@ -213,14 +298,14 @@ def list_documents(
     `clearance` is required. Documents above clearance are omitted in the SQL WHERE
     clause, leaving no trace in the response.
     """
-    query = f"SELECT {_COLUMNS} FROM document WHERE sensitivity <= %s"
-    params: list[Any] = [clearance]
+    query = _DOCUMENT_SELECT + " WHERE d.sensitivity <= %s"
+    params: list[Any] = [clearance, clearance]
 
     if doc_type is not None:
-        query += " AND doc_type = %s"
+        query += " AND d.doc_type = %s"
         params.append(doc_type)
 
-    query += " ORDER BY ingested_at DESC, id"
+    query += " ORDER BY d.ingested_at DESC, d.id"
 
     with store.pg(workspace_id) as conn:
         rows = conn.execute(query, params).fetchall()
@@ -236,8 +321,8 @@ def get_document(
     """One document, or `DocumentNotFound` if absent or above clearance."""
     with store.pg(workspace_id) as conn:
         row = conn.execute(
-            f"SELECT {_COLUMNS} FROM document WHERE id = %s AND sensitivity <= %s",
-            (uuid.UUID(str(document_id)), clearance),
+            _DOCUMENT_SELECT + " WHERE d.id = %s AND d.sensitivity <= %s",
+            (clearance, uuid.UUID(str(document_id)), clearance),
         ).fetchone()
 
     if row is None:
@@ -758,3 +843,315 @@ def list_quarantine(
 
         return [_row_to_quarantine(r) for r in rows]
 
+
+
+# ---------------------------------------------------------------------------
+# Versions — a document is corrected by supersession, never by mutation (ADR-017)
+# ---------------------------------------------------------------------------
+
+#: How far `version_chain` will walk before refusing to continue.
+#:
+#: Cycles are structurally impossible today: `supersede_document` always creates its
+#: successor, so a successor can never already be an ancestor, and `0023` forbids the
+#: one-step case outright. This bound is not a fix for a bug that exists — it is what
+#: keeps a *future* caller that supersedes with an existing document from turning a read
+#: into a hung request. An unbounded walk over a cycle does not error; it holds a
+#: connection until something else times out, which is the worst way to find out.
+MAX_CHAIN = 100
+
+#: The top of the clearance ladder, used as the fail-closed default when a successor's
+#: sensitivity is unknown. Same value and same reasoning as `conflicts.MAX_SENSITIVITY`
+#: (#148): an absent sensitivity must read as "maximally sensitive", never as "public".
+MAX_SENSITIVITY = LADDER_LEVELS[-1]
+
+
+@dataclass(frozen=True)
+class DocumentChain:
+    """One document's revision history, as this caller is permitted to see it."""
+
+    #: Readable revisions, oldest first. May have gaps — see `version_chain`.
+    revisions: list[Document]
+    #: How many revisions in this chain the caller may not see. The whole disclosure.
+    withheld: int
+    #: The current revision's id, or None when the current revision is withheld.
+    current_id: str | None
+
+
+def supersede_document(
+    old_document_id: str,
+    *,
+    title: str,
+    doc_type: str,
+    raw_text: str,
+    sensitivity: int,
+    author_clearance: int,
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
+    author_principal_id: str | None = None,
+    source_uri: str | None = None,
+) -> tuple[Document, Document]:
+    """File a corrected revision of an existing document. Returns `(new, old)`.
+
+    Returns in the same order as `supersede_decision` and `supersede_pack` — the new
+    object first, because it is the one the caller asked to create.
+
+    The new revision is created by **calling `intake_document`**, not by reimplementing
+    it. Chunking, embeddings, the Neo4j bridge, the derived ids and verified extraction
+    are the substance of intake and there is exactly one correct way to do them; a
+    parallel copy here would be the second, and the two would agree only until one was
+    edited.
+
+    **The old document is not mutated in any other way.** Its text, its chunks and the
+    graph facts extracted from it stay exactly as they were. That is the point: a board
+    that can rewrite its own record has no record. The correction is a new document, and
+    the link is what makes the pair legible.
+    """
+    ws_uuid = uuid.UUID(str(workspace_id))
+    old_uuid = uuid.UUID(str(old_document_id))
+
+    # --- Refusals, in this order and for this reason ---------------------------
+    #
+    # Readability first. Every check below this line discloses something about the old
+    # document — its sensitivity, or the fact it has already been superseded — so a
+    # caller who may not read it must be turned away before any of them run.
+    with store.pg(str(ws_uuid)) as conn:
+        old_row = conn.execute(
+            """
+            SELECT id, sensitivity, revision, superseded_by_id, title
+              FROM document
+             WHERE id = %s AND sensitivity <= %s
+            """,
+            (old_uuid, author_clearance),
+        ).fetchone()
+
+    if old_row is None:
+        # 404, not 403, and identical to `get_document`'s answer for a document above
+        # clearance. Distinguishing "no such document" from "not yours to read" here
+        # would make supersede an existence oracle for confidential documents — the
+        # first item in P4's exit criterion, reintroduced on a write path.
+        raise DocumentNotFound(str(old_document_id))
+
+    if old_row["superseded_by_id"] is not None:
+        # Deliberately does NOT name the successor. The caller can read the old document,
+        # but the successor may sit above their clearance (sensitivity may rise across a
+        # chain), and an id in an error message is a disclosure the read paths would have
+        # refused. They can call `version_chain`, which applies the clearance filter.
+        raise DocumentAlreadySupersededError(
+            f"Document {old_document_id} has already been superseded. "
+            "Read its version chain and supersede the current revision instead."
+        )
+
+    if sensitivity < old_row["sensitivity"]:
+        raise SensitivityDowngradeError(
+            f"Sensitivity {sensitivity} is below the document being revised "
+            f"({old_row['sensitivity']}). A revision may raise a document's sensitivity "
+            f"but never lower it; file at level {old_row['sensitivity']} or above."
+        )
+
+    # The ceiling, the accepted-range check and the empty-text checks are NOT repeated
+    # here. `intake_document` owns them, this calls it, and a second copy of a security
+    # check is a second copy to forget to update — #143 changed that rule once already.
+    new_doc = intake_document(
+        title=title,
+        doc_type=doc_type,
+        raw_text=raw_text,
+        sensitivity=sensitivity,
+        author_clearance=author_clearance,
+        workspace_id=str(ws_uuid),
+        author_principal_id=author_principal_id,
+        source_uri=source_uri,
+    )
+
+    new_uuid = uuid.UUID(new_doc.id)
+    new_revision = old_row["revision"] + 1
+
+    with store.pg(str(ws_uuid)) as conn:
+        # `AND superseded_by_id IS NULL` is the concurrency guard, and it is in the WHERE
+        # clause rather than in a re-read above it. Two callers superseding the same
+        # document at once both pass the check at the top; only one can pass this, and the
+        # loser gets a 409 rather than silently overwriting the winner's link.
+        #
+        # `uq_document_superseded_by` would also catch the race, from the other side. Two
+        # mechanisms because they fail differently: this one produces the domain error the
+        # client can act on, the index produces a UniqueViolation nothing would have
+        # translated.
+        linked = conn.execute(
+            """
+            UPDATE document
+               SET superseded_by_id = %s
+             WHERE id = %s AND superseded_by_id IS NULL
+            RETURNING id
+            """,
+            (new_uuid, old_uuid),
+        ).fetchone()
+
+        if linked is None:
+            raise DocumentAlreadySupersededError(
+                f"Document {old_document_id} was superseded by another caller while this "
+                "revision was being filed. The revision was ingested and is readable on "
+                "its own; re-file it against the current revision if it is still wanted."
+            )
+
+        conn.execute(
+            "UPDATE document SET revision = %s WHERE id = %s",
+            (new_revision, new_uuid),
+        )
+
+        # `document` and `superseded` are both already in `audit.AGGREGATE_TYPES` and
+        # `audit.ACTIONS`, so this needs no migration.
+        #
+        # BOTH sensitivities are recorded, not just the new one. "Was anything
+        # declassified?" is a question an auditor will eventually ask, and a payload
+        # holding only the resulting level cannot answer it — you would have to join
+        # back to a document that may itself have been superseded since.
+        audit.record_audit_event(
+            conn,
+            aggregate_type="document",
+            aggregate_id=old_uuid,
+            action="superseded",
+            actor_principal_id=author_principal_id,
+            payload={
+                "old_document_id": str(old_uuid),
+                "new_document_id": str(new_uuid),
+                "revision": new_revision,
+                "old_sensitivity": old_row["sensitivity"],
+                "new_sensitivity": sensitivity,
+            },
+            workspace_id=str(ws_uuid),
+        )
+
+    updated_old = get_document(
+        str(old_uuid), workspace_id=str(ws_uuid), clearance=author_clearance
+    )
+    current_new = get_document(
+        new_doc.id, workspace_id=str(ws_uuid), clearance=author_clearance
+    )
+    return current_new, updated_old
+
+
+def version_chain(
+    document_id: str,
+    *,
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
+    clearance: int,
+) -> DocumentChain:
+    """Every revision of one document, filtered to what this caller may read.
+
+    Raises `DocumentNotFound` if the caller cannot read the document they named — a
+    chain read must not be a way around `get_document`'s clearance gate.
+
+    ---------------------------------------------------------------------------
+    WHY THE WALK READS ROWS THE CALLER CANNOT SEE
+    ---------------------------------------------------------------------------
+    The SQL below filters on `workspace_id` (RLS scopes that anyway) and NOT on
+    sensitivity, then drops the unreadable revisions in Python and counts them.
+
+    That looks backwards, and it is the only shape that works. `rules.md` §2 requires
+    withheld content to be disclosed **as a count**; a clearance-filtered walk cannot
+    count what it never selected, and — worse — it would break the chain at the first
+    withheld link and silently report the fragment before it as the whole history. A
+    reader would be told a chain ends where their clearance ends.
+
+    Nothing read here escapes: only `revisions` and `withheld` leave this function, and
+    the withheld rows contribute a number and nothing else.
+
+    ---------------------------------------------------------------------------
+    WHAT THE DOWNGRADE REFUSAL BUYS HERE, FOR FREE
+    ---------------------------------------------------------------------------
+    `supersede_document` refuses a revision below its predecessor's sensitivity, so a
+    chain's sensitivities are monotonically non-decreasing. The readable revisions are
+    therefore always a **prefix** of the chain and the withheld ones a **suffix**: a
+    caller can never see revision 3 while revision 2 is withheld from them, so the
+    visible revision numbers have no gaps and disclose no position.
+
+    That is a consequence, not an assumption, and the code below deliberately does not
+    rely on it — it filters and counts rather than truncating at the first withheld row.
+    If the downgrade rule is ever relaxed, gaps become representable and this function is
+    still correct; only the `withheld > 0 iff current_id is None` equivalence would break.
+    `tests/test_document_versions.py` pins the property so relaxing that rule fails a test
+    rather than quietly changing what this function discloses.
+    """
+    ws_uuid = uuid.UUID(str(workspace_id))
+    doc_uuid = uuid.UUID(str(document_id))
+
+    with store.pg(str(ws_uuid)) as conn:
+        anchor = conn.execute(
+            "SELECT id FROM document WHERE id = %s AND sensitivity <= %s",
+            (doc_uuid, clearance),
+        ).fetchone()
+        if anchor is None:
+            raise DocumentNotFound(str(document_id))
+
+        # Walk backwards to the head of the chain. `superseded_by_id` points forward, so
+        # finding a predecessor is a reverse lookup — served by `uq_document_superseded_by`,
+        # which indexes exactly this column pair.
+        head = doc_uuid
+        for _ in range(MAX_CHAIN):
+            prev = conn.execute(
+                "SELECT id FROM document WHERE superseded_by_id = %s",
+                (head,),
+            ).fetchone()
+            if prev is None:
+                break
+            head = prev["id"]
+        else:
+            raise DocumentError(
+                f"Version chain for {document_id} exceeds {MAX_CHAIN} revisions walking "
+                "backwards; refusing to continue."
+            )
+
+        rows: list[dict[str, Any]] = []
+        cursor: uuid.UUID | None = head
+        for _ in range(MAX_CHAIN):
+            if cursor is None:
+                break
+            # The RAW pointer, deliberately: the walk needs it to reach the next link,
+            # and redacting here would stop the chain at the first withheld revision --
+            # reporting the fragment before it as the whole history, which is the exact
+            # failure the un-filtered walk exists to prevent. Redaction happens below,
+            # once, on the rows that actually leave this function.
+            row = conn.execute(
+                f"SELECT {_COLUMNS} FROM document WHERE id = %s", (cursor,)
+            ).fetchone()
+            if row is None:
+                break
+            rows.append(row)
+            cursor = row["superseded_by_id"]
+        else:
+            raise DocumentError(
+                f"Version chain for {document_id} exceeds {MAX_CHAIN} revisions; "
+                "refusing to continue."
+            )
+
+    # Redact each readable revision's successor pointer against the chain in hand. No
+    # second query is needed -- every successor of a row in this chain is also a row in
+    # this chain, so its sensitivity is already known.
+    #
+    # `_DOCUMENT_SELECT` does the same job in SQL for `list_documents` and `get_document`.
+    # Two implementations of one rule is a real cost, and the alternative was worse: this
+    # walk cannot use that SELECT without either losing the pointer it traverses on or
+    # issuing a second read per revision. The test that pins the rule asserts against the
+    # raw response body on *both* surfaces, so a divergence fails rather than drifts.
+    sensitivity_by_id = {str(r["id"]): r["sensitivity"] for r in rows}
+    readable: list[Document] = []
+    for row in rows:
+        if row["sensitivity"] > clearance:
+            continue
+        successor = str(row["superseded_by_id"]) if row["superseded_by_id"] else None
+        if successor is not None and sensitivity_by_id.get(successor, MAX_SENSITIVITY) > clearance:
+            row = {**row, "superseded_by_id": None}
+        readable.append(_row_to_document(row))
+
+    withheld = len(rows) - len(readable)
+
+    # The current revision is the last link in the chain — the one nothing supersedes.
+    #
+    # `None` when it is withheld, rather than falling back to the newest READABLE
+    # revision. That fallback is the inversion of this whole feature: it would mark a
+    # superseded document as current, which is worse than saying nothing, because the
+    # reader would act on a document the board has already corrected and would have no
+    # signal that they were doing so. The withheld count is the signal.
+    current_id: str | None = None
+    if rows and rows[-1]["sensitivity"] <= clearance:
+        current_id = str(rows[-1]["id"])
+
+    return DocumentChain(revisions=readable, withheld=withheld, current_id=current_id)
