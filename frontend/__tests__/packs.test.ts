@@ -119,7 +119,7 @@ describe("position is an ordinal, not an identity", () => {
   it("resolveItems keys off the document id rather than the position", () => {
     const items = serverPack([{ document_id: "doc-a" }, { document_id: "doc-b" }]).items;
     const rows = resolveItems(items, [
-      { id: "doc-b", title: "B", doc_type: "memo", source_uri: null, sensitivity: 2, authored_at: null, ingested_at: "x" },
+      { id: "doc-b", title: "B", doc_type: "memo", source_uri: null, sensitivity: 2, authored_at: null, ingested_at: "x", revision: 1, superseded_by_id: null },
     ]);
     // Position 1 resolves to nothing and position 2 resolves — which only works if
     // the lookup is by id.
