@@ -21,8 +21,12 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 
+import psycopg
+
 from callosum import store
 from callosum.store import DEFAULT_WORKSPACE_ID
+from meridian import audit
+from meridian.documents import Document
 
 # ---------------------------------------------------------------------------
 # Lifecycle
@@ -326,4 +330,202 @@ def _raise_stale_or_missing(conn, meeting_id: str) -> None:
         raise MeetingNotFound(str(meeting_id))
     raise StaleMeetingError(
         f"meeting {meeting_id}: version mismatch (current {exists['version']})"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Material — documents assigned to a meeting (Meridian P4, ADR-018)
+# ---------------------------------------------------------------------------
+
+class MaterialError(MeetingError):
+    """Base class for meeting-material errors."""
+
+
+class MaterialAlreadyAssignedError(MaterialError):
+    """This document is already material for this meeting."""
+
+
+class MaterialNotAssignedError(MaterialError):
+    """This document is not material for this meeting."""
+
+
+@dataclass(frozen=True)
+class MeetingMaterial:
+    """What one caller may see of a meeting's material, and how many they may not.
+
+    **The count is disclosed (ADR-018), and it is the only thing disclosed.** Material
+    assigned to a meeting claims to be *the material for this meeting*, which is a
+    completeness claim: a director who prepares from a list that silently dropped two
+    contracts walks into the room believing they are prepared. That is the same harm
+    `documents.version_chain` exists to prevent, one object over.
+
+    `withheld` is a count and never a title, an id, a date, a doc_type or a position.
+    """
+
+    documents: list[Document]
+    withheld: int
+
+
+def assign_material(
+    meeting_id: str,
+    document_id: str,
+    *,
+    clearance: int,
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
+    actor_principal_id: str | None = None,
+    assigned_by: str | None = None,
+) -> None:
+    """Record that a document is material for a meeting.
+
+    **A document the caller cannot read answers `MeetingNotFound`, not a permission
+    error.** The refusal deliberately does not distinguish "no such document" from "above
+    your clearance": telling the two apart turns this endpoint into an existence oracle,
+    and document ids are derivable from candidate plaintext
+    (`documents._document_id` is `uuid5` over a public namespace constant), so a holder of
+    a leaked memo could confirm the board holds it without reading anything. Same reason
+    `documents.supersede_document` answers 404 rather than 403 for its predecessor.
+
+    The meeting is checked first and identically, so the two refusals are indistinguishable
+    from outside — one exception type, one message shape, whichever half was the problem.
+    """
+    ws_uuid = uuid.UUID(str(workspace_id))
+    meeting_uuid = uuid.UUID(str(meeting_id))
+    doc_uuid = uuid.UUID(str(document_id))
+
+    with store.pg(str(ws_uuid)) as conn:
+        readable = conn.execute(
+            """
+            SELECT (SELECT count(*) FROM meeting m WHERE m.id = %s)                    AS meeting,
+                   (SELECT count(*) FROM document d WHERE d.id = %s AND d.sensitivity <= %s) AS doc
+            """,
+            (meeting_uuid, doc_uuid, clearance),
+        ).fetchone()
+        if not readable["meeting"] or not readable["doc"]:
+            raise MeetingNotFound(str(meeting_id))
+
+        try:
+            conn.execute(
+                """
+                INSERT INTO meeting_document (workspace_id, meeting_id, document_id, assigned_by)
+                VALUES (%s, %s, %s, %s)
+                """,
+                (ws_uuid, meeting_uuid, doc_uuid, uuid.UUID(str(assigned_by)) if assigned_by else None),
+            )
+        except psycopg.errors.UniqueViolation as exc:
+            # `uq_meeting_document`. Raised rather than swallowed as idempotent: the
+            # caller asked to add material and something already claims that fact, which
+            # they should see rather than have quietly absorbed.
+            raise MaterialAlreadyAssignedError(str(document_id)) from exc
+
+        audit.record_audit_event(
+            conn,
+            aggregate_type="meeting",
+            aggregate_id=meeting_uuid,
+            action="item_added",
+            actor_principal_id=actor_principal_id,
+            payload={"document_id": str(doc_uuid), "kind": "material"},
+            workspace_id=str(ws_uuid),
+        )
+
+
+def unassign_material(
+    meeting_id: str,
+    document_id: str,
+    *,
+    clearance: int,
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
+    actor_principal_id: str | None = None,
+) -> None:
+    """Remove a document from a meeting's material.
+
+    Clearance-gated on the DELETE itself, not only on a prior read: a caller who cannot
+    read the document cannot remove it either, or an investor could quietly strip a
+    confidential contract out of the board's material for a meeting without ever being
+    able to see what they removed.
+    """
+    ws_uuid = uuid.UUID(str(workspace_id))
+    meeting_uuid = uuid.UUID(str(meeting_id))
+    doc_uuid = uuid.UUID(str(document_id))
+
+    with store.pg(str(ws_uuid)) as conn:
+        deleted = conn.execute(
+            """
+            DELETE FROM meeting_document md
+             USING document d
+             WHERE md.meeting_id = %s
+               AND md.document_id = %s
+               AND d.id = md.document_id
+               AND d.workspace_id = md.workspace_id
+               AND d.sensitivity <= %s
+            RETURNING md.id
+            """,
+            (meeting_uuid, doc_uuid, clearance),
+        ).fetchone()
+        if deleted is None:
+            raise MaterialNotAssignedError(str(document_id))
+
+        audit.record_audit_event(
+            conn,
+            aggregate_type="meeting",
+            aggregate_id=meeting_uuid,
+            action="item_removed",
+            actor_principal_id=actor_principal_id,
+            payload={"document_id": str(doc_uuid), "kind": "material"},
+            workspace_id=str(ws_uuid),
+        )
+
+
+def meeting_material(
+    meeting_id: str,
+    *,
+    clearance: int,
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
+) -> MeetingMaterial:
+    """A meeting's material: what this caller may read, and how many they may not.
+
+    Two queries, and the second returns only a number. The count cannot come from the
+    first — rows above clearance are removed by its WHERE clause before anything could
+    count them, and widening that clause to include them would put restricted titles on
+    the wire, which Invariant #1 forbids. So the complement is aggregated in the database.
+    `packs._fetch_items_for_packs` does the same, and both follow
+    `callosum.retrieve.vector_search`, which runs its search twice for exactly this reason.
+
+    The document projection is `documents._DOCUMENT_SELECT`, reused rather than rewritten,
+    so the per-caller `superseded_by_id` redaction that `0024` needed applies here too. A
+    second hand-rolled SELECT is how that redaction would come to exist on one surface and
+    not the other — which is the defect it was introduced to fix.
+    """
+    from meridian import documents  # local: documents imports nothing from meetings
+
+    ws_uuid = uuid.UUID(str(workspace_id))
+    meeting_uuid = uuid.UUID(str(meeting_id))
+
+    with store.pg(str(ws_uuid)) as conn:
+        if conn.execute("SELECT 1 FROM meeting WHERE id = %s", (meeting_uuid,)).fetchone() is None:
+            raise MeetingNotFound(str(meeting_id))
+
+        rows = conn.execute(
+            documents._DOCUMENT_SELECT
+            + """
+             JOIN meeting_document md
+               ON md.document_id = d.id AND md.workspace_id = d.workspace_id
+            WHERE md.meeting_id = %s AND d.sensitivity <= %s
+            ORDER BY md.assigned_at ASC, d.id
+            """,
+            (clearance, meeting_uuid, clearance),
+        ).fetchall()
+
+        withheld = conn.execute(
+            """
+            SELECT count(*) AS withheld
+              FROM meeting_document md
+              JOIN document d ON d.id = md.document_id AND d.workspace_id = md.workspace_id
+             WHERE md.meeting_id = %s AND d.sensitivity > %s
+            """,
+            (meeting_uuid, clearance),
+        ).fetchone()["withheld"]
+
+    return MeetingMaterial(
+        documents=[documents._row_to_document(r) for r in rows],
+        withheld=withheld,
     )
