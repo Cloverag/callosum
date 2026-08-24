@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { LoadFailed, asApiError } from "@/components/ui/load-failed";
 import { ApiError } from "@/lib/http";
+import { serverMessage } from "@/lib/error-text";
 import { cn } from "@/lib/utils";
 import { meetingsApi, type Meeting } from "@/lib/meetings";
 import { commitmentsApi, todayLocal, type Commitment } from "@/lib/commitments";
@@ -373,7 +374,7 @@ function SuggestionRow({
         e instanceof ApiError
           ? e.isUnretryableConflict
             ? "The agenda is locked — the meeting has already started."
-            : e.message
+            : serverMessage(e)
           : "Could not reach the server.",
       );
       setBusy(false);

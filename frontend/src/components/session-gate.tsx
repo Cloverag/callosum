@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/http";
+import { serverMessage } from "@/lib/error-text";
 import { authApi, LOGIN_URL, type AuthContext } from "@/lib/auth";
 import { transition } from "@/lib/motion";
 
@@ -248,7 +249,7 @@ function ChooseWorkspace({ onSelected, stale }: { onSelected: () => void; stale?
       // The server's own message is shown rather than a friendlier invention. It
       // deliberately does not distinguish "no such workspace" from "you are not a
       // member" — telling them apart is the oracle this endpoint refuses to be.
-      setError(e instanceof ApiError ? e.message : "Could not reach the server.");
+      setError(e instanceof ApiError ? serverMessage(e) : "Could not reach the server.");
       setBusy(false);
     }
   }
@@ -302,7 +303,7 @@ function Failed({ error, onRetry }: { error: ApiError; onRetry: () => void }) {
   return (
     <>
       <h1 className="text-lg font-semibold text-foreground">Meridian is unavailable</h1>
-      <p className="mt-1 text-sm text-muted-foreground">{error.message}</p>
+      <p className="mt-1 text-sm text-muted-foreground">{serverMessage(error)}</p>
       <Button variant="secondary" className="mt-6 w-full" onClick={onRetry}>
         Try again
       </Button>

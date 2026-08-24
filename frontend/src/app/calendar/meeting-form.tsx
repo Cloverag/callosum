@@ -22,6 +22,7 @@ import {
   type MeetingStatus,
 } from "@/lib/meetings";
 import { ApiError } from "@/lib/http";
+import { serverMessage } from "@/lib/error-text";
 
 /**
  * A conflict the user has to decide about, not an error to dismiss.
@@ -182,12 +183,12 @@ export function MeetingForm({
     // Everything else 409 refuses the operation itself — a completed meeting, an
     // illegal move. Retrying cannot help, so nothing here offers to.
     if (error.isUnretryableConflict) {
-      setSaveError(error.message);
+      setSaveError(serverMessage(error));
       return;
     }
 
     // 422 and the rest: the request needs changing, and the server already said how.
-    setSaveError(error.message);
+    setSaveError(serverMessage(error));
   }
 
   async function handleSubmit(e: React.FormEvent) {
