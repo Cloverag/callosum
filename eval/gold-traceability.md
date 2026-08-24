@@ -54,7 +54,7 @@ exercise the thing it tests.
 
 | ID | Stratum | What it exercises |
 |---|---|---|
-| `L4` | lookup | Retrieval through OCR corruption — the email renders Northwind as "Norlhwind" twice, and the answer must still name the company |
+| `L4` | lookup | A plain lookup across two messy documents. The transcript names Northwind correctly at line 9; the email's OCR note is context, not an obstacle the answer has to clear — see the correction below |
 | `C3` | conflict | Two figures for one number **inside a single document** (Marcus minutes 40,000, Tom has 14,000), corrected by a later email. Forbids the wrong figure rather than only expecting the right one |
 | `T5` | temporal | A three-document supersede chain: M12 rejected Pricing Model B, M13 reversed that, M17 supersedes it with a tiered floor |
 | `E5` | aliases | One person under `PRIYA:`, `P. Nair:` and `Priya N.:` in one transcript |
@@ -66,6 +66,47 @@ cases, not graph-fact cases, because seeding them into `GOLD_GROUPS` would chang
 seeded gold graph's entity and edge counts — figures quoted on the dashboard and in
 `README.md`. Extending the gold graph to cover this chain is a separate change with its
 own measurement, and should not ride along with a corpus addition.
+
+**Two corrections, made after the six landed.**
+
+**`L4` does not test retrieval through OCR corruption**, and its original description said
+it did. The corrupted token is not corpus text a reader must see through — the email
+*reports* the corruption in prose, at
+`messy_vendor_followup_email.md:21`:
+
+> One more: the OCR pass on the appendix rendered "Northwind" as "Norlhwind" in two
+
+That sentence spells the company correctly while naming the mangled form, so nothing has
+to be resolved to read it. The corruption itself lives in the PDF appendix, which is not
+in `L4`'s `source_documents`. And the question is answered outright by
+`messy_board_meeting_17_transcript.txt:9` — *"the Northwind minimum-spend floor came back.
+Their procurement..."* — which is the correct spelling in the document that already had
+to be retrieved. `L4` is a genuine two-document lookup and a fine case; the description
+claimed a difficulty it does not contain, which is the kind of overstatement that makes a
+suite look stronger than it is. **A real OCR-corruption case is still unwritten**, and
+would need the corrupted token to be the only route to the answer.
+
+**`C3` forbade a string its own best answer must contain.** It carried
+`forbid_answer: ["14,000"]`, and `evaluate.py:418` treats a forbidden string as an
+automatic fail *whatever else the answer says*. So the ideal `conflict` answer —
+
+> The floor is 40,000. Tom's notes said 14,000, but the follow-up email confirms forty.
+
+— scored as a failure for doing exactly what the `conflict` stratum exists to test.
+Surfacing a conflict requires naming the figure being corrected.
+
+The mechanism was not misused so much as overloaded. `evaluate.py:996` states the intent
+as *"so the **answer** doesn't **assert** the superseded or wrong fact"*, but the
+implementation is a substring test, and *asserting* a figure and *mentioning* it while
+correcting it are indistinguishable to it. Those two readings agree everywhere except
+here, where the whole point is to mention and correct.
+
+`forbid_answer` is now empty on `C3` and `expect_answer: ["40"]` carries the check alone:
+an answer asserting the wrong figure says "14,000", which does not contain "40", and
+fails. **Stated because it is a real narrowing:** an answer that named both figures and
+picked the wrong one — "corrected from 40,000 down to 14,000" — would now pass. Closing
+that needs the grader to tell assertion from mention, which changes scoring for every
+stratum and is not a corpus change. Recorded rather than quietly accepted.
 
 **Expect the numbers to move.** Two more documents mean more chunks in vector search and
 more candidate names for the linker; #92 predicts grounding recall in particular may fall.
