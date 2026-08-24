@@ -29,10 +29,26 @@
  * ---------------------------------------------------------------------------
  * THE COUNT IS WHY THIS IS A TEST AND NOT A CODE REVIEW NOTE
  * ---------------------------------------------------------------------------
- * #157 enumerated four sites by hand. There were **nine**, across five more files —
- * `session-gate.tsx`, `resolutions/page.tsx`, `meeting-form.tsx` (twice) and
- * `field-state.ts`. A hand-written list of the places a pattern appears is the same
- * defect as a hand-written list of endpoints, and it was wrong here by more than half.
+ * #157 enumerated four sites by hand. There were **eleven**, across six more files.
+ * A hand-written list of the places a pattern appears is the same defect as a
+ * hand-written list of endpoints, and it was wrong by nearly two thirds.
+ *
+ * ---------------------------------------------------------------------------
+ * WHY THE PATTERN MATCHES ANY IDENTIFIER, AND WHY THERE IS AN ALLOWLIST
+ * ---------------------------------------------------------------------------
+ * The first version of this scan matched `/\berror\.message\b/` — bound to the
+ * identifier `error`. Two live bypasses survived it, both binding the caught value as
+ * `e`: `prepare/page.tsx` and `session-gate.tsx`, the latter in the same file as a site
+ * that *was* converted. A guard against hand-picked lists, itself a hand-picked list
+ * with one entry.
+ *
+ * Caught in review before merge. Recorded because it is the same shape as the three
+ * defects above it — a method name, a router list, a file list — each fix correct about
+ * the level above and reproducing the defect at its own.
+ *
+ * So: match `.message` on **any** identifier, and carry the legitimate cases in an
+ * explicit allowlist with a reason written beside each. Narrowing the pattern until the
+ * allowlist empties is exactly what failed; an allowlist of one, justified, is honest.
  */
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -42,6 +58,22 @@ const SRC = join(__dirname, "..", "src");
 
 /** The single sanctioned home for turning a server error into display text. */
 const CHOKEPOINT = join("lib", "error-text.ts");
+
+/** `.message` on ANY identifier — `error.message`, `e.message`, `apiError.message`. */
+const ACCESS = /\b[A-Za-z_$][A-Za-z0-9_$]*\.message\b/;
+
+/**
+ * Legitimate `.message` accesses, each with the reason it is not a disclosure.
+ *
+ * Deliberately an allowlist rather than a cleverer pattern. Every narrowing of the
+ * regex is a silent decision about what counts, and the last one cost two live
+ * bypasses. An entry here is a decision someone can read and disagree with.
+ */
+const ALLOWED: Record<string, string> = {
+  // `ApiError` parsing its OWN text to recover the version numbers out of a 409 detail.
+  // Not a render: the string is already in the client's hands and goes to a number.
+  "lib/http.ts": "ApiError reads its own message to extract conflict versions",
+};
 
 function sourceFiles(dir: string): string[] {
   const out: string[] = [];
@@ -62,31 +94,49 @@ describe("a server error string reaches the screen through one function", () => 
     expect(files.some((f) => f.endsWith(CHOKEPOINT))).toBe(true);
   });
 
-  it("has no direct `error.message` outside lib/error-text.ts", () => {
+  it("has no `.message` access outside the chokepoint and the allowlist", () => {
     const offenders: string[] = [];
     for (const file of files) {
-      if (file.endsWith(CHOKEPOINT)) continue;
-      const text = readFileSync(file, "utf8");
-      text.split("\n").forEach((line, i) => {
-        // `.message` on a caught ApiError. Matches the property access, so it catches
-        // the rendered form `{error.message}` and the stored form
-        // `setSaveError(error.message)` alike — the second is a render one tick later.
-        if (/\berror\.message\b/.test(line)) {
-          offenders.push(`${file.slice(SRC.length + 1)}:${i + 1}`);
-        }
-      });
+      const relative = file.slice(SRC.length + 1);
+      if (file.endsWith(CHOKEPOINT) || relative in ALLOWED) continue;
+      readFileSync(file, "utf8")
+        .split("\n")
+        .forEach((line, i) => {
+          // Catches the rendered form `{error.message}`, the stored form
+          // `setSaveError(e.message)`, and the ternary form `? e.message :` alike —
+          // storing it is a render one tick later, and the identifier is not the point.
+          if (ACCESS.test(line)) offenders.push(`${relative}:${i + 1}`);
+        });
     }
     expect(offenders).toEqual([]);
   });
 
-  it("would fail if a surface reintroduced one", () => {
-    // The scan is a regex over source text, so it is worth proving the regex matches
-    // the shape it is meant to catch rather than trusting it to.
-    const rendered = "        <p>{error.message}</p>";
-    const stored = "    setSaveError(error.message);";
-    const unrelated = "    const message = error.code;";
-    expect(/\berror\.message\b/.test(rendered)).toBe(true);
-    expect(/\berror\.message\b/.test(stored)).toBe(true);
-    expect(/\berror\.message\b/.test(unrelated)).toBe(false);
+  it("every allowlist entry still exists and still matches", () => {
+    // A stale entry excuses a file that no longer has the pattern — or worse, one that
+    // was renamed, leaving the real site unguarded while the allowlist looks tidy.
+    for (const relative of Object.keys(ALLOWED)) {
+      const full = join(SRC, relative);
+      expect(files).toContain(full);
+      expect(ACCESS.test(readFileSync(full, "utf8"))).toBe(true);
+    }
+  });
+
+  it("would catch the forms that escaped the first version of this scan", () => {
+    // The previous self-test used `error.` in every example, so it confirmed the
+    // framing it was written from and passed while two `e.message` bypasses were live.
+    // These cases deliberately use identifiers the first author did NOT think of.
+    for (const escaped of [
+      "          : e.message",                                              // prepare/page.tsx
+      "setError(x instanceof ApiError ? e.message : \"nope\");",             // session-gate.tsx
+      "  const t = err.message;",
+      "  return apiError.message;",
+      "        <p>{error.message}</p>",
+      "    setSaveError(error.message);",
+    ]) {
+      expect(ACCESS.test(escaped)).toBe(true);
+    }
+    for (const fine of ["    const message = error.code;", "  // a comment about messages", "  msg.length"]) {
+      expect(ACCESS.test(fine)).toBe(false);
+    }
   });
 });
