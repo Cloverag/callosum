@@ -34,6 +34,14 @@ Related: [PRD.md](./PRD.md) · [ROADMAP.md](./ROADMAP.md) · [AGENTS.md](./AGENT
 - Fix only real, reproduced bugs. Measure before refactoring — let the problem pick the work.
 - Release cadence = merge → freeze → tag → graphify snapshot → publish notes → postmortem. A release is an immutable, self-contained bundle.
 
+- **Amendment, owner's decision 2026-08-24 — what an exit gate attempt must produce.** `ROADMAP.md` says only an exit gate moves the accepted count, and nothing anywhere says what a gate attempt *is*. `docs/reviews/2026-07-29-p2-acceptance.md` is the only worked example, and it is precedent, not specification — it happens to pin a master SHA and carry a per-criterion table because its author chose to. **The first packet written without a rule becomes the rule**, and one that does not require stating its own gaps will be filled in without them by whoever is next. Recorded now, before the first P4 attempt, rather than inferred from it afterwards.
+
+  **A gate packet contains four things:** a **pinned master SHA**, and every figure in it derives at that commit; a **per-criterion evidence table** quoting the criterion **verbatim** from `ROADMAP.md`, because a paraphrased criterion is a criterion the packet chose for itself; a **clean-volume full-chain migration drill**, forward and reverse; and an explicit **"Not covered by this evidence"** section.
+
+  **Why the fourth is not optional, and is the point of this amendment.** Exit criteria are not all the same kind of claim. *"Membership is authorized/audited"* is a **positive** claim: it is proven by pointing at rows and tests, whoever points has little discretion, and a reader can check the rows are real. *"Restricted titles, text, quotes, graph facts and hints cannot leak"* is a **negative** claim, and a negative claim is never proven by evidence — only not yet disproven. What is really being asserted is that the probes chosen would have found the leak had there been one. **That choice is the judgement, and it is invisible in a packet that lists only what it covers.** So the packet must enumerate what it does *not*: which surfaces, methods and paths the evidence never exercised. A missing gap is checkable against the code; a missing probe is not. **A packet whose "not covered" section is empty is not a stronger packet — it is an unfinished one.**
+
+  **Who signs.** An author may **assemble** evidence for work they wrote; they may **not sign** the attestation for it. Assembling is mechanical and checkable, attesting is a judgement about whether the evidence suffices, and §4's *"permission to build is not permission to self-approve"* applies to acceptance exactly as it applies to merge. The maintainer signs, or names who does. **A signature is a claim that the gaps were read and accepted, not that none were reported.**
+
 ## 5. Ownership
 
 - **Frontend** = maintainer/owner. **Backend** (domain model, migrations, RLS/tenancy, API contracts, tests, infra) = Devguru.
