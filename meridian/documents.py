@@ -297,6 +297,20 @@ def list_documents(
 
     `clearance` is required. Documents above clearance are omitted in the SQL WHERE
     clause, leaving no trace in the response.
+
+    **This surface ERASES, and that is a decision (ADR-018), not an oversight.** It is
+    the browse view over everything filed: it claims to show what you may read, never
+    that it shows everything the board holds. Nothing here is acted on as if it were
+    complete, so there is no reader whom the silence misleads.
+
+    A `withheld` count would be actively worse than useless here. `/documents` is a
+    landing page, so the number would be recomputed on every load — a standing, freely
+    refreshed measurement of how much confidential material the workspace holds,
+    available to the lowest clearance in it. `version_chain` pays that cost because a
+    stale revision read as current is a real harm; a browse list buys nothing with it.
+
+    Do not "unify" this with `version_chain`'s count. They are on opposite sides of
+    ADR-018 deliberately, and the table in that record is where a surface changes sides.
     """
     query = _DOCUMENT_SELECT + " WHERE d.sensitivity <= %s"
     params: list[Any] = [clearance, clearance]
@@ -821,6 +835,16 @@ def list_quarantine(
     rather than shown. That is the fail-closed reading: a row that cannot be attributed
     to a document cannot be shown to be safe, and every row this module writes has a
     document. RLS already scopes the workspace; this scopes the clearance *within* it.
+
+    **This surface ERASES rather than counting (ADR-018).** Quarantine is the browse
+    view over refused extractions — evidence that the accepted facts were checked. It
+    claims no completeness, and nobody prepares for a meeting from it.
+
+    The count would also be a sharper disclosure here than on a document list, not a
+    softer one. A quarantine row is *per rejected extraction*, so the number moves with
+    how much was pulled out of a confidential document rather than with how many such
+    documents exist — a coarse read on the volume and richness of material above the
+    caller. Erasure is the cheaper answer and costs a reader nothing.
     """
     ws_uuid = uuid.UUID(str(workspace_id))
 
