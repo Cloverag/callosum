@@ -15,6 +15,7 @@ import {
 } from "@/lib/resolutions";
 import { boardMembersApi, type BoardMember } from "@/lib/board-members";
 import { ApiError } from "@/lib/http";
+import { serverMessage } from "@/lib/error-text";
 import { ResolutionCard } from "./resolution-card";
 
 /**
@@ -121,11 +122,7 @@ export default function ResolutionsPage() {
           <Card className="p-10 text-center">
             <p className="text-sm text-foreground">Resolutions could not be loaded.</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              {error.needsWorkspace
-                ? "Select a workspace to continue."
-                : error.isUnauthenticated
-                  ? "Your session has ended. Sign in again."
-                  : error.message}
+              {serverMessage(error)}
             </p>
           </Card>
         ) : visible === null ? (

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/http";
+import { serverMessage } from "@/lib/error-text";
 import {
   documentsApi,
   DOC_TYPE_LABEL,
@@ -105,7 +106,7 @@ export function IntakeDialog({
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
-  // A boolean, not the server's message (#147). It used to hold `api.message` and
+  // A boolean, not the server's message (#147). It used to hold the raw detail and
   // render it verbatim, which meant the screen disclosed whatever the API happened to
   // put in a 409 — fine today, and an open channel the moment that text changes.
   // Duplicate detection reveals that a match exists and nothing about what matched.
@@ -262,7 +263,7 @@ export function IntakeDialog({
             {/* The server's own words. A 403 here names the level this caller may
                 file at, and paraphrasing it to "permission denied" would throw away
                 the only part that tells them what to do next. */}
-            {error.message}
+            {serverMessage(error)}
           </div>
         )}
       </div>
