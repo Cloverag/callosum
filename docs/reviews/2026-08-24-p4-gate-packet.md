@@ -56,11 +56,21 @@ difference decides how much the evidence can carry — see §5.
 
 ### Audited — two gaps, stated as findings rather than as evidence
 
-**`meridian/board_members.py` contains zero audit writes.** Measured:
-`grep -c "record_audit_event\|audit\." meridian/board_members.py` → **0**, against **4**
-mutating routes (`POST`, `PATCH`, `POST /{id}/deactivate`, `POST /{id}/reactivate`). So a
-board member can be created, have their role or voting status changed, be deactivated and
-be reactivated, and the append-only trail records none of it — even though
+**Board-member mutation is unaudited.** Two files, deliberately named separately — an
+earlier draft of this packet conflated them, and a citation a reader can follow to a
+contradiction is the defect class this packet exists to avoid:
+
+- **Routes** live in `meridian/api/board_members.py` — **4** mutating
+  (`POST` :93, `PATCH /{id}` :111, `POST /{id}/deactivate` :130, `POST /{id}/reactivate` :148).
+  `grep -cE '@router\.(post|patch|put|delete)' meridian/api/board_members.py` → **4**.
+- **Domain logic** lives in `meridian/board_members.py`, which contains **0** audit writes.
+  `grep -c 'record_audit_event' meridian/board_members.py` → **0**. The domain module is the
+  right place to look: every aggregate that *is* audited writes from its domain module, not
+  its router — the sole exception, `meridian/api/conflicts.py`, appears in the enumeration
+  below.
+
+So a board member can be created, have their role or voting status changed, be deactivated
+and be reactivated, and the append-only trail records none of it — even though
 `audit.AGGREGATE_TYPES` already contains `"board_member"`.
 
 **The `membership` table has no product writer at all.** It is the access-control row —
@@ -250,10 +260,24 @@ worth reading adversarially.
 11. **`scripts/eval.sh` has not been run.** It is deliberately the maintainer's to spend, so
     no retrieval-quality figure appears anywhere in this packet.
 12. **The two test figures cannot be derived from the pin.** They are the record of a run.
-13. **CI's `CALLOSUM_POSTGRES_DSN` is ignored.** `config.py` sets no `env_prefix`, so the
-    variable the workflow exports is not the one the settings read (`POSTGRES_DSN`). CI works
-    because the compose service publishes both `5432` and `5433` and the default happens to
-    match — an accident, and it means CI is not testing the DSN it believes it is.
+13. **CI's `CALLOSUM_POSTGRES_DSN` is ignored.** `src/callosum/config.py:21` sets
+    `SettingsConfigDict(env_file=".env", extra="ignore")` with **no** `env_prefix`, so the
+    settings read `POSTGRES_DSN` / `POSTGRES_APP_DSN` and the two `CALLOSUM_`-prefixed
+    variables the workflow exports (`ci.yml:22-23`) are silently discarded. **Follow the
+    right file:** `meridian/api/config.py:20` *does* set `env_prefix="MERIDIAN_"` — it is a
+    separate settings class for the web application, and it is not the one being described.
+
+    CI passes because its own service block publishes the database on **both** ports
+    (`ci.yml:34-36`, `5432:5432` and `5433:5432`) while the default DSN points at `5433`,
+    so the discarded variable and the default happen to reach the same database.
+    (`docker-compose.yml:10` publishes only `5433`; the dual mapping is CI's alone.)
+
+    **Calibrated:** this is configuration that lies, not a weakened test. Both discarded
+    variables name the same two roles the defaults already encode — `callosum` superuser and
+    `callosum_app` non-superuser against the same database — so the RLS distinction the
+    gated suite depends on is intact. What is lost is the ability to point CI at a different
+    database by setting the documented variable, and any confidence that the workflow's
+    `env:` block means what it appears to.
 
 ---
 
