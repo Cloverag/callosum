@@ -21,7 +21,7 @@ requirements.
 | Track | Completed | Active | Remaining |
 |---|---:|---|---:|
 | Research engine | **14 / 14** accepted (`R0`–`R13`) | — research track CLOSED 2026-07-18, baseline frozen at `6ed5ed5` | 0 |
-| Meridian product | **3 / 13** accepted (`P0`, `P1`, `P2`) | **P3 FROZEN**, exit gate not claimed (CP-F/G/H deferred, #93) · **P4 IN PROGRESS** — source intake merged, versions and meeting assignment not started | **10** (`P3`–`P12`) |
+| Meridian product | **3 / 13** accepted (`P0`, `P1`, `P2`) | **P3 FROZEN**, exit gate not claimed (CP-F/G/H deferred, #93) · **P4 IN PROGRESS** — source intake merged; versions and meeting assignment built, exit gate not attempted | **10** (`P3`–`P12`) |
 
 The counts must not be combined into one percentage: the research track validates the
 memory engine; the product track makes it a deployable board operating system. P3 gave the
@@ -396,7 +396,7 @@ so the product track stays at 3 of 13. Checkpoint detail in [phase.md](./phase.m
 | Members | ✅ shipped early as P2 CP5a / CP5b |
 | Document intake / import · metadata / sensitivity · duplicates · quarantine state | ✅ merged (#128) |
 | Versions | ✅ built 2026-08-23 (`0024_document_version`, ADR-017) |
-| Workspace / meeting assignment | ⬜ not started |
+| Workspace / meeting assignment | ✅ built 2026-08-24 (`0025_meeting_document`, ADR-018) |
 | Exit gate | ⬜ not attempted |
 
 **Recorded gap — CLOSED.** Intake applied no sensitivity ceiling: a clearance-1 principal
@@ -412,6 +412,26 @@ a correction differs by construction. Withheld revisions in a chain are disclose
 **count**, never a title, and `current_id` is null rather than promoting a superseded
 revision. `rules.md` §4 is explicit that only an exit gate advances the accepted count, so
 the product track stays at **3 of 13**.
+
+**Meeting assignment, 2026-08-24 — built, and it does not move the count either.** A
+document can now be assigned to a meeting as source material (`0025_meeting_document`),
+which is the step *before* a board pack exists: someone says "this contract is for the
+March board" days before anyone assembles the pack, and until now there was nowhere to
+record it. Deliberately not a second `board_pack_item` — no position, no note, no
+publication state, because it makes no claim about the agenda.
+
+**ADR-018 came out of building it.** The product answered "what happens to material a
+reader may not see?" two opposite ways — `version_chain` disclosed a count,
+`packs._fetch_items_for_packs` argued in its own docstring that a count is "the same
+disclosure as returning a placeholder, just quieter" — and nothing said which case was
+which. `rules.md` §2 stated the count rule as though universal; it was written for
+**retrieval**, where an answer claims completeness (`retrieve.py:277` runs its search
+twice purely to learn the withheld count). §2 is amended under that date, and the rule is
+now: a count when a reader would otherwise mistake a partial view for a complete one,
+erasure when the collection makes no completeness claim. A published board pack claims
+completeness, so it gained a count; `/documents` and quarantine are browse views and keep
+erasing. `tests/test_withheld_discipline.py` fails any clearance-filtered collection that
+declares neither, so the next one has to choose.
 
 **Goal:** Establish a single source of truth for board participants and material.
 

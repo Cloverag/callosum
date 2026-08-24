@@ -14,8 +14,13 @@ Two contract properties travel through this endpoint unchanged, and the frontend
 assert both against live data:
 
   - items are clearance-filtered and then RENUMBERED from 1, so a withheld item
-    leaves no gap and no total to subtract from;
-  - `position` is therefore a per-caller ordinal, not an identity.
+    leaves no gap and no position to infer;
+  - `position` is therefore a per-caller ordinal, not an identity;
+  - `withheld_items` says HOW MANY the caller may not read — and nothing else about
+    them. That is ADR-018: a published pack claims to be the material for a meeting,
+    so a director preparing from one has to know when it is not all of it. The count
+    and the renumbering are not alternatives; the second closes a covert channel, the
+    first replaces it with a bounded, deliberate disclosure.
 
 Nothing here re-implements either. `_fetch_items_for_packs` does the filtering inside
 the domain, and this endpoint returns what it produced.

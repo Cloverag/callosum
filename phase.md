@@ -147,7 +147,7 @@ is unclaimed and P4's has not been attempted, so the product track stays at **3 
 | Duplicates | ✅ merged (#128) — SHA-256, tenant-scoped by `0022_doc_content_hash_uq` |
 | Processing / quarantine state | ✅ merged (#128) — `GET /api/documents/quarantine` |
 | Versions | ✅ built (`0024_document_version`, ADR-017) — **not** an exit gate |
-| Workspace / meeting assignment | ⬜ not started |
+| Workspace / meeting assignment | ✅ built (`0025_meeting_document`, ADR-018) — **not** an exit gate |
 | P4 exit gate | ⬜ not attempted |
 
 **Exit criteria, and where they stand.** The phase exits when "membership is
@@ -161,9 +161,12 @@ authorisation was also not re-derived per request on the `prep` router, includin
 - **Source intake is deliberately text-only.** `IntakeDocumentRequest` takes `raw_text`;
   there is no multipart upload. `FEATURES.md` still lists PDF/DOCX/PPTX parsing and OCR as
   future work, so this is scope, not omission — see #140.
-- **Recorded gap, no owner yet: intake has no sensitivity ceiling.** A clearance-1 principal
-  may file a sensitivity-3 document. Raised during #128's review and deliberately not decided
-  there; it is live behaviour now and wants a call rather than a quiet patch.
+- **Recorded gap — CLOSED, and this entry was stale.** Intake applied no sensitivity
+  ceiling: a clearance-1 principal could file a sensitivity-3 document. Raised in #128's
+  review, decided in #143, shipped in #144 as `SensitivityAboveClearanceError` — a 403 and
+  a refusal, never a clamp. `ROADMAP.md` recorded the closure; this file went on describing
+  it as live behaviour with no owner. Corrected 2026-08-24 rather than deleted, because a
+  gap that was *decided* is worth more as a record than a gap that quietly vanished.
 - **Versions shipped 2026-08-23 (ADR-017).** A document is corrected by supersession, never
   by mutation: `superseded_by_id` + `revision` on `document`, `POST /api/documents/{id}/supersede`,
   `GET /api/documents/{id}/versions`, and the revision chain on `/documents`. Three refusals
@@ -171,6 +174,26 @@ authorisation was also not re-derived per request on the `prep` router, includin
   as public would republish its lineage a rung down, and content-hash dedup cannot catch it —
   the bytes differ by construction); a second successor is a 409; and a predecessor above the
   caller's clearance answers **404, not 403**, so supersede is not an existence oracle.
+- **Meeting assignment built 2026-08-24 (`0025_meeting_document`).** A document can be
+  assigned to a meeting as source material — the step *before* a board pack exists, which is
+  where material actually gets gathered. `POST`/`GET`/`DELETE` on
+  `/api/meetings/{id}/material`, and the list on `/meetings`. Deliberately not a second
+  `board_pack_item`: no position, no note, no publication state, because it makes no claim
+  about the agenda. Assigning a document above the caller's clearance answers **404, not
+  403**, and a document that does not exist answers identically — the pair is the oracle,
+  not either half.
+- **ADR-018 came out of building it, and is the more portable result.** The product answered
+  "what happens to material a reader may not see?" two opposite ways: `version_chain`
+  disclosed a count, `packs._fetch_items_for_packs` argued in its own docstring that a count
+  is "the same disclosure as returning a placeholder, just quieter". `rules.md` §2 stated the
+  count rule as though universal — but it was written for **retrieval**, where an answer
+  claims completeness, which is why `retrieve.py:277` runs its search twice purely to learn
+  the withheld count. §2 amended under that date. The rule: **a count when a reader would
+  otherwise mistake a partial view for a complete one, erasure when the collection makes no
+  completeness claim.** A published pack claims completeness and gained a count;
+  `/documents` and quarantine are browse views and keep erasing, now saying so.
+  `tests/test_withheld_discipline.py` fails any clearance-filtered collection that declares
+  neither, so this cannot be decided by whichever implementation merges first again.
 - **A leak was found in this work and fixed inside it.** `superseded_by_id` was returned
   unconditionally, and because a chain's sensitivity may *rise*, it handed out the id of a
   withheld document. That is not a dangling handle: `_document_id` is `uuid5` over a **public**
@@ -178,6 +201,15 @@ authorisation was also not re-derived per request on the `prep` router, includin
   id and compare — a content-confirmation oracle, the #147 scenario without needing intake.
   Every read path now nulls the pointer when the successor is above the caller's clearance.
   Found by a test asserting against the **raw response body**, not by review.
+- **`tests/test_p4_leak_sweep.py` generalises that finding into P4's exit criterion.** It
+  does not name endpoints: it walks `app.openapi()`, calls every reachable document-bearing
+  GET as a low-clearance caller, and asserts that nothing identifying a confidential
+  document appears in the raw bytes. A route added later joins the sweep by existing, which
+  is the property a hand-written list cannot have — and the leak above was in a *new field*,
+  which no list would have covered. **Both redaction paths were mutation-tested**: disabling
+  the SQL one fails the sweep on `/api/documents` and the single-document GET, disabling the
+  in-memory one fails it on `/versions`. A negative test that has never been seen to fail is
+  not evidence.
 - **Chunk and document ids are derived** (`uuid5` over workspace + content hash + ordinal),
   so a crashed intake replays onto the same graph nodes rather than orphaning a second set.
   The workspace is in the key because `0022` permits two tenants to hold byte-identical
@@ -190,17 +222,19 @@ branch is unmerged, and the #150 review hold stands.
 
 | | On `master` `8ac1266` | This branch | Δ |
 |---|---|---|---|
-| Backend, gated | 725 | **746 passed**, 5 deselected | +21 |
+| Backend, gated | 725 | **750 passed**, 5 deselected | +25 |
 | Backend, ungated selection | 252 | **253** | +1 |
 | Frontend | 272, 19 suites | **281 passed**, 19 suites | +9 |
 | API | 70 ops / 53 paths / 12 routers | **72 ops / 55 paths / 12 routers** | +2 ops |
 | Migration head | `0022_doc_content_hash_uq` (22) | **`0024_document_version`** (23) | +1 |
 | ADRs | 15 | **16** (016 reserved for #153) | +1 |
 
-**The +21 reconciles to 20, and the extra one is not a miscount.** `tests/test_document_versions.py`
-contributes 20 tests; the 21st is `test_an_applied_migration_is_unchanged`, which is
-parametrized per migration file, so `0023` adds one case (22 → 23). Both figures come from
-diffing the gated collection against a worktree at `master`, because a count derived by
+**The +25 reconciles exactly, and none of it is a miscount.** `tests/test_document_versions.py`
+contributes 20 and `tests/test_p4_leak_sweep.py` contributes 4; the 25th is
+`test_an_applied_migration_is_unchanged`, which is parametrized per migration file, so
+`0024` adds one case (22 → 23). The ungated selection moves by that one case alone, because
+both new files skip at module level without `CALLOSUM_RUN_INTEGRATION=1`. Every figure comes
+from diffing the gated collection against a worktree at `master`, because a count derived by
 arithmetic is exactly the kind that has been wrong here before.
 
 **The product track does not move.** P4 Versions is a *work item*, not an exit gate;

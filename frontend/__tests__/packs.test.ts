@@ -34,8 +34,12 @@ function stub(payload: unknown, status = 200) {
   }) as unknown as typeof fetch;
 }
 
-/** A pack as the server serialises it: already filtered, already renumbered. */
-function serverPack(items: Partial<BoardPackItem>[]): BoardPack {
+/**
+ * A pack as the server serialises it: already filtered, already renumbered, and
+ * carrying its withheld count (ADR-018). `withheld` defaults to 0 so existing cases
+ * read unchanged; pass it to exercise the disclosure.
+ */
+function serverPack(items: Partial<BoardPackItem>[], withheld = 0): BoardPack {
   return {
     id: "pack-q3",
     meeting_id: "m-q3",
@@ -43,6 +47,7 @@ function serverPack(items: Partial<BoardPackItem>[]): BoardPack {
     status: "published",
     version_no: 1,
     superseded_by_id: null,
+    withheld_items: withheld,
     published_at: "2026-07-14T09:00:00Z",
     version: 4,
     created_at: "2026-07-13T11:00:00Z",
@@ -78,31 +83,60 @@ describe("the client cannot name a clearance", () => {
   });
 });
 
-describe("the response carries nothing to subtract from", () => {
-  it("has no total, count or withheld field", async () => {
+/**
+ * ADR-018 reversed half of what this block used to assert.
+ *
+ * It was written under the doctrine that a pack discloses NOTHING about what it
+ * withheld — no count, and an all-withheld pack indistinguishable from an empty one.
+ * The count is now disclosed, because a published pack claims to be *the material for
+ * this meeting* and a director preparing from a silently truncated one is the harm.
+ *
+ * What did NOT reverse, and is still asserted below: everything except the count. No
+ * total to subtract from, no per-item placeholder, no title, no id, no position. The
+ * server's renumbering closes the covert channel; `withheld_items` replaces it with a
+ * bounded, deliberate one.
+ */
+describe("a pack discloses the count and nothing more", () => {
+  it("has no total or per-item field to subtract from", async () => {
     stub(serverPack([{}, {}]));
     const pack = (await packsApi.get("pack-q3"))!;
     for (const forbidden of [
       "item_count",
       "total_items",
-      "withheld",
-      "withheld_count",
       "hidden_items",
       "total",
     ]) {
       expect(Object.keys(pack)).not.toContain(forbidden);
     }
-    // The only length available is the length of what arrived.
+    // `withheld_items` is a count, NOT a length: the only list is what arrived.
     expect(pack.items).toHaveLength(2);
   });
 
-  it("renders an all-withheld pack identically to an empty one", async () => {
-    // The server returns an empty item list either way, and the client must not be
-    // able to tell the difference — that indistinguishability is the guarantee.
-    stub(serverPack([]));
+  it("distinguishes an all-withheld pack from an empty one", async () => {
+    // The inversion. Both return zero items; only the count separates "there is
+    // nothing here" from "there is something here you may not see", and a director
+    // preparing for the meeting needs that difference.
+    stub(serverPack([], 3));
+    const withheldPack = (await packsApi.get("pack-q3"))!;
+    stub(serverPack([], 0));
+    const emptyPack = (await packsApi.get("pack-q3"))!;
+
+    expect(withheldPack.items).toEqual([]);
+    expect(emptyPack.items).toEqual([]);
+    expect(withheldPack.withheld_items).toBe(3);
+    expect(emptyPack.withheld_items).toBe(0);
+  });
+
+  it("carries no identifying trace of a withheld item", async () => {
+    // The count is the whole disclosure. Serialised in full, the payload for a pack
+    // with three withheld items must contain nothing that identifies any of them.
+    stub(serverPack([], 3));
     const pack = (await packsApi.get("pack-q3"))!;
+    const raw = JSON.stringify(pack);
+    for (const trace of ["title", "document_id", "position", "sensitivity"]) {
+      expect(raw).not.toContain(`"withheld_${trace}`);
+    }
     expect(pack.items).toEqual([]);
-    expect(JSON.stringify(pack)).not.toContain("withheld");
   });
 
   it("does not renumber or re-sort what the server sent", async () => {

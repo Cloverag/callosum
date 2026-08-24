@@ -93,6 +93,14 @@ _EXPLICIT: tuple[tuple[type[BaseException], int, str, str | None], ...] = (
     (WorkspaceRequired, HTTPStatus.BAD_REQUEST, BAD_WORKSPACE, None),
     # `InvalidTransition` breaks the suffix convention; it is a lifecycle conflict.
     (meetings.InvalidTransition, HTTPStatus.CONFLICT, CONFLICT, None),
+    # Both break the suffix convention too, and both would otherwise fall to the 422
+    # default — telling a caller to fix a request that was fine.
+    (meetings.MaterialAlreadyAssignedError, HTTPStatus.CONFLICT, CONFLICT, None),
+    # 404, and the detail is NOT suppressed to `_FORBIDDEN_DETAIL`: this answer is
+    # returned both when the document is not assigned and when it is above the caller's
+    # clearance, and it has to look identical in both cases. A distinguishable 403 would
+    # make the endpoint an existence oracle — see `meetings.assign_material`.
+    (meetings.MaterialNotAssignedError, HTTPStatus.NOT_FOUND, NOT_FOUND, None),
     (documents.DuplicateDocumentError, HTTPStatus.CONFLICT, CONFLICT, None),
     (documents.InvalidSensitivityError, HTTPStatus.UNPROCESSABLE_ENTITY, INVALID, None),
     # 403, not 422: the request is well-formed and the value is in range — the caller

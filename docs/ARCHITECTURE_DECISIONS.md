@@ -286,3 +286,40 @@ bound this decision rests on.
 - Supersession is **audited with both sensitivities**, so "was anything declassified?" is answerable from the append-only trail without joining back to rows that may have moved since.
 
 **Status:** Accepted (P4, `0024_document_version`). This is the *implementation* of one P4 work item and does **not** claim P4's exit gate — see `ROADMAP.md`.
+
+## ADR-018 — A withheld item is a count when the view claims to be complete, and erased when it does not
+
+**Decision:** A collection filtered by clearance follows exactly one of two disciplines, and which one is **a property of the claim the collection makes**, not of the caller, the object, or the author's taste.
+
+> **Disclose a count** when a reader would otherwise mistake a partial view for a complete one.
+> **Erase** when the collection makes no completeness claim.
+
+The discriminator is whether a reader will *act on what is shown as if it were the whole*. Where each existing surface lands:
+
+| Surface | The claim it makes | Discipline |
+|---|---|---|
+| `callosum.retrieve.answer` | "this is the answer to your question" | **count** |
+| `meridian.documents.version_chain` | "this is the history of this document" | **count** |
+| `meridian.packs` — a published board pack | "this is the material for this meeting" | **count** |
+| `meridian.documents.list_documents` | a browse view over everything filed | erase |
+| `meridian.documents.list_quarantine` | a browse view over refused extractions | erase |
+| `meridian.meetings.meeting_material` | "this is the material for this meeting" | **count** |
+
+**Alternatives:** (a) count everywhere, reading `rules.md` §2 literally; (b) erase everywhere, following `packs`' argument that a count is "the same disclosure, just quieter"; (c) leave it per-author, which is the status quo; (d) let the caller ask for the count via a query parameter.
+
+**Why:**
+
+- **(a) over-reads §2, and §2 has a scope its wording lost.** The count rule was written for **retrieval**. `src/callosum/retrieve.py:277` runs the same search twice — once with the clearance filter, once without — for the sole purpose of learning how many were withheld, and the prompt at `retrieve.py:501` instructs the model to say the answer may be incomplete. That cost is paid because an *answer* is a completeness claim: a founder reading "three sources say X" and acting on it is harmed by not knowing two more were withheld. A browse list makes no such claim, and adding a count to `/documents` would tell every investor exactly how much material the board holds above them — a standing measurement of the confidential corpus, refreshed on every page load, bought for no reader benefit.
+- **(b) is wrong for the reason it gives.** `packs._fetch_items_for_packs` argues that returning a count "is the same disclosure as returning a placeholder, just quieter". It is the opposite: quietness is precisely the difference. **Position holes are a covert channel** — a reader shown items at `[2, 3]` infers a hidden item *and* its rank, unbounded and unlabelled, and the system never acknowledged disclosing anything. A `withheld: 2` is bounded, deliberate, and auditable. Renumbering the positions is therefore **correct and stays**; what was missing was the loud version alongside it.
+- **(c) is how the contradiction arose.** Two competent authors reached opposite conclusions in the same phase because neither had a rule to apply, and each wrote a persuasive docstring defending the local choice. The next mixed-clearance collection would have been another coin flip. A rule nobody wrote down is not a rule.
+- **(d) makes disclosure a caller preference.** The count is either safe to emit or it is not; a parameter means the server has no position, and the first client to default it wrong sets the policy.
+
+**Consequences, stated rather than discovered later:**
+
+- **§2 of `rules.md` is amended under this date**, narrowing the count rule to the claim-bearing surfaces it was written for. It is amended rather than reinterpreted: a rule that quietly stops meaning what it says is the failure §4 already names.
+- **A pack's `withheld_items` reveals that a meeting has material a reader cannot see.** That is the intended disclosure, not a leak: a director preparing from a published pack must know the pack is not all of it. It is a count only — never a title, an id, a date, or a position.
+- **The rule is enforced by test, not by review.** `tests/test_p4_leak_sweep.py` fails any clearance-filtered collection that neither exposes a count nor is named on the erase list, so a new collection must make the choice explicitly. A rule with no failing case is documentation.
+- **"Completeness claim" is a judgement, and the table above is the record of it.** A future surface that is genuinely ambiguous belongs in this table by amendment, not resolved silently in a docstring.
+- A **draft** pack is still assembling and claims nothing; it carries the count anyway, because a status-dependent disclosure discipline is a rule nobody will apply correctly under time pressure.
+
+**Status:** Accepted (P4). Names an existing rule and corrects one surface; does **not** claim P4's exit gate.
