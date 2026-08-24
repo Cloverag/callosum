@@ -835,3 +835,167 @@ class TestReservedLevelFour:
         assert documents.ACCEPTED_SENSITIVITIES == (0, 1, 2, 3)
         reserved = set(documents.LADDER_LEVELS) - set(documents.ACCEPTED_SENSITIVITIES)
         assert reserved == {4}, "level 4 is reserved by decision (#143); widening it needs the policy first"
+
+# ---------------------------------------------------------------------------
+# The dedup existence oracle is accepted and audited (ADR-016, #147 finding 1)
+#
+# Submitting content already filed in the workspace returns 409 whether or not the
+# caller could read the existing document. That is a decision, not an oversight — the
+# obvious repair does not work, and the alternatives cost more than the leak. What the
+# decision requires is that the oracle leaves a trail.
+# ---------------------------------------------------------------------------
+
+
+def _audit_rows(ws: str, action: str) -> list[dict]:
+    with psycopg.connect(settings().postgres_dsn, row_factory=psycopg.rows.dict_row) as conn:
+        return conn.execute(
+            "SELECT * FROM audit_event WHERE workspace_id = %s AND action = %s"
+            " ORDER BY created_at",
+            (uuid.UUID(ws), action),
+        ).fetchall()
+
+
+class TestDedupRefusalIsAudited:
+    def test_a_hidden_collision_is_recorded_with_the_actor_and_the_hash(self, restore_client):
+        """The case the oracle is about: a caller probes content filed above them.
+
+        The 409 is unchanged — that is the accepted half of ADR-016. What must exist
+        afterwards is the row that makes the probe visible.
+        """
+        client, pid, ws = _signed_in("prober", INVESTOR)  # clearance 1
+        try:
+            body = "A confidential memo the observer already holds a copy of."
+            digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
+            _admin(
+                """
+                INSERT INTO document (id, title, doc_type, raw_text, content_hash,
+                                      sensitivity, workspace_id)
+                VALUES (%s, %s, 'memo', %s, %s, %s, %s)
+                """,
+                (uuid.uuid4(), "Filed Above You", body, digest, CONFIDENTIAL, uuid.UUID(ws)),
+            )
+
+            res = client.post(
+                "/api/documents/intake",
+                json={"title": "Same Bytes", "doc_type": "memo",
+                      "raw_text": body, "sensitivity": INVESTOR},
+            )
+            assert res.status_code == 409
+
+            rows = _audit_rows(ws, "intake_duplicate_refused")
+            assert len(rows) == 1
+            payload = rows[0]["payload"]
+            assert payload["content_hash"] == digest
+            assert payload["actor_could_read"] is False
+            assert payload["actor_clearance"] == INVESTOR
+            assert str(rows[0]["actor_principal_id"]) == pid
+        finally:
+            _cleanup([pid], [ws])
+
+    def test_a_visible_collision_is_recorded_too(self, restore_client):
+        """Not only the hidden ones — otherwise the row's existence is the disclosure.
+
+        If a refusal produced an audit row *only* when the actor could not read the
+        original, then anyone able to read the trail could infer exactly what the 409
+        was hiding. The distinction lives in the payload instead.
+        """
+        client, pid, ws = _signed_in("ordinary", CONFIDENTIAL)  # clearance 3
+        try:
+            body = "An ordinary duplicate the author can read perfectly well."
+            first = client.post(
+                "/api/documents/intake",
+                json={"title": "First", "doc_type": "memo",
+                      "raw_text": body, "sensitivity": PUBLIC},
+            )
+            assert first.status_code == 201
+
+            again = client.post(
+                "/api/documents/intake",
+                json={"title": "Again", "doc_type": "memo",
+                      "raw_text": body, "sensitivity": PUBLIC},
+            )
+            assert again.status_code == 409
+
+            rows = _audit_rows(ws, "intake_duplicate_refused")
+            assert len(rows) == 1
+            assert rows[0]["payload"]["actor_could_read"] is True
+        finally:
+            _cleanup([pid], [ws])
+
+    def test_the_refusal_still_discloses_nothing_beyond_the_409(self, restore_client):
+        """Accepting the oracle is not licence to widen it.
+
+        The caller learns that the content exists. They must not also learn the existing
+        document's title, id, or the level it sits at.
+        """
+        client, pid, ws = _signed_in("bounded", INVESTOR)
+        try:
+            body = "Bytes filed above the caller, with a distinctive title elsewhere."
+            secret_id = uuid.uuid4()
+            _admin(
+                """
+                INSERT INTO document (id, title, doc_type, raw_text, content_hash,
+                                      sensitivity, workspace_id)
+                VALUES (%s, %s, 'memo', %s, %s, %s, %s)
+                """,
+                (secret_id, "Project Nightingale Compensation", body,
+                 hashlib.sha256(body.encode("utf-8")).hexdigest(), CONFIDENTIAL, uuid.UUID(ws)),
+            )
+
+            res = client.post(
+                "/api/documents/intake",
+                json={"title": "Same Bytes", "doc_type": "memo",
+                      "raw_text": body, "sensitivity": INVESTOR},
+            )
+
+            assert res.status_code == 409
+            assert "Nightingale" not in res.text
+            assert str(secret_id) not in res.text
+            assert "sensitivity" not in res.text.lower()
+        finally:
+            _cleanup([pid], [ws])
+
+    def test_a_successful_intake_records_no_refusal(self, restore_client):
+        """Guards the obvious false positive: the row must mark a refusal, not any intake."""
+        client, pid, ws = _signed_in("clean", CONFIDENTIAL)
+        try:
+            res = client.post(
+                "/api/documents/intake",
+                json={"title": "Novel", "doc_type": "memo",
+                      "raw_text": "Content nothing else in this workspace has.",
+                      "sensitivity": PUBLIC},
+            )
+            assert res.status_code == 201
+            assert _audit_rows(ws, "intake_duplicate_refused") == []
+        finally:
+            _cleanup([pid], [ws])
+
+    def test_a_failed_audit_does_not_turn_the_refusal_into_a_500(self, restore_client):
+        """The trail is best-effort; the caller's answer is not.
+
+        Losing the audit row is bad and is logged. Converting a correct 409 into a 500
+        because the logging failed would be worse.
+        """
+        client, pid, ws = _signed_in("audit_down", CONFIDENTIAL)
+        try:
+            body = "Content submitted twice while auditing is broken."
+            assert client.post(
+                "/api/documents/intake",
+                json={"title": "First", "doc_type": "memo",
+                      "raw_text": body, "sensitivity": PUBLIC},
+            ).status_code == 201
+
+            with patch(
+                "meridian.audit.record_audit_event",
+                side_effect=RuntimeError("audit table unavailable"),
+            ):
+                again = client.post(
+                    "/api/documents/intake",
+                    json={"title": "Again", "doc_type": "memo",
+                          "raw_text": body, "sensitivity": PUBLIC},
+                )
+
+            assert again.status_code == 409
+            assert again.json()["error"]["code"] == "conflict"
+        finally:
+            _cleanup([pid], [ws])
