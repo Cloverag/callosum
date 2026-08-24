@@ -271,10 +271,24 @@ Tests bearing on this clause: `test_documents_api.py` **39**, `test_document_ver
 | Filter-before-retrieval: the clearance predicate is in the SQL `WHERE`, never applied in Python | `documents.py`, `packs.py`, `meetings.py` |
 | Every clearance-filtered collection **declares** count-or-erase, or the build fails | `tests/test_withheld_discipline.py` — **15 tests**, ungated |
 | No document-bearing endpoint returns confidential material to a low-clearance caller | `tests/test_p4_leak_sweep.py` — **6 tests**, sweeping **26 GET** and **101 write** operations |
+| **Both of the above run on every pull request**, not once for this packet | `.github/workflows/ci.yml:73-76` — `CALLOSUM_RUN_INTEGRATION: "1"` then `pytest -q` |
 | A withheld successor's id is **nulled per caller** — ids are `uuid5` over a public namespace, so an id is a content-confirmation oracle | ADR-017; `_DOCUMENT_SELECT` |
 | Existence oracles answer **404, not 403**, and a hidden document answers **identically** to an absent one | `test_document_versions.py`, `test_meeting_material.py` |
 | A server error string reaches a screen through **one function**; a source scan fails the build otherwise | `frontend/__tests__/error-text-discipline.test.ts` |
 | Quarantine rows (quote + proposed graph fact + document id) are clearance-filtered by INNER JOIN | `documents.list_quarantine` |
+
+Both test counts above are **collections**, derivable at the pin rather than taken on the
+record of a run — `pytest --collect-only -q tests/test_withheld_discipline.py` → 15, and the
+same with `CALLOSUM_RUN_INTEGRATION=1` for the sweep → 6. That `test_withheld_discipline`
+parametrizes over a list it discovers by introspection does not weaken this: at a fixed SHA
+the source is fixed, so the collection is too. It is §0's **788** and **294** that are run
+records, and only those.
+
+The CI row matters more than it looks. Criterion 3 is defended **entirely by detection**, so
+whether the detectors are a one-off measurement or a standing probe is the difference between
+"no leak was found on 2026-08-24" and "a leak introduced next week fails the build". Since
+#123 the gated tier runs in CI, which makes the second reading the true one — a reader who
+assumes a one-off is reading this evidence as weaker than it is.
 
 ### How the probes were chosen — stated because it is the judgement
 
