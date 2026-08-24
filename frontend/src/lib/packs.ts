@@ -112,6 +112,15 @@ export type BoardPack = {
   workspace_id: string;
   /** Only the items this caller may read, renumbered from 1. */
   items: BoardPackItem[];
+  /**
+   * How many items this caller may NOT read. A count and nothing else — never a title,
+   * an id, a date, or a position (ADR-018).
+   *
+   * A published pack claims to be *the material for this meeting*, so a director who
+   * prepares from one that silently dropped three items walks in believing they are
+   * prepared. Render it; do not treat a non-zero value as an error state.
+   */
+  withheld_items: number;
 };
 
 // --- Derived helpers -------------------------------------------------------
