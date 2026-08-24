@@ -91,6 +91,12 @@ transitive call from its handler (≤3 deep) reaches `audit.record_audit_event`.
 reproduced below so this figure is derived rather than asserted; §4's method list records
 why a hand-written list is not trusted in this repository.
 
+**The depth cutoff is not load-bearing**, which is the obvious question to ask of a walk that
+has one. Re-running at depths 1, 2, 3, 5, 8 and 12 gives **34 unaudited at every one** — the
+figure is stable from a single hop, because each handler delegates to one domain function and
+that function either audits or does not. No route in this product audits at a distance. A
+reader who distrusts the cutoff can therefore discard it entirely and get the same number.
+
 | `meridian/api/` module | unaudited / mutating |
 |---|---|
 | `packs.py` | **7 / 7** |
@@ -429,7 +435,7 @@ worth reading adversarially.
     separate settings class for the web application, and it is not the one being described.
 
     CI passes because its own service block publishes the database on **both** ports
-    (`ci.yml:34-36`, `5432:5432` and `5433:5432`) while the default DSN points at `5433`,
+    (`ci.yml:36-37`, `5432:5432` and `5433:5432`) while the default DSN points at `5433`,
     so the discarded variable and the default happen to reach the same database.
     (`docker-compose.yml:10` publishes only `5433`; the dual mapping is CI's alone.)
 
