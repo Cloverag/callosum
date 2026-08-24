@@ -38,6 +38,7 @@
  */
 
 import { ApiError } from "@/lib/http";
+import { serverMessage } from "@/lib/error-text";
 
 /** Spec states 4 and 5, plus the ordinary case. */
 export type FieldState<T> =
@@ -135,7 +136,7 @@ export function resourceStateFromError(error: ApiError): ResourceState | null {
     return { status: "stale", expected: versions?.expected ?? null, current: versions?.current ?? null };
   }
   if (error.isUnretryableConflict) {
-    return { status: "locked", reason: error.message };
+    return { status: "locked", reason: serverMessage(error) };
   }
   return null;
 }

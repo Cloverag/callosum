@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { FieldValue } from "@/components/ui/field-value";
 import { withheld as withheldState } from "@/lib/field-state";
 import { ApiError } from "@/lib/http";
+import { loadFailedText } from "@/lib/error-text";
 import { cn } from "@/lib/utils";
 import { documentsApi, SENSITIVITY_LABEL, type Document, type DocumentChain } from "@/lib/documents";
 
@@ -54,7 +55,7 @@ export function VersionChain({ document, className }: { document: Document; clas
   if (error) {
     return (
       <p className={cn("text-sm text-muted-foreground", className)} role="status">
-        The revision history could not be loaded. {error.message}
+        {loadFailedText("The revision history", error)}
       </p>
     );
   }

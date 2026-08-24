@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { FieldValue } from "@/components/ui/field-value";
 import { withheld as withheldState } from "@/lib/field-state";
 import { ApiError } from "@/lib/http";
+import { loadFailedText } from "@/lib/error-text";
 import { cn } from "@/lib/utils";
 import { SENSITIVITY_LABEL } from "@/lib/documents";
 import { meetingsApi, type MeetingMaterial } from "@/lib/meetings";
@@ -61,7 +62,7 @@ export function MaterialList({ meetingId, className }: { meetingId: string; clas
   if (error) {
     return (
       <p className={cn("text-sm text-muted-foreground", className)} role="status">
-        The material for this meeting could not be loaded. {error.message}
+        {loadFailedText("The material for this meeting", error)}
       </p>
     );
   }
