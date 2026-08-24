@@ -200,3 +200,65 @@ in keeping with the standing rule that structure follows measurement.
 **Why:** Minutes document formal board conclusions in high-level prose. A single `sensitivity` level for an entire minutes body would create a coarse classification trap — hiding routine resolutions (e.g. approving bank signatories) from an investor-clearance reader just because one paragraph mentions a sensitive topic. Sensitive raw source materials remain strictly clearance-filtered in `board_pack_item`.
 **Status:** Accepted (Option 1, resolved in issue #49).
 
+
+## ADR-016 — The dedup existence oracle is accepted, and made detectable
+**Decision:** `intake_document`'s deduplication pre-check stays clearance-blind. A caller
+who submits content already filed in their workspace receives `409` whether or not they
+could have read the existing document. The oracle is **accepted** rather than closed, and
+**every** duplicate refusal — hidden or not — is recorded as an
+`intake_duplicate_refused` audit event.
+
+**The leak, stated plainly.** Dedup is content-addressed and per-workspace
+(`uq_document_workspace_content_hash`, migration `0022`). Submitting bytes therefore
+answers the question "does this workspace already hold this?" for any caller at any
+clearance. P4's exit criterion names *hints*, and this is one: a clearance-1 observer who
+obtains a leaked memo can paste it into intake and have the board's possession of it
+confirmed — corroborating the leak without reading anything they did not already have.
+
+**Alternatives, and why each was rejected:**
+
+- **Add `AND sensitivity <= %s` to the pre-check.** Does not work. The pre-check then
+  passes, the INSERT hits the unique index, and the `UniqueViolation` handler raises the
+  same `DuplicateDocumentError` one step later. The oracle is a property of
+  content-addressed dedup, not of where the predicate sits.
+- **Answer as if the intake succeeded.** Closes the oracle by lying. Returning `201` for a
+  document that was not filed reports an event that did not happen, which `rules.md` §2
+  forbids, and any client trusting the `201` is corrupted. Returning the *existing*
+  document's id would disclose more than the `409` did.
+- **File a second row at the caller's level.** Requires dropping the per-workspace hash
+  uniqueness `0022` just established, and it is **incoherent with the id scheme**: chunk
+  and document ids derive from `uuid5(namespace, workspace:content_hash[:ordinal])`, so
+  two rows with the same content in the same workspace produce *identical* ids and would
+  `MERGE` onto the same Neo4j bridge nodes. Verified, not assumed. Making this option work
+  means redesigning the derivation that gives intake its replay-safety.
+- **Accept silently.** Defensible on impact — the caller must already possess the exact
+  bytes — but it leaves a known disclosure undocumented, which is the state this ADR
+  exists to end.
+
+**Why accept-and-detect.** The disclosure is real but bounded: it is confirmation, not
+content, and it requires the caller to hold the exact bytes already. Every way of removing
+it costs more than it saves — a lie on the wire, or a schema redesign that breaks
+replay-safety. What was missing was not a fix but a decision, and a way to notice the
+oracle being used. This product already has an append-only audit trail; "detectable rather
+than prevented" is a posture it can actually support.
+
+**Every refusal is audited, not only the hidden ones.** If a row appeared only when the
+collision was above the actor's clearance, the *presence* of the row would be the
+disclosure, and the audit trail would become a second copy of the oracle for whoever can
+read it. The payload carries `actor_could_read` instead. The race path — where the unique
+index rather than the pre-check produces the `409` — is audited too, because the caller
+learns the identical fact there.
+
+**Depends on D7.** `aggregate_id` is the existing document's id: the correct aggregate, and
+also the identifier the oracle would disclose. There is no audit read endpoint today. If
+one is built, it must be clearance-aware, or it hands back exactly what the refusal
+withheld.
+
+**Cost, stated rather than discovered later.** Intake now writes on a refusal path, so a
+duplicate submission costs one extra round trip and a row. A workspace whose users
+frequently resubmit will accumulate audit rows that record no state change.
+
+**Status:** Accepted (P4, resolved in issue #147 finding 1). Revisit if an audit read
+endpoint is specified (D7), or if intake ever accepts content the submitter does not
+already hold — a URL fetch or an integration pull would remove the "already has the bytes"
+bound this decision rests on.
