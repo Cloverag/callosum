@@ -3,8 +3,15 @@ name: CI
 on:
   push:
     branches: [ master ]
+  # NO `branches:` filter here, deliberately. With `branches: [ master ]` a pull
+  # request whose BASE is not master never triggers, so a stacked PR gets no checks
+  # at all -- and GitHub renders "no checks reported", which reads as "nothing to
+  # run" rather than "never asked to run". #154, #155 and #156 sat green-looking and
+  # entirely unverified because of this.
+  #
+  # `push` stays scoped to master on purpose: unfiltered, every branch push would
+  # duplicate the run the pull_request event already does.
   pull_request:
-    branches: [ master ]
 
 jobs:
   backend-ci:
