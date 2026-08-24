@@ -131,8 +131,43 @@ describe("when the server refuses the filing", () => {
     fireEvent.change(select, { target: { value: "1" } });
     fireEvent.click(screen.getByRole("button", { name: /^ingest$/i }));
 
-    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/already in memory/i));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/matches an existing document/i));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("discloses nothing about the document it matched", async () => {
+    /**
+     * The assertion that binds (#147).
+     *
+     * The dialog used to render `api.message` verbatim, so whatever the API put in a
+     * 409 reached the screen. That was safe only because the message happened to
+     * contain nothing — it is not a property anything enforced, and a server-side
+     * change would have leaked through silently.
+     *
+     * Here the 409 carries a title, an author and a sensitivity. None may appear.
+     * A low-clearance member submitting leaked content must not learn what the board
+     * calls a confidential document merely because dedup fired.
+     */
+    api.intake.mockRejectedValue(
+      new ApiError(
+        409,
+        "conflict",
+        "Duplicate of 'Project Halberd — Termination Terms' filed by r.malhotra at sensitivity 3",
+      ),
+    );
+
+    const select = await openIntake();
+    fireEvent.change(screen.getByLabelText(/^title$/i), { target: { value: "Leaked Memo" } });
+    fireEvent.change(screen.getByLabelText(/source text/i), { target: { value: "Body." } });
+    fireEvent.change(select, { target: { value: "1" } });
+    fireEvent.click(screen.getByRole("button", { name: /^ingest$/i }));
+
+    const status = await screen.findByRole("status");
+    expect(status).toHaveTextContent(/matches an existing document/i);
+
+    for (const leak of ["Halberd", "Termination", "r.malhotra", "sensitivity 3"]) {
+      expect(document.body.textContent).not.toContain(leak);
+    }
   });
 });
 

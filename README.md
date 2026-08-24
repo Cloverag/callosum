@@ -142,17 +142,17 @@ intake has shipped without one.
 | | |
 |---|---|
 | Backend tests | **731** passing, gated suite |
-| Frontend tests | **272** passing, 19 suites |
+| Frontend tests | **273** passing, 19 suites |
 | API | **70 operations** across 53 paths, 12 routers |
 | Migrations | 23, head `0023_audit_intake_refused`, forward and reverse tested |
 | Architecture decisions | 16 ADRs |
-| Commits | 464 (`git rev-list --count cf31a89`) |
+| Commits | 467 (`git rev-list --count 0c54ad2`) |
 
-Measured on `cf31a89` (2026-08-23), not carried forward. Both test figures come from a
-**real run** rather than a collection — CI run 32600873617, the gated suite against real
-Postgres and Neo4j, on `0e6c5ed`; `cf31a89` differs from it by a documentation commit
-only, so they hold here. The API, migration, ADR and commit figures all derive at
-`cf31a89`.
+Measured on `0c54ad2` (2026-08-24), not carried forward. Both test figures are a **real
+run** on that commit — the gated suite against local Postgres 16 and Neo4j, and Jest with
+`tsc --noEmit` clean. The API, migration, ADR and commit figures all derive at `0c54ad2`;
+the parenthetical names the pin rather than a moving ref, so the command reproduces the
+figure (see #159).
 
 **P3 is frozen, not accepted** — of its three exit criteria one is met, one is partial and
 one is not met, because the accessibility and error-state checkpoints were deliberately
@@ -259,7 +259,7 @@ routes. Set `MERIDIAN_API_ORIGIN` if the API is not on `:8000`.
 docker compose up -d && docker compose ps               # all three healthy FIRST
 .venv/bin/callosum eval-mechanism                        # deterministic gate, no LLM
 CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 725 tests, real stores
-cd frontend && npx jest && npm run build                 # 272 tests, 19 suites
+cd frontend && npx jest && npm run build                 # 273 tests, 19 suites
 ```
 
 `CALLOSUM_RUN_INTEGRATION=1` runs against real Postgres and Neo4j, so the compose stack

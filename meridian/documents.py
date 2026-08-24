@@ -294,14 +294,38 @@ def intake_document(
 
     # Pre-check deduplication in the workspace.
     #
-    # NO clearance predicate here, and that is a decision rather than an omission —
-    # ADR-016. Dedup is content-addressed and per-workspace, so a caller who submits
-    # bytes already filed above their clearance learns that the workspace holds them.
-    # Adding `AND sensitivity <= %s` does not close that: the INSERT then hits
-    # `uq_document_workspace_content_hash` and raises the same error one step later.
-    # The oracle is a property of content-addressed dedup, not of where the predicate
-    # sits, and the alternatives are worse (see the ADR). It is therefore accepted and
-    # made *visible* instead: every refusal is audited, so probing leaves a trail.
+    # **There is deliberately no clearance predicate here, and it is not an oversight
+    # (#147, ADR-016).** A caller at any clearance who submits content already filed in
+    # this workspace is told so, even when the existing document sits above their
+    # clearance.
+    #
+    # That is a one-bit existence hint, and it was accepted rather than closed because
+    # the alternatives are worse:
+    #
+    #   * Adding `AND sensitivity <= %s` does not close it. The pre-check then passes,
+    #     the INSERT hits `uq_document_workspace_content_hash`, and the handler below
+    #     raises the identical `DuplicateDocumentError` — after burning an embedding
+    #     round-trip and a Neo4j write on the way. The oracle is a property of
+    #     content-addressed dedup, not of where the predicate sits.
+    #   * Answering as though the ingest succeeded returns a 201 for a document that
+    #     does not exist, which every client that trusts the response would display.
+    #   * Filing a second row at the caller's level means dropping the per-workspace
+    #     hash uniqueness `0022` established, and the same text in the corpus twice.
+    #
+    # The disclosure is bounded by what triggering it costs: the caller must submit the
+    # exact bytes, so they already hold the entire content. They learn one bit about
+    # their own workspace and nothing about the document.
+    #
+    # **Accepted is not the same as ignored: it is made visible instead.** Every
+    # duplicate refusal is audited — including the ones the caller could have read, so
+    # that the presence of an audit row is not itself the disclosure (ADR-016). Probing
+    # this oracle therefore leaves a trail, which is the control that replaces the
+    # closure we could not have.
+    #
+    # **The error must never name the matched document.** `existing["id"]` is in scope
+    # here and is deliberately discarded — returning it would turn a content-existence
+    # hint into a title disclosure, which is the first item in P4's exit criterion.
+    # Cross-workspace is prevented twice over, by the predicate below and by RLS.
     with store.pg(str(ws_uuid)) as check_conn:
         existing = check_conn.execute(
             "SELECT id, sensitivity FROM document WHERE workspace_id = %s AND content_hash = %s",
