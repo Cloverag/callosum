@@ -37,6 +37,7 @@ doing real work rather than being decorative.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import uuid
 
@@ -125,12 +126,35 @@ def restore_client():
     auth._client = original
 
 
+def _product_routers():
+    """Every router the product exposes, discovered rather than listed.
+
+    The sweep walks `app.openapi()`, so the schema it sees is only as complete as the
+    app it builds — and this function used to be a hand-written list of three routers.
+    That is the same defect the walk exists to avoid, one level up: a new router would
+    join the product and never join the sweep, and every assertion here would keep
+    passing while covering less. Enumerated from the package so it cannot drift.
+    """
+    import importlib
+    import pkgutil
+
+    from meridian import api as api_pkg
+
+    found = []
+    for info in pkgutil.iter_modules(api_pkg.__path__):
+        module = importlib.import_module(f"meridian.api.{info.name}")
+        router = getattr(module, "router", None)
+        if router is not None and info.name != "auth":
+            found.append(router)
+    return found
+
+
 def _app(subject: str) -> FastAPI:
     application = FastAPI()
     application.add_middleware(SessionMiddleware, secret_key="test-secret-not-for-use")
     application.include_router(auth.router)
-    application.include_router(documents_api.router)
-    application.include_router(packs_api.router)
+    for router in _product_routers():
+        application.include_router(router)
     errors.install_exception_handlers(application)
     auth._client = lambda request: _StubClient({"sub": subject, "iss": ISSUER})  # type: ignore[assignment]
     return application
@@ -185,11 +209,23 @@ def scene(restore_client):
     })
     assert revision.status_code == 201, revision.text
 
+    # A meeting holding BOTH documents as material. Without it the material routes are
+    # reachable in the schema but answer 404 for want of a real meeting, which would
+    # sweep the shape of the endpoint rather than the endpoint.
+    meeting = high.post("/api/meetings", json={"title": "Sweep meeting"})
+    assert meeting.status_code == 201, meeting.text
+    meeting_id = meeting.json()["id"]
+    for doc_id in (secret_doc["id"], public_doc["id"]):
+        assigned = high.post(f"/api/meetings/{meeting_id}/material", json={"document_id": doc_id})
+        assert assigned.status_code == 201, assigned.text
+
     yield {
-        "ws": ws, "low": low, "high": high,
+        "ws": ws, "low": low, "high": high, "meeting": meeting_id,
         "secret": secret_doc, "public": public_doc, "revision": revision.json(),
     }
 
+    _admin("DELETE FROM meeting_document WHERE workspace_id = %s", (ws,))
+    _admin("DELETE FROM meeting WHERE workspace_id = %s", (ws,))
     _admin("DELETE FROM audit_event WHERE workspace_id = %s", (ws,))
     _admin("DELETE FROM extraction_failure WHERE workspace_id = %s", (ws,))
     _admin("DELETE FROM proposed_change WHERE workspace_id = %s", (ws,))
@@ -224,6 +260,97 @@ def _reachable_gets(scene) -> list[str]:
                 path.replace("{document_id}", ident).replace("{pack_id}", ident).replace("{meeting_id}", ident)
             )
     return sorted(set(urls))
+
+
+def _fill(path: str, scene) -> list[str]:
+    """Every substitution of a templated path from the ids under test."""
+    if "{" not in path:
+        return [path]
+    ids = (scene["secret"]["id"], scene["public"]["id"], scene["revision"]["id"])
+    out = []
+    for ident in ids:
+        u = (path.replace("{document_id}", ident).replace("{pack_id}", ident)
+                 .replace("{meeting_id}", scene["meeting"]).replace("{minutes_id}", ident)
+                 .replace("{decision_id}", ident).replace("{resolution_id}", ident)
+                 .replace("{commitment_id}", ident).replace("{agenda_item_id}", ident)
+                 .replace("{member_id}", ident).replace("{board_member_id}", ident)
+                 .replace("{conflict_id}", ident).replace("{pack_item_id}", ident))
+        if "{" not in u:
+            out.append(u)
+    return out
+
+
+def _example(schema: dict, spec: dict, scene, depth: int = 0):
+    """A minimal value satisfying a JSON schema, resolving $ref against the spec.
+
+    Synthesised from the schema rather than hand-written per endpoint, for the reason
+    the GET walk is schema-driven: a body hand-written here would go stale the moment a
+    field is added, and the endpoint would quietly start failing validation instead of
+    reaching the domain — passing the sweep by never getting far enough to leak.
+    """
+    if depth > 4:
+        return None
+    if "$ref" in schema:
+        name = schema["$ref"].rsplit("/", 1)[-1]
+        return _example(spec["components"]["schemas"].get(name, {}), spec, scene, depth + 1)
+    for key in ("anyOf", "oneOf", "allOf"):
+        if key in schema:
+            return _example(schema[key][0], spec, scene, depth + 1)
+    kind = schema.get("type")
+    if kind == "object":
+        props = schema.get("properties", {})
+        return {
+            name: _example(sub, spec, scene, depth + 1)
+            for name, sub in props.items()
+            if name in schema.get("required", list(props))
+        }
+    if kind == "array":
+        return []
+    if kind == "integer":
+        return 1
+    if kind == "number":
+        return 1.0
+    if kind == "boolean":
+        return True
+    if schema.get("format") == "uuid":
+        return scene["secret"]["id"]
+    if "enum" in schema:
+        return schema["enum"][0]
+    # A string with no format. The confidential document id is the most useful value a
+    # sweep can put here: if an endpoint echoes an id it was handed back into a field it
+    # should not, that is the same disclosure as inventing one.
+    return scene["secret"]["id"]
+
+
+def _reachable_writes(scene) -> list[tuple[str, str, object]]:
+    """Every POST / PATCH / DELETE in the schema, as (method, url, body).
+
+    `test_no_get_endpoint_leaks_confidential_material` walked `get` only, and that was
+    the defect: the richest domain errors in this product are on writes.
+    `supersede_document` alone raises four, and `assign_material` answers 404 for a
+    document the caller may not read — an answer whose whole job is to say nothing, and
+    which nothing was checking.
+
+    Bodies are synthesised from `requestBody`, so an endpoint that gains a required
+    field stays reachable instead of silently falling back to a 422 that never touches
+    the domain.
+    """
+    spec = scene["low"].app.openapi()
+    calls: list[tuple[str, str, object]] = []
+    for path, item in spec["paths"].items():
+        if path.startswith("/auth"):
+            continue
+        for method in ("post", "patch", "delete"):
+            op = item.get(method)
+            if op is None:
+                continue
+            body = None
+            content = (op.get("requestBody") or {}).get("content", {})
+            if "application/json" in content:
+                body = _example(content["application/json"].get("schema", {}), spec, scene)
+            for url in _fill(path, scene):
+                calls.append((method, url, body))
+    return sorted(set((m, u, json.dumps(b, sort_keys=True)) for m, u, b in calls))
 
 
 def _needles(scene) -> dict[str, str]:
@@ -272,6 +399,53 @@ def test_no_get_endpoint_leaks_confidential_material(scene):
 
     assert checked >= 4, f"the sweep reached only {checked} endpoints; it is not testing what it claims"
     assert leaks == [], "P4 exit criterion violated:\n  " + "\n  ".join(leaks)
+
+
+def test_no_write_endpoint_leaks_confidential_material(scene):
+    """The other half of the surface, and the half that was never swept.
+
+    A write refuses more often than a read succeeds, and a refusal is where a message
+    gets written by hand — `errors.py:170` passes any domain exception's `str()` to the
+    client unless it has a fixed detail. So the strings most likely to name something
+    are on exactly the paths `_reachable_gets` could not see.
+
+    Bodies are synthesised, so some calls answer 422 without reaching the domain. Those
+    are swept anyway and cost nothing: a validation error that echoes a confidential id
+    back is the same leak arriving through a different door.
+    """
+    leaks: list[str] = []
+    reached = 0
+
+    for method, url, raw in _reachable_writes(scene):
+        body = json.loads(raw)
+        response = getattr(scene["low"], method)(url, json=body) if body is not None else getattr(scene["low"], method)(url)
+        reached += 1
+        text = response.text
+        for label, needle in _needles(scene).items():
+            # An id the caller put IN the request is not a disclosure coming back out.
+            if needle in url or (body is not None and needle in raw):
+                continue
+            if needle in text:
+                leaks.append(f"{method.upper()} {url} ({response.status_code}) leaked {label}")
+
+    assert reached >= 20, f"the write sweep reached only {reached} operations; it is not testing what it claims"
+    assert leaks == [], "P4 exit criterion violated on a write path:\n  " + "\n  ".join(leaks)
+
+
+def test_the_write_sweep_reaches_the_endpoints_that_refuse_hardest(scene):
+    """A sweep that never gets past validation proves nothing about the domain.
+
+    Pinned by name because these three are the reason the write sweep exists: each
+    raises a domain error whose message is written by hand and returned verbatim.
+    Synthesised bodies drift when a schema changes, and the failure is silent — every
+    call 422s, the sweep stays green, and the domain is never reached.
+    """
+    urls = {f"{m.upper()} {u}" for m, u, _ in _reachable_writes(scene)}
+    secret = scene["secret"]["id"]
+    meeting = scene["meeting"]
+    assert f"POST /api/documents/{secret}/supersede" in urls
+    assert f"POST /api/meetings/{meeting}/material" in urls
+    assert f"DELETE /api/meetings/{meeting}/material/{secret}" in urls
 
 
 def test_the_sweep_would_fail_if_something_leaked(scene):
