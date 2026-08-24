@@ -101,6 +101,17 @@ _EXPLICIT: tuple[tuple[type[BaseException], int, str, str | None], ...] = (
     # the caller's own clearance, which is theirs to know, and without it a client
     # cannot tell them to pick a lower level rather than request access.
     (documents.SensitivityAboveClearanceError, HTTPStatus.FORBIDDEN, FORBIDDEN, None),
+    # 409, and it MUST be explicit. `DocumentAlreadySupersededError` carries none of the
+    # suffixes pass 2 recognises — no `Stale`, no `Locked` — so without this entry it
+    # would fall through to pass 3's 422 and tell the client to fix a request that was
+    # correct. The state refused it; the caller's move is to re-read the chain, not to
+    # edit their input.
+    (documents.DocumentAlreadySupersededError, HTTPStatus.CONFLICT, CONFLICT, None),
+    # 403 with the detail intact, for the same reason as the clearance ceiling above: the
+    # message names the level being revised, which the caller can already read (they were
+    # permitted to read the document to get here), and without it a client cannot tell
+    # them to file higher rather than request access.
+    (documents.SensitivityDowngradeError, HTTPStatus.FORBIDDEN, FORBIDDEN, None),
     # Infrastructure, not domain. A provider being down or a graph write failing is not
     # the caller's mistake, so 503 rather than a 4xx — see `test_api_errors.py`, which
     # asserts no *domain* exception falls through to a 500. These two are exempt by

@@ -259,6 +259,13 @@ class TestReads:
                 "sensitivity",
                 "authored_at",
                 "ingested_at",
+                # Added by 0024_document_version. An exact-set assertion is the point of
+                # this test: widening the document response is always a deliberate act,
+                # and this line is where it gets acknowledged. `superseded_by_id` is
+                # redacted per caller when the successor is above their clearance — see
+                # `tests/test_document_versions.py`.
+                "revision",
+                "superseded_by_id",
             }
             assert "must never reach a browser" not in client.get("/api/documents").text
         finally:

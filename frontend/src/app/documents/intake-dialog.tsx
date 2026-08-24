@@ -64,15 +64,36 @@ const control =
  *    A refusal is never retried at a lower level. Silently re-filing as `investor`
  *    what someone marked `confidential` would tell them their document is protected at
  *    a level it is not — the same reason the API refuses instead of clamping.
+ *
+ * ---------------------------------------------------------------------------
+ * SUPERSEDE MODE (`supersedes`)
+ * ---------------------------------------------------------------------------
+ * The same form, posting to `/supersede` instead of `/intake`. One dialog rather than
+ * two, because a revision IS an intake plus a link — every field, every validation and
+ * every refusal is identical, and a second copy of this form would be a second place for
+ * the classification rules above to drift.
+ *
+ * The one difference is the sensitivity floor: a revision may raise a document's
+ * classification but never lower it (`SensitivityDowngradeError`), so the levels below
+ * the predecessor's are not offered. **That is a convenience, not the rule.** The server
+ * refuses a downgrade whether or not this list was filtered, and the 403 it answers with
+ * names the floor — surfaced verbatim, like the clearance refusal.
+ *
+ * Nothing is pre-selected in supersede mode either, including the predecessor's own
+ * level. Carrying it over would look helpful and would quietly re-file at a
+ * classification nobody re-considered, which is decision 1 above with an extra step.
  */
 export function IntakeDialog({
   open,
   onClose,
   onIngested,
+  supersedes,
 }: {
   open: boolean;
   onClose: () => void;
-  onIngested: (doc: Document) => void;
+  onIngested: (doc: Document, supersededId: string | null) => void;
+  /** When set, the dialog files a revision of this document instead of a new one. */
+  supersedes?: Document | null;
 }) {
   const [title, setTitle] = useState("");
   const [docType, setDocType] = useState<DocType>("memo");
@@ -92,6 +113,12 @@ export function IntakeDialog({
 
   const ready = title.trim() !== "" && rawText.trim() !== "" && sensitivity !== null;
 
+  // A revision may raise a document's classification but never lower it. Filtering here
+  // spares the user a refusal they cannot act on; the server enforces it regardless.
+  const offered = supersedes
+    ? INTAKE_SENSITIVITIES.filter((level) => level >= supersedes.sensitivity)
+    : INTAKE_SENSITIVITIES;
+
   function reset() {
     setTitle("");
     setDocType("memo");
@@ -108,14 +135,17 @@ export function IntakeDialog({
     setError(null);
     setIsDuplicate(false);
     try {
-      const doc = await documentsApi.intake({
+      const req = {
         title: title.trim(),
         doc_type: docType,
         raw_text: rawText,
         sensitivity,
         source_uri: sourceUri.trim() || null,
-      });
-      onIngested(doc);
+      };
+      const doc = supersedes
+        ? await documentsApi.supersede(supersedes.id, req)
+        : await documentsApi.intake(req);
+      onIngested(doc, supersedes?.id ?? null);
       reset();
       onClose();
     } catch (err) {
@@ -135,15 +165,19 @@ export function IntakeDialog({
     <Dialog
       open={open}
       onClose={onClose}
-      title="Ingest a document"
-      description="Paste the source text. Meridian chunks it, verifies every extracted fact against a quote in it, and files the rest for review."
+      title={supersedes ? "File a revision" : "Ingest a document"}
+      description={
+        supersedes
+          ? `A correction to “${supersedes.title}”. The original is never edited — it stays in memory, marked as superseded and linked to this revision.`
+          : "Paste the source text. Meridian chunks it, verifies every extracted fact against a quote in it, and files the rest for review."
+      }
       footer={
         <div className="flex items-center justify-end gap-3">
           <Button variant="secondary" onClick={onClose} disabled={submitting}>
             Cancel
           </Button>
           <Button onClick={submit} disabled={!ready} loading={submitting}>
-            Ingest
+            {supersedes ? "File revision" : "Ingest"}
           </Button>
         </div>
       }
@@ -177,12 +211,18 @@ export function IntakeDialog({
               {/* Deliberately empty and deliberately not disabled-and-hidden: the
                   reader must see that nothing has been chosen for them. */}
               <option value="">Choose a classification…</option>
-              {INTAKE_SENSITIVITIES.map((level) => (
+              {offered.map((level) => (
                 <option key={level} value={level}>
                   {level} · {SENSITIVITY_LABEL[level]} — {SENSITIVITY_HINT[level]}
                 </option>
               ))}
             </select>
+            {supersedes && (
+              <p className="text-xs text-subtle-foreground">
+                A revision may raise the classification but never lower it. The original
+                is {SENSITIVITY_LABEL[supersedes.sensitivity]}.
+              </p>
+            )}
           </div>
         </div>
 

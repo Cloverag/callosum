@@ -262,3 +262,27 @@ frequently resubmit will accumulate audit rows that record no state change.
 endpoint is specified (D7), or if intake ever accepts content the submitter does not
 already hold — a URL fetch or an integration pull would remove the "already has the bytes"
 bound this decision rests on.
+> **ADR-016 is reserved, not missing.** It is claimed by PR #153 (the dedup existence
+> oracle), which was open when this record was written. Taking the number would have
+> collided on merge; leaving a gap is the cheaper of the two, and this note is here so a
+> reader does not go looking for a record that was never lost.
+
+## ADR-017 — A document is corrected by supersession, and a revision may never lower sensitivity
+**Decision:** `document` gains `superseded_by_id` and `revision` (`0024_document_version`). A correction is a **new document** linked to the one it replaces; the predecessor's text, chunks and extracted graph facts are never edited. `supersede_document` refuses a revision below its predecessor's sensitivity, refuses a second successor, and answers 404 — not 403 — for a predecessor above the caller's clearance. `superseded_by_id` is **nulled per caller** when the successor is above their clearance, and `version_chain` discloses withheld revisions as a **count** with `current_id: null` when the current revision is one of them.
+
+**Alternatives:** (a) edit the document in place and bump a version counter; (b) allow any sensitivity on a revision and rely on review; (c) return the raw `superseded_by_id` and let the 404 on lookup protect it; (d) fall back to the newest *readable* revision as `current_id`; (e) filter the chain walk by clearance in SQL.
+
+**Why:**
+- **(a) is disqualified by §2.** A board that can rewrite its own record has no record, and the graph facts extracted from the old text would silently stop matching the document they cite. Every peer aggregate — `decision`, `board_pack`, `minutes` — already supersedes rather than mutates; `document` was the outlier, and it is the object the whole graph derives from.
+- **(b) is the security core.** A corrected copy of a confidential document filed as public republishes its lineage one clearance rung down, and content-hash dedup cannot catch it because a correction is by definition different bytes. Raising sensitivity stays permitted: it withdraws access rather than granting it. The refusal is a refusal, never a clamp, for the reason recorded on `SensitivityAboveClearanceError` (#143).
+- **(c) fails on a property specific to this system.** Document ids are not opaque: `_document_id` is `uuid5(_INTAKE_NAMESPACE, f"{workspace_id}:{content_hash}")` and the namespace is a fixed public constant in `meridian/documents.py`. A holder of candidate plaintext can derive the id and compare it, so returning one for an unreadable document is a **content-confirmation oracle**, not a dangling handle — the leaked-memo scenario from #147 without needing intake. Found by a test asserting against the raw response body, not by review.
+- **(d) inverts the feature.** Marking the newest readable revision as current would badge a document the board has already corrected as the one in force, with no signal to the reader. `null` is worse news and a true statement.
+- **(e) cannot count what it never selected**, and would break the walk at the first withheld link — reporting the fragment before it as the whole history, telling a reader a chain ends where their clearance does. The walk therefore reads the chain unfiltered and redacts on the way out.
+
+**Consequences, stated rather than discovered later:**
+- Because a revision may never *lower* sensitivity, chain sensitivities are monotonically non-decreasing, so readable revisions are always a **prefix** and withheld ones a **suffix** — visible revision numbers have no gaps and disclose no position. That is a consequence of the downgrade rule, not an assumption in the walk, and `test_readable_revisions_are_a_prefix_so_the_numbering_has_no_gaps` fails if the rule is relaxed, reopening the disclosure question deliberately.
+- The redaction has **two implementations** — SQL (`_DOCUMENT_SELECT`) for list/get, in-memory for the chain walk, which needs the raw pointer to traverse on. A real cost, accepted because the alternative is a second read per revision; both are guarded by raw-body assertions so a divergence fails rather than drifts.
+- There is **no `expected_version`**. `document` carries no version counter: its mutable state is one nullable pointer, so "already superseded" *is* the concurrency conflict and answers 409. The link is written with `AND superseded_by_id IS NULL` in the `WHERE` clause, with `uq_document_superseded_by` catching the same race from the other side.
+- Supersession is **audited with both sensitivities**, so "was anything declassified?" is answerable from the append-only trail without joining back to rows that may have moved since.
+
+**Status:** Accepted (P4, `0024_document_version`). This is the *implementation* of one P4 work item and does **not** claim P4's exit gate — see `ROADMAP.md`.

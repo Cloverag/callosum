@@ -21,5 +21,6 @@
   "0020_meeting_importance": "85fd3d689c4fbef822da33de3fc1578e1684ee199125e88f36b1a1cfb4765e7b",
   "0021_fix_composite_fk_cascades": "e695f28f8da9bd00734362f4a80513337e42f8f5568a820bdda125f81c88f480",
   "0022_doc_content_hash_uq": "9762862e07002e66670baa424967080c2b6d2768eec6e24ee3226c81a640671b",
-  "0023_audit_intake_refused": "caeb01cd750d9bacda6b03cd731075f272c4427b502c70b8a169e6462ccb2368"
+  "0023_audit_intake_refused": "caeb01cd750d9bacda6b03cd731075f272c4427b502c70b8a169e6462ccb2368",
+  "0024_document_version": "6469143b17a6fca1248b0b5c32d7488b7d71da6a474ef753d2d6d39b6f2d15af"
 }
