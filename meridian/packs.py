@@ -101,9 +101,26 @@ class BoardPack:
     updated_at: datetime
     workspace_id: str
     items: list[BoardPackItem]
+    #: Items in this pack the caller may not read. A count and nothing else — never a
+    #: title, an id, a date, or a position (ADR-018). A published pack claims to be
+    #: "the material for this meeting", and a director preparing from one must know
+    #: when it is not all of it.
+    withheld_items: int
 
 
-def _row_to_board_pack(row: dict, items: list[BoardPackItem]) -> BoardPack:
+@dataclass(frozen=True)
+class _VisibleItems:
+    """What one caller may see of a pack's items, and how many they may not."""
+
+    items: list[BoardPackItem]
+    withheld: int
+
+
+#: A pack with nothing in it, for callers that never read the item table.
+_NO_ITEMS = _VisibleItems(items=[], withheld=0)
+
+
+def _row_to_board_pack(row: dict, visible: _VisibleItems) -> BoardPack:
     return BoardPack(
         id=str(row["id"]),
         meeting_id=str(row["meeting_id"]),
@@ -116,7 +133,8 @@ def _row_to_board_pack(row: dict, items: list[BoardPackItem]) -> BoardPack:
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         workspace_id=str(row["workspace_id"]),
-        items=items,
+        items=visible.items,
+        withheld_items=visible.withheld,
     )
 
 
@@ -152,8 +170,8 @@ def _assert_meeting_pre_meeting(conn, meeting_id_uuid: uuid.UUID) -> None:
 
 def _fetch_items_for_packs(
     conn, pack_ids: list[uuid.UUID], clearance: int
-) -> dict[str, list[BoardPackItem]]:
-    """Pack items the caller is cleared to read, renumbered from 1.
+) -> dict[str, _VisibleItems]:
+    """Pack items the caller is cleared to read, renumbered from 1, plus a withheld count.
 
     The clearance predicate is pushed into the WHERE clause rather than applied in
     Python: Invariant #1 is filter-before-retrieval, and a Python-side filter would
@@ -161,11 +179,32 @@ def _fetch_items_for_packs(
 
     **Positions are renumbered for the caller.** Returning stored positions leaks:
     an investor-clearance reader shown items at positions [2, 3] learns that a
-    position 1 exists which they may not see, and can count the holes. That is the
-    same disclosure as returning a placeholder, just quieter. Renumbering is safe
-    because `position` is a display ordinal, not a stable reference — `id` is the
+    position 1 exists which they may not see, and can count the holes. Renumbering is
+    safe because `position` is a display ordinal, not a stable reference — `id` is the
     identifier, and `reorder_pack_items` takes item IDs, so no caller can write a
     presented position back and corrupt the stored ordering.
+
+    **The count is disclosed, and the renumbering stays. Both (ADR-018.)** An earlier
+    version of this docstring argued that returning a count "is the same disclosure as
+    returning a placeholder, just quieter", and used that to justify disclosing nothing.
+    That reasoning is backwards, and quietness is where it goes wrong. Position holes are
+    a *covert* channel: the reader infers a hidden item and its rank, unbounded and
+    unlabelled, and the system never acknowledged disclosing anything. `withheld` is the
+    opposite — bounded, deliberate, one integer, and auditable. The two are not
+    substitutes, and the fix for the first was never to suppress the second.
+
+    What the erasure cost is the reason ADR-018 exists: a published pack claims to be
+    *the material for this meeting*, and a director who prepares from one silently
+    missing three items walks into the room believing they are prepared. That is the same
+    harm `version_chain` exists to prevent, one object over.
+
+    **Two queries, and the second returns only numbers.** The count cannot come from the
+    first: rows above clearance are removed by its WHERE clause before any window
+    function could see them, and widening that clause to count them would put restricted
+    rows on the wire — the exact trade Invariant #1 forbids. So the complement is
+    aggregated in the database and only `(pack_id, count)` crosses. This is the pattern
+    the frozen core already set: `retrieve.vector_search` runs its search twice for the
+    same reason, once filtered and once not, purely to learn what it withheld.
     """
     if not pack_ids:
         return {}
@@ -180,14 +219,34 @@ def _fetch_items_for_packs(
         """,
         (pack_ids, clearance),
     ).fetchall()
-    result: dict[str, list[BoardPackItem]] = {}
+    withheld_rows = conn.execute(
+        """
+        SELECT bpi.board_pack_id, count(*) AS withheld
+          FROM board_pack_item bpi
+          JOIN document d ON d.id = bpi.document_id
+         WHERE bpi.board_pack_id = ANY(%s)
+           AND d.sensitivity > %s
+         GROUP BY bpi.board_pack_id
+        """,
+        (pack_ids, clearance),
+    ).fetchall()
+    withheld = {str(r["board_pack_id"]): r["withheld"] for r in withheld_rows}
+
+    visible: dict[str, list[BoardPackItem]] = {}
     for r in rows:
         it = _row_to_pack_item(r)
-        visible = result.setdefault(it.board_pack_id, [])
+        seen = visible.setdefault(it.board_pack_id, [])
         # Rows arrive in stored-position order, so the running length is the
         # caller's contiguous ordinal.
-        visible.append(replace(it, position=len(visible) + 1))
-    return result
+        seen.append(replace(it, position=len(seen) + 1))
+
+    # A pack whose items are *all* withheld appears in neither result set above, so the
+    # key set is the union rather than either side — otherwise the one pack a caller can
+    # see nothing of would be the one that reports nothing withheld.
+    return {
+        pack_id: _VisibleItems(items=visible.get(pack_id, []), withheld=withheld.get(pack_id, 0))
+        for pack_id in set(visible) | set(withheld)
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -219,7 +278,7 @@ def create_pack(
             (meeting_uuid, title.strip(), workspace_id),
         ).fetchone()
 
-    return _row_to_board_pack(row, items=[])
+    return _row_to_board_pack(row, _NO_ITEMS)
 
 
 def get_pack(
@@ -236,8 +295,8 @@ def get_pack(
         ).fetchone()
         if row is None:
             raise BoardPackNotFound(str(pack_id))
-        items = _fetch_items_for_packs(conn, [pack_uuid], clearance=clearance).get(str(pack_uuid), [])
-    return _row_to_board_pack(row, items=items)
+        visible = _fetch_items_for_packs(conn, [pack_uuid], clearance=clearance).get(str(pack_uuid), _NO_ITEMS)
+    return _row_to_board_pack(row, visible)
 
 
 def list_packs(
@@ -265,7 +324,7 @@ def list_packs(
         pack_uuids = [r["id"] for r in rows]
         items_map = _fetch_items_for_packs(conn, pack_uuids, clearance=clearance)
 
-    return [_row_to_board_pack(r, items=items_map.get(str(r["id"]), [])) for r in rows]
+    return [_row_to_board_pack(r, items_map.get(str(r["id"]), _NO_ITEMS)) for r in rows]
 
 
 def update_pack(
@@ -318,9 +377,9 @@ def update_pack(
         if row is None:
             raise StaleBoardPackError(f"board_pack {pack_id}: concurrent modification")
 
-        items = _fetch_items_for_packs(conn, [pack_uuid], clearance=clearance).get(str(pack_uuid), [])
+        visible = _fetch_items_for_packs(conn, [pack_uuid], clearance=clearance).get(str(pack_uuid), _NO_ITEMS)
 
-    return _row_to_board_pack(row, items=items)
+    return _row_to_board_pack(row, visible)
 
 
 def add_pack_item(
@@ -511,9 +570,9 @@ def publish_pack(
         if row is None:
             raise StaleBoardPackError(f"board_pack {pack_id}: concurrent modification")
 
-        items = _fetch_items_for_packs(conn, [pack_uuid], clearance=clearance).get(str(pack_uuid), [])
+        visible = _fetch_items_for_packs(conn, [pack_uuid], clearance=clearance).get(str(pack_uuid), _NO_ITEMS)
 
-    return _row_to_board_pack(row, items=items)
+    return _row_to_board_pack(row, visible)
 
 
 def supersede_pack(
@@ -601,10 +660,10 @@ def supersede_pack(
             (new_uuid, old_uuid, expected_version),
         ).fetchone()
 
-        new_items = _fetch_items_for_packs(conn, [new_uuid], clearance=clearance).get(str(new_uuid), [])
-        old_items_copied = _fetch_items_for_packs(conn, [old_uuid], clearance=clearance).get(str(old_uuid), [])
+        new_visible = _fetch_items_for_packs(conn, [new_uuid], clearance=clearance).get(str(new_uuid), _NO_ITEMS)
+        old_visible = _fetch_items_for_packs(conn, [old_uuid], clearance=clearance).get(str(old_uuid), _NO_ITEMS)
 
-    return _row_to_board_pack(new_row, items=new_items), _row_to_board_pack(updated_old, items=old_items_copied)
+    return _row_to_board_pack(new_row, new_visible), _row_to_board_pack(updated_old, old_visible)
 
 
 def reorder_pack_items(
@@ -664,7 +723,7 @@ def reorder_pack_items(
             (pack_uuid,),
         ).fetchone()
 
-        items = _fetch_items_for_packs(conn, [pack_uuid], clearance=clearance).get(str(pack_uuid), [])
+        visible = _fetch_items_for_packs(conn, [pack_uuid], clearance=clearance).get(str(pack_uuid), _NO_ITEMS)
 
-    return _row_to_board_pack(row, items=items)
+    return _row_to_board_pack(row, visible)
 
