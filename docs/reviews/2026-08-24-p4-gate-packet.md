@@ -78,7 +78,64 @@ principal, workspace, role, **clearance** — and the only writer in the reposit
 `src/callosum/cli.py:125`. There is no API, and therefore no audited path, by which a
 principal's clearance in a workspace is granted, changed or revoked.
 
-Audit events present in a live workspace, for contrast:
+### The gap is wider than membership, and an earlier draft of this packet understated it
+
+The two findings above were written against a contrast — *document and meeting lifecycle is
+audited, membership is not* — that does not survive measurement. It was the load-bearing
+half of the sentence, because it is what made the membership gap look like a local omission
+rather than an instance of something general. Second-reader review of #167 challenged it;
+measuring it made it worse than either reading.
+
+**Measured: 34 of 45 mutating routes reach no audit write.** A route counts as audited if a
+transitive call from its handler (≤3 deep) reaches `audit.record_audit_event`. The script is
+reproduced below so this figure is derived rather than asserted; §4's method list records
+why a hand-written list is not trusted in this repository.
+
+| `meridian/api/` module | unaudited / mutating |
+|---|---|
+| `packs.py` | **7 / 7** |
+| `agenda.py` | **4 / 4** |
+| `board_members.py` | **4 / 4** |
+| `minutes.py` | **4 / 4** |
+| `decisions.py` | 4 / 5 |
+| `resolutions.py` | 4 / 6 |
+| `meetings.py` | 3 / 5 |
+| `commitments.py` | 2 / 3 |
+| `auth.py` | 2 / 2 *(session routes, not aggregate mutations — arguably out of scope)* |
+| `documents.py` | 0 / 2 |
+| `conflicts.py` | 0 / 2 |
+| `prep.py` | 0 / 1 |
+
+Excluding `auth.py` as out of scope: **32 of 43** domain mutating routes are unaudited.
+
+The vocabulary shows the same shape from the other end. `audit.AGGREGATE_TYPES` declares
+**10** types and **7** are ever written — `agenda_item`, `board_member` and `minutes` never
+are. `audit.ACTIONS` declares **12** and **9** are ever produced — `deleted`, `recorded` and
+`reordered` never are. **An aggregate can be deleted anywhere in this product and the trail
+will not say so**, because no code path emits the action.
+
+Only **12 functions** in the entire product write an audit event:
+`intake_document`, `_record_duplicate_refusal`, `supersede_document` (`documents.py`);
+`assign_material`, `unassign_material` (`meetings.py`); `record_stance` (`decisions.py`);
+`record_vote`, `bridge_resolution_to_commitment` (`resolutions.py`); `record_update`
+(`commitments.py`); `publish_preread` (`prep.py`); `approve_conflict`, `reject_conflict`
+(`api/conflicts.py` — the only router that audits directly).
+
+So the corrected contrast is narrower than the original claimed in both directions:
+
+- **"meeting lifecycle is audited" is wrong.** `meetings.py`'s only two audit writes are
+  `assign_material:420` and `unassign_material:467`. Meeting **material** is audited;
+  creating, updating and transitioning a meeting are not.
+- **"document lifecycle is audited" holds**, and is the only aggregate for which it does —
+  both its mutating routes reach an audit write.
+- `agenda.py` and `minutes.py` join `board_members.py` at **zero** audit writes against four
+  mutating routes each. An agenda item can be created, edited, **reordered and deleted** with
+  no trail; `packs.py` has none either, across all seven of its mutating routes, including
+  `remove_pack_item:489`.
+
+The live-workspace sample below was already evidence against the sentence it was printed
+under, and was read as supporting it. Nothing appears for `meeting created`, for any
+`agenda_item`, or for any `board_member`; `meeting item_added` is material assignment:
 
 ```
 document    created      41
@@ -87,7 +144,89 @@ meeting     item_added    5
 resolution  status_changed 6
 ```
 
-Document and meeting lifecycle is audited. Membership is not, on either reading of the word.
+**Criterion 1 fails on the word *audited* either way.** What changes is the size of the
+remediation: **#166 as originally filed implies four routes; the measured figure is 32.**
+The issue has been broadened to match.
+
+<details>
+<summary>Reproduction — <code>python3 - &lt; audit_reach.py</code> from the repo root at <code>5010282</code></summary>
+
+```python
+import ast, collections, pathlib
+
+MUT = {"post", "patch", "put", "delete"}
+funcs, trees = {}, {}
+for p in sorted(pathlib.Path("meridian").rglob("*.py")):
+    if "migrations" in p.parts:
+        continue
+    trees[str(p)] = t = ast.parse(p.read_text())
+    for n in ast.walk(t):
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            funcs[(str(p), n.name)] = n
+
+by_name = collections.defaultdict(set)
+for mod, name in funcs:
+    by_name[name].add(mod)
+
+def called(node):
+    return {f.attr if isinstance(f := n.func, ast.Attribute) else getattr(f, "id", "")
+            for n in ast.walk(node) if isinstance(n, ast.Call)}
+
+def audits(mod, name, seen=None, depth=0):
+    if depth > 3 or (mod, name) in (seen := seen or set()) or (mod, name) not in funcs:
+        return False
+    seen.add((mod, name))
+    cs = called(funcs[(mod, name)])
+    return "record_audit_event" in cs or any(
+        audits(m2, c, seen, depth + 1) for c in cs for m2 in by_name.get(c, ()))
+
+rows = []
+for mod, t in trees.items():
+    if not mod.startswith("meridian/api/"):
+        continue
+    for n in ast.walk(t):
+        if not isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for d in n.decorator_list:
+            f = d.func if isinstance(d, ast.Call) else d
+            if isinstance(f, ast.Attribute) and f.attr in MUT and getattr(f.value, "id", "") == "router":
+                rows.append((mod, n.name, audits(mod, n.name)))
+
+per = collections.defaultdict(lambda: [0, 0])
+for mod, _, ok in rows:
+    per[mod][0] += 1
+    per[mod][1] += not ok
+print(f"mutating routes {len(rows)}  audited {sum(ok for *_, ok in rows)}  "
+      f"UNAUDITED {sum(not ok for *_, ok in rows)}")
+for mod in sorted(per, key=lambda m: (-per[m][1], m)):
+    tot, un = per[mod]
+    print(f"  {un}/{tot}  {mod}")
+
+# Vocabulary. Walks the whole keyword value, not just `ast.Constant`: an earlier
+# literals-only version of this scan reported `updated` as never produced, missing
+# `commitments.py:539`, where the action is a conditional expression.
+vals = collections.defaultdict(set)
+for mod, t in trees.items():
+    for n in ast.walk(t):
+        if isinstance(n, ast.Call) and (
+            getattr(n.func, "attr", None) or getattr(n.func, "id", None)
+        ) == "record_audit_event":
+            for kw in n.keywords:
+                if kw.arg in ("aggregate_type", "action"):
+                    vals[kw.arg] |= {c.value for c in ast.walk(kw.value)
+                                     if isinstance(c, ast.Constant) and isinstance(c.value, str)}
+
+av = ast.parse(pathlib.Path("meridian/audit.py").read_text())
+decls = {t.id: {c.value for c in ast.walk(n.value) if isinstance(c, ast.Constant)}
+         for n in av.body if isinstance(n, ast.Assign) for t in n.targets
+         if getattr(t, "id", "") in ("AGGREGATE_TYPES", "ACTIONS")}
+for field, decl in (("aggregate_type", decls["AGGREGATE_TYPES"]),
+                    ("action", decls["ACTIONS"])):
+    got = vals[field]
+    print(f"{field}: declared {len(decl)}  written {len(got)}  NEVER {sorted(decl - got)}")
+```
+
+</details>
 
 **Which reading applies is a judgement this packet does not make.** `membership` (the
 access-control row) and `board_member` (the domain object — a person on the board) are
