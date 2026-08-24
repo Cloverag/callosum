@@ -249,7 +249,7 @@ function ChooseWorkspace({ onSelected, stale }: { onSelected: () => void; stale?
       // The server's own message is shown rather than a friendlier invention. It
       // deliberately does not distinguish "no such workspace" from "you are not a
       // member" — telling them apart is the oracle this endpoint refuses to be.
-      setError(e instanceof ApiError ? e.message : "Could not reach the server.");
+      setError(e instanceof ApiError ? serverMessage(e) : "Could not reach the server.");
       setBusy(false);
     }
   }
