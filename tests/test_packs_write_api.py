@@ -294,8 +294,18 @@ class TestClearanceSurvivesTheWritePath:
 
         The pack holds one public and one confidential document. An investor-clearance
         member renames the pack — a legitimate edit — and the response must contain only
-        the public item, renumbered from 1, with nothing announcing that anything was
-        removed.
+        the public item, renumbered from 1.
+
+        **Amended for ADR-018.** This test previously asserted `"withheld" not in
+        response`, encoding the doctrine that a pack discloses nothing at all. ADR-018
+        reverses that half: the count is disclosed, because a published pack claims to be
+        the material for a meeting and a director preparing from a silently truncated one
+        is the harm. The renumbering is unchanged and still asserted — it closes a covert
+        channel that the count does not reopen.
+
+        The replacement is strictly stronger than what it replaces: the restricted
+        document's id and title are now checked against the **raw body**, not just the
+        parsed `items`, so a leak through any field fails here.
         """
         f = _Fixture("filtered")
         try:
@@ -317,10 +327,14 @@ class TestClearanceSurvivesTheWritePath:
             visible_docs = [i["document_id"] for i in items]
             assert restricted_doc not in visible_docs
             assert visible_docs == [public_doc]
-            # Renumbered from 1: a gap would announce that something was removed.
+            # Renumbered from 1: a gap would announce the rank of what was removed.
             assert [i["position"] for i in items] == [1]
-            # And no count anywhere in the response to subtract from.
-            assert "withheld" not in patched.text.lower()
+            # The count IS disclosed (ADR-018) — one item, and it is right.
+            assert patched.json()["withheld_items"] == 1
+            # And it is the ONLY thing disclosed about it. Raw body, not parsed fields:
+            # a title or id reaching any part of the response fails here.
+            assert restricted_doc not in patched.text
+            assert "Restricted.pdf" not in patched.text
         finally:
             f.close()
 

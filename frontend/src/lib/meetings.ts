@@ -1,5 +1,6 @@
 import type { BadgeTone } from "@/components/ui/badge";
-import { apiGet, apiGetOrNull, apiPatch, apiPost } from "@/lib/http";
+import { apiDeleteReturning, apiGet, apiGetOrNull, apiPatch, apiPost } from "@/lib/http";
+import type { Document } from "@/lib/documents";
 
 /**
  * `meridian/meetings.py:31-35`. **These are the only five states the domain has.**
@@ -95,6 +96,23 @@ export type Meeting = {
 // --- Derived helpers -------------------------------------------------------
 
 /** A meeting with a concrete window — the only kind a calendar can place. */
+/**
+ * A meeting's source material, as one caller may see it.
+ *
+ * `withheld` is the number of assigned documents above this caller's clearance. It is a
+ * COUNT and never anything more — no title, no id, no date, no doc_type, no position.
+ *
+ * It is disclosed rather than erased because this list claims to be *the material for
+ * this meeting* (ADR-018). A director preparing from a list that silently dropped two
+ * contracts walks into the room believing they are prepared, which is the same harm the
+ * document version chain exists to prevent. Render it; a non-zero value is not an error
+ * state and must not be styled as one.
+ */
+export type MeetingMaterial = {
+  documents: Document[];
+  withheld: number;
+};
+
 export type ScheduledMeeting = Meeting & {
   scheduled_start: string;
   scheduled_end: string;
@@ -156,6 +174,34 @@ export const meetingsApi = {
       expected_version: expectedVersion,
       ...changes,
     });
+  },
+
+  /**
+   * Material assigned to this meeting: what the caller may read, and how many they
+   * may not (ADR-018). `withheld` is a count and carries nothing else.
+   */
+  async material(id: string): Promise<MeetingMaterial> {
+    return apiGet<MeetingMaterial>(`/meetings/${encodeURIComponent(id)}/material`);
+  },
+
+  /**
+   * Assigns a document as material and returns the updated list.
+   *
+   * A document the caller cannot read answers 404, not 403, and so does a meeting they
+   * cannot see — deliberately indistinguishable, so this is not a way to probe what the
+   * workspace holds. Surface the message; do not try to explain which half failed.
+   */
+  async assignMaterial(id: string, documentId: string): Promise<MeetingMaterial> {
+    return apiPost<MeetingMaterial>(`/meetings/${encodeURIComponent(id)}/material`, {
+      document_id: documentId,
+    });
+  },
+
+  /** Removes material and returns what remains. Not assigned, or not readable, is a 404. */
+  async unassignMaterial(id: string, documentId: string): Promise<MeetingMaterial> {
+    return apiDeleteReturning<MeetingMaterial>(
+      `/meetings/${encodeURIComponent(id)}/material/${encodeURIComponent(documentId)}`,
+    );
   },
 
   /** Moves a meeting through its lifecycle. An illegal move is a 409, not a 422. */

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Users } from "lucide-react";
+import { ChevronDown, Users } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { LoadFailed, asApiError } from "@/components/ui/load-failed";
 import type { ApiError } from "@/lib/http";
@@ -15,23 +15,41 @@ import {
   type Meeting,
 } from "@/lib/meetings";
 import { formatDayFull, formatTime, startOfDay } from "@/lib/calendar";
+import { MaterialList } from "./material-list";
+import { cn } from "@/lib/utils";
 
 function Row({ m }: { m: Meeting }) {
+  // Material is fetched only once opened. A meetings list is a landing surface, and one
+  // request per row on mount would be N+1 for a panel most readers never expand.
+  const [open, setOpen] = useState(false);
+
   return (
-    <div className="flex items-center gap-4 px-5 py-3">
-      <div className="w-44 shrink-0">
-        <div className="text-sm font-medium text-foreground">{m.scheduled_start ? formatDayFull(new Date(m.scheduled_start)) : "Not scheduled"}</div>
-        <div className="text-xs tabular-nums text-muted-foreground">
-          {m.scheduled_start && m.scheduled_end
-            ? `${formatTime(m.scheduled_start)} – ${formatTime(m.scheduled_end)}`
-            : "—"}
+    <div className="px-5 py-3">
+      <div className="flex items-center gap-4">
+        <div className="w-44 shrink-0">
+          <div className="text-sm font-medium text-foreground">{m.scheduled_start ? formatDayFull(new Date(m.scheduled_start)) : "Not scheduled"}</div>
+          <div className="text-xs tabular-nums text-muted-foreground">
+            {m.scheduled_start && m.scheduled_end
+              ? `${formatTime(m.scheduled_start)} – ${formatTime(m.scheduled_end)}`
+              : "—"}
+          </div>
         </div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm text-foreground">{m.title}</div>
+          {m.location && <div className="truncate text-xs text-muted-foreground">{m.location}</div>}
+        </div>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className="flex items-center gap-1 rounded-[10px] px-2 py-1 text-xs text-muted-foreground transition-colors duration-(--duration-hover) hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+        >
+          Material
+          <ChevronDown className={cn("size-3.5 transition-transform duration-(--duration-hover)", open && "rotate-180")} aria-hidden="true" />
+        </button>
+        <Badge tone={MEETING_STATUS_TONE[m.status]}>{MEETING_STATUS_LABEL[m.status]}</Badge>
       </div>
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm text-foreground">{m.title}</div>
-        {m.location && <div className="truncate text-xs text-muted-foreground">{m.location}</div>}
-      </div>
-      <Badge tone={MEETING_STATUS_TONE[m.status]}>{MEETING_STATUS_LABEL[m.status]}</Badge>
+      {open && <MaterialList meetingId={m.id} className="mt-3 pl-[12rem]" />}
     </div>
   );
 }
