@@ -137,22 +137,28 @@ intake has shipped without one.
 | Track | State |
 |---|---|
 | **Research engine** (`src/callosum/`) | **14 / 14 checkpoints accepted**, frozen at `eval-baseline-v3` |
-| **Product** (`meridian/`, `frontend/`) | **3 / 13 phases accepted**; P3 frozen, exit gate not claimed · P4 source intake + versions built, exit gate not claimed |
+| **Product** (`meridian/`, `frontend/`) | **3 / 13 phases accepted**; P3 frozen, exit gate not claimed · P4 work items complete (intake, versions, meeting assignment), exit gate not attempted |
 
 | | |
 |---|---|
-| Backend tests | **731** passing, gated suite |
-| Frontend tests | **273** passing, 19 suites |
-| API | **70 operations** across 53 paths, 12 routers |
-| Migrations | 23, head `0023_audit_intake_refused`, forward and reverse tested |
-| Architecture decisions | 16 ADRs |
-| Commits | 467 (`git rev-list --count 0c54ad2`) |
+| Backend tests | **786** passing, gated suite |
+| Frontend tests | **290** passing, 20 suites |
+| API | **75 operations** across 57 paths, 12 routers |
+| Migrations | 25, head `0025_meeting_document`, forward and reverse tested |
+| Architecture decisions | 18 ADRs |
+| Commits | 495 (`git rev-list --count 8dd2d3d`) |
 
-Measured on `0c54ad2` (2026-08-24), not carried forward. Both test figures are a **real
+Measured on `8dd2d3d` (2026-08-24), not carried forward. Both test figures are a **real
 run** on that commit — the gated suite against local Postgres 16 and Neo4j, and Jest with
-`tsc --noEmit` clean. The API, migration, ADR and commit figures all derive at `0c54ad2`;
-the parenthetical names the pin rather than a moving ref, so the command reproduces the
-figure (see #159).
+`tsc --noEmit` clean. The API, migration, ADR and commit figures all derive at `8dd2d3d`,
+and the parenthetical names the pin rather than a moving ref, so the command printed beside
+the figure reproduces it (see #159).
+
+The backend delta is **+55 on master's 731**: 20 in `tests/test_document_versions.py`, 4 in
+`tests/test_p4_leak_sweep.py`, 15 in `tests/test_withheld_discipline.py`, 14 in
+`tests/test_meeting_material.py`, and two parametrized cases —
+`test_an_applied_migration_is_unchanged` runs once per migration file, so `0024` and `0025`
+add one each. Reconciled by **collecting each file**, not by arithmetic.
 
 **P3 is frozen, not accepted** — of its three exit criteria one is met, one is partial and
 one is not met, because the accessibility and error-state checkpoints were deliberately
@@ -258,8 +264,8 @@ routes. Set `MERIDIAN_API_ORIGIN` if the API is not on `:8000`.
 ```bash
 docker compose up -d && docker compose ps               # all three healthy FIRST
 .venv/bin/callosum eval-mechanism                        # deterministic gate, no LLM
-CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 725 tests, real stores
-cd frontend && npx jest && npm run build                 # 273 tests, 19 suites
+CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 786 tests, real stores
+cd frontend && npx jest && npm run build                 # 290 tests, 20 suites
 ```
 
 `CALLOSUM_RUN_INTEGRATION=1` runs against real Postgres and Neo4j, so the compose stack

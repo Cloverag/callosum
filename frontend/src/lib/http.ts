@@ -230,3 +230,19 @@ export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
 export async function apiDelete(path: string, expectedVersion: number): Promise<void> {
   await send<void>("DELETE", path, undefined, { expected_version: String(expectedVersion) });
 }
+
+/**
+ * DELETE on a resource that has no version counter, returning what remains.
+ *
+ * Distinct from `apiDelete` rather than an option on it, because the difference is a
+ * contract and not a convenience. `apiDelete` sends `expected_version` because the
+ * things it removes are versioned aggregates where a concurrent edit must be a 409.
+ * A meeting-material row is one immutable fact — assigned or not — so there is no
+ * version to be stale against, and removing what is already gone is honestly a 404.
+ *
+ * It returns the remaining collection because the server already has to compute it
+ * clearance-filtered; a `void` here would make every caller re-fetch.
+ */
+export async function apiDeleteReturning<T>(path: string): Promise<T> {
+  return send<T>("DELETE", path);
+}
