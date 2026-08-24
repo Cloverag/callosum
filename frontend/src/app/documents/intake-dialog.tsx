@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/http";
+import { serverMessage } from "@/lib/error-text";
 import {
   documentsApi,
   DOC_TYPE_LABEL,
@@ -262,7 +263,7 @@ export function IntakeDialog({
             {/* The server's own words. A 403 here names the level this caller may
                 file at, and paraphrasing it to "permission denied" would throw away
                 the only part that tells them what to do next. */}
-            {error.message}
+            {serverMessage(error)}
           </div>
         )}
       </div>

@@ -1,5 +1,6 @@
 import { Card } from "@/components/ui/card";
 import { ApiError } from "@/lib/http";
+import { serverMessage } from "@/lib/error-text";
 
 /**
  * What a surface shows when its data could not be loaded.
@@ -16,17 +17,15 @@ import { ApiError } from "@/lib/http";
  *
  * The three cases are distinguished because they need different actions from the
  * reader: choose a workspace, sign in again, or tell someone the server is unhappy.
+ * That distinction now lives in `lib/error-text.ts` — it is the one place a
+ * server-supplied string becomes text, so the policy is changeable in one edit (#157).
  */
 export function LoadFailed({ what, error }: { what: string; error: ApiError }) {
   return (
     <Card className="p-10 text-center">
       <p className="text-sm text-foreground">{what} could not be loaded.</p>
       <p className="mt-1 text-sm text-muted-foreground">
-        {error.needsWorkspace
-          ? "Select a workspace to continue."
-          : error.isUnauthenticated
-            ? "Your session has ended. Sign in again."
-            : error.message}
+        {serverMessage(error)}
       </p>
     </Card>
   );

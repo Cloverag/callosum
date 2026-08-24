@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/http";
+import { serverMessage } from "@/lib/error-text";
 import { authApi, LOGIN_URL, type AuthContext } from "@/lib/auth";
 import { transition } from "@/lib/motion";
 
@@ -302,7 +303,7 @@ function Failed({ error, onRetry }: { error: ApiError; onRetry: () => void }) {
   return (
     <>
       <h1 className="text-lg font-semibold text-foreground">Meridian is unavailable</h1>
-      <p className="mt-1 text-sm text-muted-foreground">{error.message}</p>
+      <p className="mt-1 text-sm text-muted-foreground">{serverMessage(error)}</p>
       <Button variant="secondary" className="mt-6 w-full" onClick={onRetry}>
         Try again
       </Button>
