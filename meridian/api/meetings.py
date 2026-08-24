@@ -164,3 +164,98 @@ def transition_meeting(
         expected_version=body.expected_version,
         workspace_id=principal.workspace_id,
     )
+
+
+# ---------------------------------------------------------------------------
+# Material — documents assigned to this meeting (P4, ADR-018)
+# ---------------------------------------------------------------------------
+
+class MaterialAssign(BaseModel):
+    """Body for `POST /api/meetings/{id}/material`.
+
+    One field. `assigned_by` is deliberately absent for the same reason `created_by` is
+    absent from `MeetingCreate` — it is an attribution, and an attribution the request
+    can choose is not one. It comes from the session.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    document_id: uuid.UUID
+
+
+@router.get("/{meeting_id}/material")
+def get_meeting_material(
+    meeting_id: uuid.UUID, principal: CurrentPrincipal
+) -> domain.MeetingMaterial:
+    """Material for one meeting: what this caller may read, and how many they may not.
+
+    `withheld` is a count and nothing else (ADR-018). It is disclosed rather than erased
+    because this list claims to be *the material for this meeting*, and a director who
+    prepares from a silently truncated one walks in believing they are prepared.
+
+    `clearance` comes from `deps.current_principal`, re-derived from the caller's active
+    membership on every request. It is not a parameter, and
+    `tests/test_openapi_input_guard.py` fails the build if it becomes one.
+    """
+    return domain.meeting_material(
+        str(meeting_id),
+        workspace_id=principal.workspace_id,
+        clearance=principal.clearance,
+    )
+
+
+@router.post("/{meeting_id}/material", status_code=status.HTTP_201_CREATED)
+def assign_meeting_material(
+    meeting_id: uuid.UUID, body: MaterialAssign, principal: CurrentPrincipal
+) -> domain.MeetingMaterial:
+    """Assigns a document to this meeting as material.
+
+    **404 when either the meeting or the document is invisible to the caller**, with no
+    way to tell which. The domain raises one exception type for both, deliberately: a
+    403 here would confirm that a document exists at a clearance the caller cannot read,
+    and document ids are derivable from candidate plaintext.
+
+    Returns the material list rather than the created row. The caller's next question is
+    always "what is on this meeting now", the answer is already clearance-filtered, and
+    returning the row would mean the client either re-fetches or assembles a list the
+    server could have given it correctly.
+    """
+    domain.assign_material(
+        str(meeting_id),
+        str(body.document_id),
+        workspace_id=principal.workspace_id,
+        clearance=principal.clearance,
+        actor_principal_id=str(principal.id) if principal.id else None,
+        assigned_by=str(principal.id) if principal.id else None,
+    )
+    return domain.meeting_material(
+        str(meeting_id),
+        workspace_id=principal.workspace_id,
+        clearance=principal.clearance,
+    )
+
+
+@router.delete("/{meeting_id}/material/{document_id}")
+def unassign_meeting_material(
+    meeting_id: uuid.UUID, document_id: uuid.UUID, principal: CurrentPrincipal
+) -> domain.MeetingMaterial:
+    """Removes a document from this meeting's material.
+
+    404 when the document is not assigned *or* is above the caller's clearance — one
+    answer for both, so this is not a way to probe what a meeting holds.
+
+    Returns the remaining material rather than 204, for the reason given on the POST:
+    the response is the caller's next read, already filtered.
+    """
+    domain.unassign_material(
+        str(meeting_id),
+        str(document_id),
+        workspace_id=principal.workspace_id,
+        clearance=principal.clearance,
+        actor_principal_id=str(principal.id) if principal.id else None,
+    )
+    return domain.meeting_material(
+        str(meeting_id),
+        workspace_id=principal.workspace_id,
+        clearance=principal.clearance,
+    )
