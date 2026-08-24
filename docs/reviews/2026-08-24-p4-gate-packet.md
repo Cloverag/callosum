@@ -381,39 +381,47 @@ worth reading adversarially.
    not exist. Filed as **#166**.
 2. **No evidence is offered that a clearance grant is authorized**, because there is no
    product path that performs one. `cli.py` is operator-only and unaudited.
+3. **Auditing is largely absent across the product**, not only on membership — **32 of 43**
+   domain mutating routes reach no audit write (§2). This packet does not establish which
+   of those the criterion reaches. It says "membership", so the strict reading is that only
+   #166's narrow half is in scope for P4 and the rest is a separate phase; the generous
+   reading is that a trail this incomplete cannot support any claim that the board's record
+   is auditable. **That is a scope judgement, and it is the maintainer's, not the packet's.**
+   Both readings are stated because choosing one here would be the packet deciding its own
+   verdict by choosing a definition.
 
 ### On criterion 3
 
-3. **This is detection, not prevention.** Nothing structurally stops a domain exception
+4. **This is detection, not prevention.** Nothing structurally stops a domain exception
    carrying restricted content — `meridian/api/errors.py:170` passes any unregistered
    exception's `str()` to the client. The sweep catches a leak *only when the leaked content
    matches a needle in its scene*. A leak of confidential material not represented in the
    scene passes.
-4. **The frontend chokepoint constrains composition, not emission.** `lib/error-text.ts`
+5. **The frontend chokepoint constrains composition, not emission.** `lib/error-text.ts`
    cannot filter and does not try; the client has no way to know which strings are restricted.
    Its value is that policy lives in one place.
-5. **Only `application/json` request bodies are swept.** Nothing uses multipart today; this
+6. **Only `application/json` request bodies are swept.** Nothing uses multipart today; this
    stops being true the day upload lands.
-6. **The sweep is HTTP-only.** No probe covers the CLI (`callosum ask`), direct database
+7. **The sweep is HTTP-only.** No probe covers the CLI (`callosum ask`), direct database
    access, logs, tracebacks, or the Neo4j gateway. `retrieve.py` discloses a withheld count
    by design and is out of P4's scope, but nothing in this packet demonstrates that.
-7. **The sweep's scene contains one confidential document and one withheld revision.** Leak
+8. **The sweep's scene contains one confidential document and one withheld revision.** Leak
    classes requiring a richer fixture — several documents at different levels, a chain longer
    than two, cross-workspace material — are not exercised.
-8. **No adversarial testing by anyone other than the author.** Every probe here was written
+9. **No adversarial testing by anyone other than the author.** Every probe here was written
    by the person who wrote the defences. §5 makes the selection method visible precisely
    because it cannot make it independent.
 
 ### On the packet itself
 
-9. **The reverse migration leg does not pass** (§5, **#165**). A required element of a gate
-   packet is present and failing.
-10. **Duplicate composite FKs with contradictory delete semantics are live** (§5, **#165**),
+10. **The reverse migration leg does not pass** (§5, **#165**). A required element of a gate
+    packet is present and failing.
+11. **Duplicate composite FKs with contradictory delete semantics are live** (§5, **#165**),
     defeating `0021`'s intent on two tables.
-11. **`scripts/eval.sh` has not been run.** It is deliberately the maintainer's to spend, so
+12. **`scripts/eval.sh` has not been run.** It is deliberately the maintainer's to spend, so
     no retrieval-quality figure appears anywhere in this packet.
-12. **The two test figures cannot be derived from the pin.** They are the record of a run.
-13. **CI's `CALLOSUM_POSTGRES_DSN` is ignored.** `src/callosum/config.py:21` sets
+13. **The two test figures cannot be derived from the pin.** They are the record of a run.
+14. **CI's `CALLOSUM_POSTGRES_DSN` is ignored.** `src/callosum/config.py:21` sets
     `SettingsConfigDict(env_file=".env", extra="ignore")` with **no** `env_prefix`, so the
     settings read `POSTGRES_DSN` / `POSTGRES_APP_DSN` and the two `CALLOSUM_`-prefixed
     variables the workflow exports (`ci.yml:22-23`) are silently discarded. **Follow the
