@@ -129,10 +129,27 @@ def test_departure_and_return_are_status_changes_not_edits():
 
 
 def test_the_actor_is_recorded():
+    """Who did this — most of what "audited" means for governance.
+
+    `subject` is a column on `principal_identity`, not `principal`; and `name`, `role`
+    and `clearance` are all NOT NULL. The correct two-table form is
+    `test_documents_api._principal_with_identity`. Only the `principal` row is needed
+    here, because these call the domain directly rather than through a session.
+    """
     ws = _new_workspace()
     actor = str(uuid.uuid4())
-    _admin("INSERT INTO principal (id, subject, email) VALUES (%s, %s, %s)",
-           (actor, f"sub-{actor[:8]}", f"{actor[:8]}@example.com"))
+    _admin(
+        "INSERT INTO principal (id, name, role, clearance) VALUES (%s, %s, 'director', %s)",
+        (actor, f"Audit Actor {actor[:6]}", 4),
+    )
+    # `record_audit_event` refuses an actor with no active membership in the workspace
+    # (`audit.py:188`, ActorNotInWorkspace) — the trail cannot name someone who was not
+    # there. A principal row alone is not enough.
+    _admin(
+        "INSERT INTO membership (principal_id, workspace_id, role, clearance, active)"
+        " VALUES (%s, %s, 'director', %s, true)",
+        (actor, ws, 4),
+    )
     try:
         m = board_members.create_member(
             "Priya Nair", DIRECTOR, workspace_id=ws, actor_principal_id=actor
@@ -143,6 +160,8 @@ def test_the_actor_is_recorded():
 
         assert all(str(e.actor_principal_id) == actor for e in _events(ws, m.id))
     finally:
+        # `_cleanup` drops audit_event first; the principal can only go after it,
+        # because `audit_event.actor_principal_id` is ON DELETE RESTRICT as well.
         _cleanup(ws)
         _admin("DELETE FROM principal WHERE id = %s", (actor,))
 
