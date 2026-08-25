@@ -73,13 +73,22 @@ outside `src/callosum/cli.py:125`, so there is still no authorized, audited path
 principal's clearance is granted, changed or revoked. That was always the larger half, and it
 needs a design decision about a clearance-granting surface rather than an audit-write pattern.
 
-**§5's reverse leg still fails, one step further along.** #172 corrects
-`0019.downgrade()`, which was dropping four uniques it did not create; with it applied the
-chain reaches `0018` and aborts there instead — `0021.upgrade()` reverts `0018`'s rename of
-`principal_identity_provider_subject_uq` and `0021.downgrade()` never restores it (**#173**).
-The generalisation matters more than either fix: **the chain has never been reversed in CI,
-so every `downgrade()` in this repository is unverified.** Two have now been checked and both
-were wrong, and the second was only visible once the first was fixed.
+**§5's reverse leg now PASSES, and is guarded.** Two defects, found one behind the other.
+#172 corrected `0019.downgrade()`, which dropped four uniques it did not create; that moved
+the abort to `0018`, exposing **#173** — `0021.upgrade()` reverts `0018`'s rename of
+`principal_identity_provider_subject_uq` and `0021.downgrade()` never restored it. Both are
+the same fault in mirror image: over-dropping and under-restoring, a downgrade that is not a
+faithful inverse of its upgrade.
+
+Fixed in #175, under a maintainer decision widening the downgrade-correction rule to five
+explicit conditions. **The chain now runs forward through 26 migrations, down to `base`, and
+forward again — green in CI on every pull request.** That is the `migration-chain` job, and
+it is the fifth condition: a correction is permitted only if a chain test covers it.
+
+**This retires a §5 gap rather than merely moving it.** The finding underneath both defects
+was that the chain had never been reversed anywhere, so every `downgrade()` in this repository
+was unverified — two were checked and both were wrong. Twenty-four remain unexamined
+individually, but they are no longer unexercised.
 
 **§5's other finding is addressed but not merged.** #174 removes the five contradictory
 duplicate foreign keys. Note the count: this packet reported **two** tables from reading the
