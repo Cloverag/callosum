@@ -169,6 +169,35 @@ downgrade runs in reverse order and the owner's dependants are still present. **
 conditional create demands an equally conditional drop** — `DROP CONSTRAINT IF EXISTS`
 guards absence, not ownership. `0019` is the worked example.
 
+**A migration that has not merged to master has not been applied, and may be edited
+freely.**
+
+Everything above is about *applied* migrations. A migration living only on an unmerged
+branch has been run, at most, against your own scratch database — there is no estate to
+split, because no population has it. Rewrite it, including its docstring and its
+`upgrade()`, as often as the review asks. Re-record by **removing its entry from
+`CHECKSUMS.json` by hand** and running the recorder again, and say in the commit message
+that it was unreleased.
+
+This case is stated because a rule that describes the dangerous path precisely and the
+legitimate one not at all produces an undocumented escape hatch the first time someone
+needs one. Requiring an `0027` to fix a comment in an unmerged `0026` would be the rule
+defeating its own purpose.
+
+**What the mechanism does and does not catch.**
+
+The recorder refuses to overwrite `header` or `upgrade`. But it reads a manifest that any
+human can open and edit, and there is no way around that: the manifest is the record, so
+whoever maintains the record can change it. **The boundary therefore stops accidents, not
+decisions.**
+
+What catches a decision is the **`CHECKSUMS.json` diff appearing in a pull request**. A
+removed or altered entry is one line and it is unmissable once you know to look — so look.
+That is a review control, not a mechanical one, and both halves are load-bearing: the
+mechanism makes crossing the line deliberate, and review is what makes a deliberate
+crossing visible. A reader who believes the guard is unforgeable will not read manifest
+diffs, which is the only thing that would have caught the last one.
+
 **Tenant-scoped foreign keys should reference the `(id, workspace_id)` pair.**
 
 Postgres validates foreign keys as the table owner, which **bypasses row-level

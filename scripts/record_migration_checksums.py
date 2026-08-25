@@ -106,7 +106,12 @@ def main() -> int:
             "new migration instead.\n\n"
             "`downgrade()` is the sole exception and is re-recorded automatically, under\n"
             "the boundary in CONTRIBUTING.md: it may be corrected when it acts on objects\n"
-            "the migration did not create. There is deliberately no flag to widen that."
+            "the migration did not create. There is deliberately no flag to widen that.\n\n"
+            "If a recorded migration was genuinely never released — it exists only on an\n"
+            "unmerged branch and no surviving database has run it — remove its entry from\n"
+            "CHECKSUMS.json by hand and say why in the commit message. Nothing here can\n"
+            "check that for you, which is the point: it has to be a decision someone\n"
+            "writes down and a reviewer sees in the manifest diff."
         )
         return 1
 
