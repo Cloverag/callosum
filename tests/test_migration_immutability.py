@@ -46,8 +46,12 @@ import hashlib
 import json
 import pathlib
 import re
+import subprocess
+import sys
 
 import pytest
+
+from meridian.migrations import checksum
 
 _VERSIONS = pathlib.Path(__file__).resolve().parents[1] / "meridian" / "migrations" / "versions"
 _MANIFEST = _VERSIONS.parent / "CHECKSUMS.json"
@@ -96,26 +100,107 @@ def test_the_manifest_and_the_directory_agree():
 
 @pytest.mark.parametrize("path", _migration_files(), ids=lambda p: p.stem)
 def test_an_applied_migration_is_unchanged(path: pathlib.Path):
-    """The rule.
+    """The rule, now stated per segment.
 
-    If this fails, do NOT update the manifest to match. Revert the file and put the
-    change in a new migration — the databases that already ran this one will never
-    see an edit to it.
+    `header` and `upgrade` may never change. If either fails here, do NOT update the
+    manifest to match — revert the file and put the change in a new migration. The
+    databases that already ran this revision will never see an edit to it.
+
+    `downgrade` is the one exception, and it is not an exception to *this* test: a
+    corrected downgrade is re-recorded by the script, so by the time it reaches a
+    commit the manifest already agrees. A mismatch here still means an edit that was
+    never recorded.
     """
     revision = _revision_of(path)
     recorded = _recorded().get(revision)
     if recorded is None:
         pytest.skip("covered by test_the_manifest_and_the_directory_agree")
 
-    content = path.read_bytes().replace(b"\r\n", b"\n")
-    actual = hashlib.sha256(content).hexdigest()
-    assert actual == recorded, (
-        f"{path.name} ({revision}) has been edited after being recorded.\n"
-        f"  recorded: {recorded}\n"
-        f"  actual:   {actual}\n\n"
-        "Alembic will not re-run this revision, so databases that already applied it "
-        "will never receive this change. Revert the file and add a new migration."
+    actual = checksum.digests(path)
+    for segment in checksum.SEGMENTS:
+        note = (
+            "Alembic will not re-run this revision, so databases that already applied "
+            "it will never receive this change. Revert the file and add a new migration."
+            if segment not in checksum.CORRECTABLE
+            else "Run `python scripts/record_migration_checksums.py` to record the correction."
+        )
+        assert actual[segment] == recorded.get(segment), (
+            f"{path.name} ({revision}) changed in `{segment}` after being recorded.\n"
+            f"  recorded: {recorded.get(segment)}\n"
+            f"  actual:   {actual[segment]}\n\n" + note
+        )
+
+
+@pytest.mark.parametrize("path", _migration_files(), ids=lambda p: p.stem)
+def test_the_split_covers_the_whole_file(path: pathlib.Path):
+    """Guard the split.
+
+    Three hashes cover less than one hash did if the segments leave a gap — and they
+    would still hash to *something*, so every assertion above would keep passing
+    while part of the file went unchecked. Proved per file, not assumed.
+    """
+    assert checksum.verify_covers_whole_file(path), (
+        f"{path.name}: header + upgrade + downgrade do not account for every byte."
     )
+
+
+def test_the_recorder_refuses_to_overwrite_an_upgrade():
+    """The boundary is a mechanism, not a sentence.
+
+    `downgrade()` may be corrected; `upgrade()` and the header may not. That rule is
+    written in CONTRIBUTING.md, and a rule that lives only in prose depends on the
+    next person having read it. This watches the refusal actually fire — a guard
+    nobody has seen fail may not be a guard.
+    """
+    victim = _migration_files()[0]
+    original = victim.read_text()
+    manifest = _MANIFEST.read_text()
+    try:
+        # Append a statement inside upgrade() — a real edit, not a comment.
+        edited = original.replace("def upgrade() -> None:", 'def upgrade() -> None:\n    _ = "tamper"', 1)
+        assert edited != original, "could not construct an upgrade edit for this file"
+        victim.write_text(edited)
+
+        result = subprocess.run(
+            [sys.executable, "scripts/record_migration_checksums.py"],
+            capture_output=True, text=True,
+            cwd=pathlib.Path(__file__).resolve().parents[1],
+        )
+        assert result.returncode != 0, "the recorder accepted an edit to upgrade()"
+        assert "REFUSING TO OVERWRITE" in result.stdout
+        assert "[upgrade]" in result.stdout
+        assert _MANIFEST.read_text() == manifest, "the manifest was rewritten despite the refusal"
+    finally:
+        victim.write_text(original)
+        _MANIFEST.write_text(manifest)
+
+
+def test_a_downgrade_correction_is_accepted():
+    """The other half of the boundary — and the reason it is safe.
+
+    Alembic stores version numbers and never stores downgrade SQL, so no applied
+    database holds a copy of `downgrade()` that could diverge from an edit. A wrong
+    downgrade is wrong for everyone at once, and can be corrected for everyone at
+    once. If this test ever has to be deleted, the exception has been repealed.
+    """
+    victim = _migration_files()[0]
+    original = victim.read_text()
+    manifest = _MANIFEST.read_text()
+    try:
+        edited = original.replace("def downgrade() -> None:", 'def downgrade() -> None:\n    _ = "fixed"', 1)
+        assert edited != original, "could not construct a downgrade edit for this file"
+        victim.write_text(edited)
+
+        result = subprocess.run(
+            [sys.executable, "scripts/record_migration_checksums.py"],
+            capture_output=True, text=True,
+            cwd=pathlib.Path(__file__).resolve().parents[1],
+        )
+        assert result.returncode == 0, f"the recorder refused a downgrade correction:\n{result.stdout}"
+        assert "downgrade correction" in result.stdout
+    finally:
+        victim.write_text(original)
+        _MANIFEST.write_text(manifest)
 
 
 def test_the_checksum_comparison_can_actually_fail():
