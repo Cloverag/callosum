@@ -100,7 +100,7 @@
     "upgrade": "553d22bb5933bc887b36957047a822a1b16aa59810a809ede8edf966155af825"
   },
   "0021_fix_composite_fk_cascades": {
-    "downgrade": "88b225be206e40f8778e78dfe1687219bf7b6fa595ac3da9ccfba1059dc6a4c9",
+    "downgrade": "1724ed9606b6f35a6f4a4d80db7814f57dc9c19632a319fe21e6efcc72c47a06",
     "header": "599e48c382d92aef5d006befe068beb4e5bcedd120a75e148fbf5b83df36f156",
     "upgrade": "3165b1d0582273f924c4f7c5e86692e991b2d828b63731f1220ee0566766b110"
   },

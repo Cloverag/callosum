@@ -133,8 +133,31 @@ python scripts/record_migration_checksums.py
 If the test fails, do **not** regenerate the manifest to match — the recorder refuses
 that on purpose. Revert the file and put the change in a new migration.
 
-**The one exception: `downgrade()` may be corrected when it acts on objects the
-migration did not create.**
+**The one exception: `downgrade()` may be corrected to restore correct reversal
+behaviour.**
+
+Maintainer decision, 2026-08-25 (issue #173). A correction is permitted only when **all
+five** hold:
+
+1. it does not change `upgrade()` or forward schema behaviour;
+2. it does not alter the schema produced by any already-applied migration;
+3. it only restores correct reversal behaviour for that migration;
+4. it is explicitly documented and checksum-protected;
+5. it is covered by a forward-and-reverse migration-chain test.
+
+This covers **both** shapes of the same fault:
+
+- **over-dropping** — `downgrade()` acts on objects the migration did not create
+  (`0019`, #165);
+- **under-restoring** — `downgrade()` omits recreating something its `upgrade()` changed
+  (`0021`, #173).
+
+The original wording covered only the first, because the first was the one in front of us.
+That is the failure mode of writing a rule from a single example: the second was found days
+later and had to wait for the boundary to be widened before it could be fixed. **Widened
+deliberately and in writing, because an exception without a boundary is a repealed rule** —
+and condition 5 is what keeps it from being one, because a correction nothing exercises is
+indistinguishable from a correction that is wrong.
 
 `upgrade()` and everything outside the two functions — the docstring, `revision`,
 **`down_revision`** — may never be edited. `down_revision` is the chain itself.
