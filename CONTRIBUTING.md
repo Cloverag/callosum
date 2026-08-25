@@ -133,6 +133,42 @@ python scripts/record_migration_checksums.py
 If the test fails, do **not** regenerate the manifest to match — the recorder refuses
 that on purpose. Revert the file and put the change in a new migration.
 
+**The one exception: `downgrade()` may be corrected when it acts on objects the
+migration did not create.**
+
+`upgrade()` and everything outside the two functions — the docstring, `revision`,
+**`down_revision`** — may never be edited. `down_revision` is the chain itself.
+
+The asymmetry follows from the harm above rather than from convenience. Two
+populations that never converge is an **upgrade-path** harm: Alembic stores version
+numbers and never stores downgrade SQL, so no applied database holds a copy of
+`downgrade()` that could diverge from an edit. A downgrade that is wrong is wrong in
+the file, for everyone, at once — and can therefore be corrected for everyone, at
+once. There is no estate to split.
+
+The boundary is **enforced, not trusted**. `CHECKSUMS.json` records three hashes per
+migration rather than one:
+
+```json
+"0019_composite_tenant_fks": {
+  "header":    "...",   // immutable
+  "upgrade":   "...",   // immutable
+  "downgrade": "..."    // correctable
+}
+```
+
+The recorder exits non-zero rather than overwrite `header` or `upgrade`, and there is
+deliberately no flag to widen that. A single whole-file hash could only ever be
+re-recorded wholesale, which silently re-blessed the upgrade path along with the
+downgrade — a boundary that lived in prose, which is a boundary that depends on the
+next person having read this paragraph.
+
+What a correction is *for*: a `downgrade()` that drops what an earlier migration
+created will abort the reverse leg with `DependentObjectsStillExist`, because
+downgrade runs in reverse order and the owner's dependants are still present. **A
+conditional create demands an equally conditional drop** — `DROP CONSTRAINT IF EXISTS`
+guards absence, not ownership. `0019` is the worked example.
+
 **Tenant-scoped foreign keys should reference the `(id, workspace_id)` pair.**
 
 Postgres validates foreign keys as the table owner, which **bypasses row-level
