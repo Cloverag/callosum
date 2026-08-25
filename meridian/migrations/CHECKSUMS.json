@@ -123,5 +123,10 @@
     "downgrade": "a715b6f349eedea02482e3be07cee53245ea576ea4fb79f7dcc2a88f315e75a1",
     "header": "7ff08839992139b19860429043e6ad85c7d468435f686fb32d40c49d8f9d74db",
     "upgrade": "9afad8add7e873fae0a7d87156b11da6ff23bd3f6bff0ae390d0f10f98e40cdf"
+  },
+  "0026_dedupe_contradictory_fks": {
+    "downgrade": "1b91168ef532a7fbb792eea0fb63e85b0b58f889b1eb07a4377dff732d486554",
+    "header": "74a2ed77c9618a02c29f9e5eef9cd5938ff94612000d3fbceaaaa91551a6d0d3",
+    "upgrade": "51505aab92d8786924673d9f16fef693f1fd7523b45625d2b59a98958177c57c"
   }
 }
