@@ -67,6 +67,30 @@ jobs:
           alembic upgrade head
           callosum init
 
+      # Condition 5 of the downgrade-correction rule in CONTRIBUTING.md: a correction
+      # is permitted only if a forward-and-reverse chain test covers it. This is that
+      # test, and it is the reason #165 and #173 went unnoticed for months — the chain
+      # had never been reversed anywhere, so every downgrade() in the repo was
+      # unverified. Two were checked and both were wrong.
+      #
+      # Runs against its own scratch database so the suite's database is untouched,
+      # and sets POSTGRES_DSN rather than CALLOSUM_POSTGRES_DSN because
+      # src/callosum/config.py declares no env_prefix (#171).
+      - name: Migration chain reverses (down to base, then back up)
+        env:
+          POSTGRES_DSN: postgresql://callosum:callosum@localhost:5432/callosum_chain
+          POSTGRES_APP_DSN: postgresql://callosum_app:callosum_app@localhost:5432/callosum_chain
+        run: |
+          set -euo pipefail
+          PGPASSWORD=callosum createdb -h localhost -U callosum callosum_chain
+          PGPASSWORD=callosum psql -h localhost -U callosum -d callosum_chain -q -f schema/postgres.sql
+          echo "--- forward ---"
+          alembic upgrade head
+          echo "--- reverse (this is the leg that was never run) ---"
+          alembic downgrade base
+          echo "--- forward again, to prove the reverse left a usable database ---"
+          alembic upgrade head
+
       # Runs both fast unit tests and gated integration tests (closes #123).
       # Note: Live LLM tests remain excluded automatically via pyproject.toml's default addopts = "-m 'not llm'".
       - name: Run Pytest Suite (Gated Integration Suite)
