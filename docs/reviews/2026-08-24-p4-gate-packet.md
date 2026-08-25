@@ -3,10 +3,28 @@
 **Pinned master SHA:** `5010282` · **Date:** 2026-08-24 · **Migration head:** `0025_meeting_document`
 **Assembled by:** the author of the P4 leak-prevention work. **Not signed.** See *Standing and conflict*.
 
-This packet contains evidence and gaps. **It contains no verdict.** `rules.md` §4: an author
-may assemble evidence for work they wrote and may not sign the attestation for it. Whether
-this evidence is sufficient is the maintainer's judgement, and nothing below should be read
-as recommending an answer.
+This packet contains evidence and gaps. **It contains no verdict**, and did not when it was
+put to the maintainer. `rules.md` §4: an author may assemble evidence for work they wrote and
+may not sign the attestation for it. Nothing below was written to recommend an answer.
+
+---
+
+## The gate was REFUSED — maintainer, 2026-08-25
+
+**P4 is not accepted. The product track remains at 3 / 13.**
+
+The maintainer's reason, and it is the one the packet's own §2 supports:
+
+> #166 is still unresolved, and criterion 1 explicitly requires membership to be both
+> authorized and audited. We should not accept P4 while a named criterion is knowingly unmet.
+
+They also directed that this document be **kept and merged as the evidence record rather than
+withdrawn** — an unsigned packet is worth more than no packet, and a refused gate with the
+evidence preserved is a different thing from a gate never attempted.
+
+**This section is the outcome, not an attestation.** No signature was given and none is
+recorded here. What P4 needs before it can be attempted again is stated in #166: an authorized
+and audited path for mutating membership, independently reviewed.
 
 ---
 
@@ -463,13 +481,28 @@ worth reading adversarially.
    it; nothing structural keeps that true. It also proves membership **at the moment of the
    write**, which is not the same claim as "the actor was a member when the action happened".
 4. **Auditing is largely absent across the product**, not only on membership — **32 of 43**
-   domain mutating routes reach no audit write (§2). This packet does not establish which
-   of those the criterion reaches. It says "membership", so the strict reading is that only
-   #166's narrow half is in scope for P4 and the rest is a separate phase; the generous
-   reading is that a trail this incomplete cannot support any claim that the board's record
-   is auditable. **That is a scope judgement, and it is the maintainer's, not the packet's.**
-   Both readings are stated because choosing one here would be the packet deciding its own
-   verdict by choosing a definition.
+   domain mutating routes reach no audit write (§2). This packet stated both readings of
+   which of those the criterion reaches and deliberately chose neither, because choosing a
+   definition here would be the packet deciding its own verdict.
+
+   **Since resolved by the maintainer, and no longer a gap in this packet.** Their wording,
+   quoted rather than paraphrased, from
+   [issue #166](https://github.com/Cloverag/callosum/issues/166#issuecomment-5405107919):
+
+   > "Membership" in the P4 criterion means the product must have an authorized and audited
+   > path for mutating the membership state that determines a principal's workspace access
+   > and clearance. Auditing board-member mutations alone does not satisfy that criterion.
+   >
+   > The other currently unaudited product routes are separate from this specific P4
+   > membership criterion unless they directly mutate membership/access/clearance. They
+   > should remain visible as separate audit work and must not be silently counted as
+   > complete.
+
+   So the scope is the narrow one, and the 28 routes in **#168** are out of scope for this
+   criterion **and explicitly not thereby complete**. The source is cited as the maintainer's
+   own comment rather than attributed to any session: every session and the maintainer push
+   through the same account, so a citation naming a session would point back at the packet's
+   own authors.
 
 ### On criterion 3
 
