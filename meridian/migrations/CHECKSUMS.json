@@ -23,5 +23,6 @@
   "0022_doc_content_hash_uq": "9762862e07002e66670baa424967080c2b6d2768eec6e24ee3226c81a640671b",
   "0023_audit_intake_refused": "caeb01cd750d9bacda6b03cd731075f272c4427b502c70b8a169e6462ccb2368",
   "0024_document_version": "6469143b17a6fca1248b0b5c32d7488b7d71da6a474ef753d2d6d39b6f2d15af",
-  "0025_meeting_document": "3d5360b9e9592f43bb8938229abb4ea4b4449d2d4f369a1e2a8c60d6e6f7f48e"
+  "0025_meeting_document": "3d5360b9e9592f43bb8938229abb4ea4b4449d2d4f369a1e2a8c60d6e6f7f48e",
+  "0026_dedupe_contradictory_fks": "acb43d0eac5f15c9cad15d2106089e0c12fee42215a1b217ba7c2af8eaec0d56"
 }
