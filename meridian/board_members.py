@@ -35,6 +35,8 @@ from datetime import datetime
 from callosum import store
 from callosum.store import DEFAULT_WORKSPACE_ID
 
+from meridian import audit
+
 DIRECTOR = "director"
 OBSERVER = "observer"
 EXECUTIVE = "executive"
@@ -112,6 +114,28 @@ def _row_to_member(row: dict) -> BoardMember:
     )
 
 
+def _audit_payload(row: dict) -> dict:
+    """The governance-relevant facts about a member, for the audit trail.
+
+    **Deliberately not the whole row.** `contact_email` is personal data with no
+    governance meaning — an auditor asking "who could vote, and when did that change?"
+    never needs it, and the audit table is append-only, so anything written here can
+    never be corrected or removed. `full_name` is included because a trail naming
+    `board_member <uuid>` is unreadable without joining to a row that may since have
+    been edited, and the directory is workspace-visible in any case.
+
+    `role` and `voting` are the two fields with real consequences: they decide who
+    counts toward a quorum. `active` answers whether the member was on the board at
+    the time of the event.
+    """
+    return {
+        "full_name": row["full_name"],
+        "role": row["role"],
+        "voting": row["voting"],
+        "active": row["active"],
+    }
+
+
 def _validate(full_name: str | None, role: str | None, voting: str | None) -> None:
     if full_name is not None and not full_name.strip():
         raise BoardMemberValidationError("full_name must not be empty")
@@ -134,6 +158,7 @@ def create_member(
     organization: str | None = None,
     contact_email: str | None = None,
     voting: str = VOTING,
+    actor_principal_id: str | None = None,
 ) -> BoardMember:
     """Adds a person to the board directory.
 
@@ -171,6 +196,16 @@ def create_member(
                 voting,
             ),
         ).fetchone()
+
+        audit.record_audit_event(
+            conn,
+            aggregate_type="board_member",
+            aggregate_id=row["id"],
+            action="created",
+            actor_principal_id=actor_principal_id,
+            payload=_audit_payload(row),
+            workspace_id=workspace_id,
+        )
 
     return _row_to_member(row)
 
@@ -232,6 +267,7 @@ def update_member(
     role=_UNSET,
     contact_email=_UNSET,
     voting=_UNSET,
+    actor_principal_id: str | None = None,
 ) -> BoardMember:
     """Updates directory fields under optimistic concurrency.
 
@@ -246,31 +282,53 @@ def update_member(
 
     sets: list[str] = []
     params: list = []
+    # Names, not values. `_audit_payload` records what the fields now hold; this
+    # records which of them this particular edit touched, which is the question a
+    # trail of successive updates cannot otherwise answer.
+    changed: list[str] = []
 
     if full_name is not _UNSET:
         sets.append("full_name = %s")
         params.append(full_name.strip())
+        changed.append("full_name")
     if organization is not _UNSET:
         sets.append("organization = %s")
         params.append(organization.strip() if organization and organization.strip() else None)
+        changed.append("organization")
     if role is not _UNSET:
         sets.append("role = %s")
         params.append(role)
+        changed.append("role")
     if contact_email is not _UNSET:
         sets.append("contact_email = %s")
         params.append(contact_email.strip() if contact_email and contact_email.strip() else None)
+        changed.append("contact_email")
     if voting is not _UNSET:
         sets.append("voting = %s")
         params.append(voting)
+        changed.append("voting")
 
     if not sets:
         raise BoardMemberValidationError("no fields to update")
 
-    return _apply_update(member_id, sets, params, expected_version, workspace_id)
+    return _apply_update(
+        member_id,
+        sets,
+        params,
+        expected_version,
+        workspace_id,
+        action="updated",
+        actor_principal_id=actor_principal_id,
+        changed_fields=changed,
+    )
 
 
 def deactivate_member(
-    member_id: str, *, expected_version: int, workspace_id: str = DEFAULT_WORKSPACE_ID
+    member_id: str,
+    *,
+    expected_version: int,
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
+    actor_principal_id: str | None = None,
 ) -> BoardMember:
     """Marks a member inactive. There is no hard delete, deliberately.
 
@@ -279,14 +337,34 @@ def deactivate_member(
     permanent. Inactive members drop out of the default `list_members()` but
     still resolve by id.
     """
-    return _apply_update(member_id, ["active = false"], [], expected_version, workspace_id)
+    return _apply_update(
+        member_id,
+        ["active = false"],
+        [],
+        expected_version,
+        workspace_id,
+        action="status_changed",
+        actor_principal_id=actor_principal_id,
+    )
 
 
 def reactivate_member(
-    member_id: str, *, expected_version: int, workspace_id: str = DEFAULT_WORKSPACE_ID
+    member_id: str,
+    *,
+    expected_version: int,
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
+    actor_principal_id: str | None = None,
 ) -> BoardMember:
     """Returns a previously departed member to the active roster."""
-    return _apply_update(member_id, ["active = true"], [], expected_version, workspace_id)
+    return _apply_update(
+        member_id,
+        ["active = true"],
+        [],
+        expected_version,
+        workspace_id,
+        action="status_changed",
+        actor_principal_id=actor_principal_id,
+    )
 
 
 def _apply_update(
@@ -295,12 +373,29 @@ def _apply_update(
     params: list,
     expected_version: int,
     workspace_id: str,
+    *,
+    action: str,
+    actor_principal_id: str | None = None,
+    changed_fields: list[str] | None = None,
 ) -> BoardMember:
-    """Shared version-guarded write.
+    """Shared version-guarded write, and the one place a member mutation is audited.
 
     The guard is `WHERE id = %s AND version = %s`: zero rows updated means either
     the member is invisible in this workspace or someone else wrote first, and
     those are distinguished by a follow-up read rather than by guessing.
+
+    **`action` is required and has no default.** All three mutating callers funnel
+    through here, so a default would silently mislabel whichever one forgot to pass
+    it — and the distinction it carries is the governance-relevant one. Leaving the
+    board is `status_changed`, matching `commitments.record_update`, which already
+    uses that action for exactly this shape: a state transition rather than a field
+    edit. Editing directory fields is `updated`. The two can never be confused at the
+    source either, because `active` is not settable through `update_member`.
+
+    The write is inside the same transaction as the mutation, and after the row is
+    confirmed — a rolled-back update must not leave an event claiming it happened,
+    and a refused one (`BoardMemberNotFound`, `StaleBoardMemberError`) must not be
+    recorded as a change that never occurred.
     """
     member_uuid = uuid.UUID(str(member_id))
     sets = [*sets, "version = version + 1", "updated_at = now()"]
@@ -321,5 +416,18 @@ def _apply_update(
             raise StaleBoardMemberError(
                 f"board member {member_id} was modified since version {expected_version}"
             )
+
+        payload = _audit_payload(row)
+        if changed_fields:
+            payload["changed_fields"] = changed_fields
+        audit.record_audit_event(
+            conn,
+            aggregate_type="board_member",
+            aggregate_id=member_uuid,
+            action=action,
+            actor_principal_id=actor_principal_id,
+            payload=payload,
+            workspace_id=workspace_id,
+        )
 
     return _row_to_member(row)

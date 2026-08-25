@@ -104,6 +104,7 @@ def create_member(payload: MemberCreate, principal: CurrentPrincipal) -> domain.
         organization=payload.organization,
         contact_email=payload.contact_email,
         voting=payload.voting,
+        actor_principal_id=str(principal.id) if principal.id else None,
     )
 
 
@@ -122,6 +123,7 @@ def update_member(
         str(member_id),
         expected_version=payload.expected_version,
         workspace_id=principal.workspace_id,
+        actor_principal_id=str(principal.id) if principal.id else None,
         **changes,
     )
 
@@ -141,6 +143,7 @@ def deactivate_member(
         str(member_id),
         expected_version=payload.expected_version,
         workspace_id=principal.workspace_id,
+        actor_principal_id=str(principal.id) if principal.id else None,
     )
 
 
@@ -157,4 +160,5 @@ def reactivate_member(
         str(member_id),
         expected_version=payload.expected_version,
         workspace_id=principal.workspace_id,
+        actor_principal_id=str(principal.id) if principal.id else None,
     )
