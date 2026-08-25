@@ -75,6 +75,69 @@ jobs:
         run: |
           pytest -q
 
+  # Condition 5 of the downgrade-correction rule in CONTRIBUTING.md: a downgrade may
+  # be corrected only if a forward-and-reverse chain test covers it. This is that test.
+  #
+  # It exists because the chain had never been reversed anywhere, so every downgrade()
+  # in this repository was unverified. Two were checked (#165, #173) and both were wrong,
+  # and the second was only visible once the first was fixed.
+  #
+  # WHY ITS OWN JOB AND NOT A STEP IN backend-ci. `0004_app_role` creates the
+  # `callosum_app` role and its downgrade drops it. Postgres roles are CLUSTER-wide, not
+  # per-database — so a scratch database sharing a cluster with the suite's database
+  # cannot complete the reverse leg: DROP ROLE fails with DependentObjectsStillExist
+  # against the OTHER database's objects. A separate job gets a separate service
+  # container, which is the only way `downgrade base` means what it says.
+  migration-chain:
+    name: Migration chain reverses (full, down to base and back)
+    runs-on: ubuntu-latest
+
+    env:
+      # POSTGRES_DSN, not CALLOSUM_POSTGRES_DSN: src/callosum/config.py declares no
+      # env_prefix, so the CALLOSUM_-prefixed names are silently ignored (#171).
+      POSTGRES_DSN: postgresql://callosum:callosum@localhost:5432/callosum
+      POSTGRES_APP_DSN: postgresql://callosum_app:callosum_app@localhost:5432/callosum
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: callosum
+          POSTGRES_PASSWORD: callosum
+          POSTGRES_DB: callosum
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Base schema
+        run: PGPASSWORD=callosum psql -h localhost -U callosum -d callosum -q -f schema/postgres.sql
+
+      - name: Forward — every migration applies
+        run: alembic upgrade head
+
+      - name: Reverse — every downgrade is a faithful inverse
+        run: alembic downgrade base
+
+      - name: Forward again — the reverse left a usable database
+        run: alembic upgrade head
+
   frontend-ci:
     name: Frontend CI (Next.js & Jest)
     runs-on: ubuntu-latest
