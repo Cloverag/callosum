@@ -29,6 +29,52 @@ the record of the run rather than reproduce from git.
 
 ---
 
+## 0b. What has changed since the pin — and why this packet is not re-pinned
+
+**Everything above and below still derives at `5010282`.** This section exists because the
+packet is still open and unsigned while master has moved, and a reader in front of it today
+would otherwise take a fixed finding for a current one. Nothing here is folded into the
+sections above: a packet whose figures move while it is being read is not evidence.
+
+Master is now **`4241f81`** — four commits, PR **#169**, merged by a second reader who wrote
+none of it (`rules.md` §4).
+
+| | at the pin `5010282` | at `4241f81` |
+|---|---|---|
+| `api/board_members.py` unaudited | **4 / 4** | **0 / 4** |
+| product-wide unaudited mutating routes | **34 / 45** | **30 / 45** |
+| `AGGREGATE_TYPES` ever written | 7 of 10 | **8 of 10** |
+| never written | `agenda_item`, `board_member`, `minutes` | `agenda_item`, `minutes` |
+
+Re-derive by pasting §2's script and running it from the repo root — it takes no arguments
+and reads the working tree, so it answers for whatever is checked out.
+
+**Criterion 1 still fails.** #169 closed the `board_member` half of **#166** and did not touch
+the other: the `membership` table — the row carrying clearance — still has no product writer
+outside `src/callosum/cli.py:125`, so there is still no authorized, audited path by which a
+principal's clearance is granted, changed or revoked. That was always the larger half, and it
+needs a design decision about a clearance-granting surface rather than an audit-write pattern.
+
+**§5's reverse leg still fails, one step further along.** #172 corrects
+`0019.downgrade()`, which was dropping four uniques it did not create; with it applied the
+chain reaches `0018` and aborts there instead — `0021.upgrade()` reverts `0018`'s rename of
+`principal_identity_provider_subject_uq` and `0021.downgrade()` never restores it (**#173**).
+The generalisation matters more than either fix: **the chain has never been reversed in CI,
+so every `downgrade()` in this repository is unverified.** Two have now been checked and both
+were wrong, and the second was only visible once the first was fixed.
+
+**§5's other finding is addressed but not merged.** #174 removes the five contradictory
+duplicate foreign keys. Note the count: this packet reported **two** tables from reading the
+migrations, a second reader found a third pair the same way, and `pg_constraint` found
+**five** across three tables. Reading 25 ordered migrations with conditional creates to learn
+the current schema is the wrong instrument, and three readers proved it.
+
+**Also opened against gaps this packet named:** **#170** (nine test teardowns that break the
+moment their domain is audited) and **#171** (four tests needing Postgres outside
+`CALLOSUM_RUN_INTEGRATION`, one of them a tenancy assertion — the tier is not DB-free).
+
+---
+
 ## 1. The criteria, verbatim
 
 Quoted from `ROADMAP.md:441-442` exactly. A paraphrased criterion is a criterion the packet
