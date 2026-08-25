@@ -141,13 +141,25 @@ def downgrade() -> None:
         ALTER TABLE extraction_failure DROP CONSTRAINT IF EXISTS extraction_failure_document_workspace_fk;
         ALTER TABLE extraction_failure DROP CONSTRAINT IF EXISTS extraction_failure_chunk_workspace_fk;
 
+        -- Only the four this migration actually creates. `upgrade()` adds all eight
+        -- `IF NOT EXISTS`, and four of them already existed when it first ran — they
+        -- belong to the migrations that introduced them:
+        --
+        --     decision_id_workspace_uq      0014_resolution
+        --     resolution_id_workspace_uq    0014_resolution
+        --     commitment_id_workspace_uq    0015_commitment
+        --     board_member_id_workspace_uq  0012_board_member
+        --
+        -- Dropping those here aborted the reverse leg with DependentObjectsStillExist.
+        -- Downgrade runs in reverse order, so 0019 executes BEFORE 0014/0015/0012 and
+        -- the foreign keys depending on those uniques are all still present. Each
+        -- owner drops its own, later, correctly.
+        --
+        -- The general trap: `DROP CONSTRAINT IF EXISTS` guards absence, not ownership,
+        -- so a conditional create demands an equally conditional drop.
         ALTER TABLE document DROP CONSTRAINT IF EXISTS document_id_workspace_uq;
         ALTER TABLE chunk DROP CONSTRAINT IF EXISTS chunk_id_workspace_uq;
         ALTER TABLE meeting DROP CONSTRAINT IF EXISTS meeting_id_workspace_uq;
-        ALTER TABLE decision DROP CONSTRAINT IF EXISTS decision_id_workspace_uq;
-        ALTER TABLE resolution DROP CONSTRAINT IF EXISTS resolution_id_workspace_uq;
-        ALTER TABLE commitment DROP CONSTRAINT IF EXISTS commitment_id_workspace_uq;
-        ALTER TABLE board_member DROP CONSTRAINT IF EXISTS board_member_id_workspace_uq;
         ALTER TABLE board_pack DROP CONSTRAINT IF EXISTS board_pack_id_workspace_uq;
         """
     )

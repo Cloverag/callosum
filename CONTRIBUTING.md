@@ -133,6 +133,71 @@ python scripts/record_migration_checksums.py
 If the test fails, do **not** regenerate the manifest to match — the recorder refuses
 that on purpose. Revert the file and put the change in a new migration.
 
+**The one exception: `downgrade()` may be corrected when it acts on objects the
+migration did not create.**
+
+`upgrade()` and everything outside the two functions — the docstring, `revision`,
+**`down_revision`** — may never be edited. `down_revision` is the chain itself.
+
+The asymmetry follows from the harm above rather than from convenience. Two
+populations that never converge is an **upgrade-path** harm: Alembic stores version
+numbers and never stores downgrade SQL, so no applied database holds a copy of
+`downgrade()` that could diverge from an edit. A downgrade that is wrong is wrong in
+the file, for everyone, at once — and can therefore be corrected for everyone, at
+once. There is no estate to split.
+
+The boundary is **enforced, not trusted**. `CHECKSUMS.json` records three hashes per
+migration rather than one:
+
+```json
+"0019_composite_tenant_fks": {
+  "header":    "...",   // immutable
+  "upgrade":   "...",   // immutable
+  "downgrade": "..."    // correctable
+}
+```
+
+The recorder exits non-zero rather than overwrite `header` or `upgrade`, and there is
+deliberately no flag to widen that. A single whole-file hash could only ever be
+re-recorded wholesale, which silently re-blessed the upgrade path along with the
+downgrade — a boundary that lived in prose, which is a boundary that depends on the
+next person having read this paragraph.
+
+What a correction is *for*: a `downgrade()` that drops what an earlier migration
+created will abort the reverse leg with `DependentObjectsStillExist`, because
+downgrade runs in reverse order and the owner's dependants are still present. **A
+conditional create demands an equally conditional drop** — `DROP CONSTRAINT IF EXISTS`
+guards absence, not ownership. `0019` is the worked example.
+
+**A migration that has not merged to master has not been applied, and may be edited
+freely.**
+
+Everything above is about *applied* migrations. A migration living only on an unmerged
+branch has been run, at most, against your own scratch database — there is no estate to
+split, because no population has it. Rewrite it, including its docstring and its
+`upgrade()`, as often as the review asks. Re-record by **removing its entry from
+`CHECKSUMS.json` by hand** and running the recorder again, and say in the commit message
+that it was unreleased.
+
+This case is stated because a rule that describes the dangerous path precisely and the
+legitimate one not at all produces an undocumented escape hatch the first time someone
+needs one. Requiring an `0027` to fix a comment in an unmerged `0026` would be the rule
+defeating its own purpose.
+
+**What the mechanism does and does not catch.**
+
+The recorder refuses to overwrite `header` or `upgrade`. But it reads a manifest that any
+human can open and edit, and there is no way around that: the manifest is the record, so
+whoever maintains the record can change it. **The boundary therefore stops accidents, not
+decisions.**
+
+What catches a decision is the **`CHECKSUMS.json` diff appearing in a pull request**. A
+removed or altered entry is one line and it is unmissable once you know to look — so look.
+That is a review control, not a mechanical one, and both halves are load-bearing: the
+mechanism makes crossing the line deliberate, and review is what makes a deliberate
+crossing visible. A reader who believes the guard is unforgeable will not read manifest
+diffs, which is the only thing that would have caught the last one.
+
 **Tenant-scoped foreign keys should reference the `(id, workspace_id)` pair.**
 
 Postgres validates foreign keys as the table owner, which **bypasses row-level
