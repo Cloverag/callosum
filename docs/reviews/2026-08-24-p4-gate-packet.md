@@ -53,14 +53,14 @@ difference decides how much the evidence can carry — see §5.
 | Cross-workspace access is refused at the database, not only in the domain | `tests/test_tenancy_guard.py` — **16 tests** |
 | Session/identity resolution | `tests/test_auth_session.py` — **24 tests** |
 | RLS `ENABLE` + `FORCE`, runtime connects as non-superuser `callosum_app` | `schema/postgres.sql`, every migration's `tenant_isolation` policy |
-| **An audit event that names an actor cannot name a non-member.** `record_audit_event` refuses unless the actor holds an **active membership** in the event's workspace | `meridian/audit.py:174-188` — `ActorNotInWorkspace`; `tests/test_audit.py:355`, `:398` |
+| **An audit event that names an actor cannot name a non-member.** `record_audit_event` refuses unless the actor holds an **active membership** in the event's workspace | `meridian/audit.py:174-188` — `ActorNotInWorkspace`; `tests/test_audit.py:354`, `:401` |
 
 The last row is the only place in this packet where the two halves of criterion 1 meet at one
 enforcement point, and it was not in the packet's first draft — a second reader supplied it
 after the property surfaced in an unrelated fixture failure. It is worth reading closely,
 because it argues criterion 1 was **partly designed** rather than only partly forgotten:
 
-- It is a **found and fixed defect**, not a precaution. `test_audit.py:355`'s docstring: *"Before
+- It is a **found and fixed defect**, not a precaution. `test_audit.py:354`'s docstring: *"Before
   the check in `record_audit_event()`, this insert succeeded — attributing an action to someone
   who was never in the workspace, in a table that cannot be corrected afterwards."*
 - The refusal is **oracle-closed**: `test_an_unknown_actor_is_refused_identically_to_an_outsider`
