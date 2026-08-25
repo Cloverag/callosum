@@ -53,6 +53,28 @@ difference decides how much the evidence can carry — see §5.
 | Cross-workspace access is refused at the database, not only in the domain | `tests/test_tenancy_guard.py` — **16 tests** |
 | Session/identity resolution | `tests/test_auth_session.py` — **24 tests** |
 | RLS `ENABLE` + `FORCE`, runtime connects as non-superuser `callosum_app` | `schema/postgres.sql`, every migration's `tenant_isolation` policy |
+| **An audit event that names an actor cannot name a non-member.** `record_audit_event` refuses unless the actor holds an **active membership** in the event's workspace | `meridian/audit.py:174-188` — `ActorNotInWorkspace`; `tests/test_audit.py:355`, `:398` |
+
+The last row is the only place in this packet where the two halves of criterion 1 meet at one
+enforcement point, and it was not in the packet's first draft — a second reader supplied it
+after the property surfaced in an unrelated fixture failure. It is worth reading closely,
+because it argues criterion 1 was **partly designed** rather than only partly forgotten:
+
+- It is a **found and fixed defect**, not a precaution. `test_audit.py:355`'s docstring: *"Before
+  the check in `record_audit_event()`, this insert succeeded — attributing an action to someone
+  who was never in the workspace, in a table that cannot be corrected afterwards."*
+- The refusal is **oracle-closed**: `test_an_unknown_actor_is_refused_identically_to_an_outsider`
+  pins that a principal who does not exist and a principal who is not a member answer
+  identically, so the trail cannot be used to enumerate a workspace's membership.
+- `record_audit_event` is the **only** writer — one `INSERT INTO audit_event` in the product
+  (`audit.py:194`), confirmed by grep across `meridian/` and `src/`.
+
+**Its three limits, because the row overclaims without them.** The check is skipped entirely
+when `actor_principal_id` is `NULL`, which is permitted, so the trail may contain events
+attributing nothing to anyone. It is enforced in **application code, not by a constraint** —
+`0016:58-64` records why it cannot be otherwise: `principal` has no `workspace_id`, and
+Postgres validates foreign keys as the table owner, which bypasses RLS. And it binds
+membership **at write time**, not at the time of the action being recorded. Carried into §6.
 
 ### Audited — two gaps, stated as findings rather than as evidence
 
@@ -387,7 +409,14 @@ worth reading adversarially.
    not exist. Filed as **#166**.
 2. **No evidence is offered that a clearance grant is authorized**, because there is no
    product path that performs one. `cli.py` is operator-only and unaudited.
-3. **Auditing is largely absent across the product**, not only on membership — **32 of 43**
+3. **The actor-membership check is a convention, not a constraint.** §2's last evidence row
+   holds only for events that name an actor: `actor_principal_id` is nullable and the check is
+   skipped when it is `NULL`. It lives in `record_audit_event` rather than in the schema —
+   `0016:58-64` explains why it cannot live there — so any writer that is not
+   `record_audit_event` bypasses it. Today there is exactly one such writer and grep confirms
+   it; nothing structural keeps that true. It also proves membership **at the moment of the
+   write**, which is not the same claim as "the actor was a member when the action happened".
+4. **Auditing is largely absent across the product**, not only on membership — **32 of 43**
    domain mutating routes reach no audit write (§2). This packet does not establish which
    of those the criterion reaches. It says "membership", so the strict reading is that only
    #166's narrow half is in scope for P4 and the rest is a separate phase; the generous
@@ -398,36 +427,36 @@ worth reading adversarially.
 
 ### On criterion 3
 
-4. **This is detection, not prevention.** Nothing structurally stops a domain exception
+5. **This is detection, not prevention.** Nothing structurally stops a domain exception
    carrying restricted content — `meridian/api/errors.py:170` passes any unregistered
    exception's `str()` to the client. The sweep catches a leak *only when the leaked content
    matches a needle in its scene*. A leak of confidential material not represented in the
    scene passes.
-5. **The frontend chokepoint constrains composition, not emission.** `lib/error-text.ts`
+6. **The frontend chokepoint constrains composition, not emission.** `lib/error-text.ts`
    cannot filter and does not try; the client has no way to know which strings are restricted.
    Its value is that policy lives in one place.
-6. **Only `application/json` request bodies are swept.** Nothing uses multipart today; this
+7. **Only `application/json` request bodies are swept.** Nothing uses multipart today; this
    stops being true the day upload lands.
-7. **The sweep is HTTP-only.** No probe covers the CLI (`callosum ask`), direct database
+8. **The sweep is HTTP-only.** No probe covers the CLI (`callosum ask`), direct database
    access, logs, tracebacks, or the Neo4j gateway. `retrieve.py` discloses a withheld count
    by design and is out of P4's scope, but nothing in this packet demonstrates that.
-8. **The sweep's scene contains one confidential document and one withheld revision.** Leak
+9. **The sweep's scene contains one confidential document and one withheld revision.** Leak
    classes requiring a richer fixture — several documents at different levels, a chain longer
    than two, cross-workspace material — are not exercised.
-9. **No adversarial testing by anyone other than the author.** Every probe here was written
-   by the person who wrote the defences. §5 makes the selection method visible precisely
-   because it cannot make it independent.
+10. **No adversarial testing by anyone other than the author.** Every probe here was written
+    by the person who wrote the defences. §5 makes the selection method visible precisely
+    because it cannot make it independent.
 
 ### On the packet itself
 
-10. **The reverse migration leg does not pass** (§5, **#165**). A required element of a gate
+11. **The reverse migration leg does not pass** (§5, **#165**). A required element of a gate
     packet is present and failing.
-11. **Duplicate composite FKs with contradictory delete semantics are live** (§5, **#165**),
+12. **Duplicate composite FKs with contradictory delete semantics are live** (§5, **#165**),
     defeating `0021`'s intent on two tables.
-12. **`scripts/eval.sh` has not been run.** It is deliberately the maintainer's to spend, so
+13. **`scripts/eval.sh` has not been run.** It is deliberately the maintainer's to spend, so
     no retrieval-quality figure appears anywhere in this packet.
-13. **The two test figures cannot be derived from the pin.** They are the record of a run.
-14. **CI's `CALLOSUM_POSTGRES_DSN` is ignored.** `src/callosum/config.py:21` sets
+14. **The two test figures cannot be derived from the pin.** They are the record of a run.
+15. **CI's `CALLOSUM_POSTGRES_DSN` is ignored.** `src/callosum/config.py:21` sets
     `SettingsConfigDict(env_file=".env", extra="ignore")` with **no** `env_prefix`, so the
     settings read `POSTGRES_DSN` / `POSTGRES_APP_DSN` and the two `CALLOSUM_`-prefixed
     variables the workflow exports (`ci.yml:22-23`) are silently discarded. **Follow the
