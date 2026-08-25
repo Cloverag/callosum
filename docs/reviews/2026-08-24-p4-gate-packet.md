@@ -232,7 +232,7 @@ for mod in sorted(per, key=lambda m: (-per[m][1], m)):
 
 # Vocabulary. Walks the whole keyword value, not just `ast.Constant`: an earlier
 # literals-only version of this scan reported `updated` as never produced, missing
-# `commitments.py:539`, where the action is a conditional expression.
+# `meridian/commitments.py:539`, where the action is a conditional expression.
 vals = collections.defaultdict(set)
 for mod, t in trees.items():
     for n in ast.walk(t):
