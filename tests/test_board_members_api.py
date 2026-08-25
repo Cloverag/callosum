@@ -102,6 +102,16 @@ def _seed_member(workspace_id: str, name: str, *, role: str = "director", active
 
 def _cleanup(principal_ids: list[str], workspace_ids: list[str]) -> None:
     for ws in workspace_ids:
+        # First, and before the principals below. `audit_event` references both
+        # `workspace(id)` and `principal(id)` ON DELETE RESTRICT (0016, deliberately —
+        # an audit log a workspace deletion silently empties is not an audit log).
+        #
+        # The general consequence, which every newly audited route inherits: once any
+        # audit event exists for a workspace, that workspace cannot be deleted until
+        # the trail is. This teardown was written when board members were unaudited,
+        # so it did not need the line; `test_documents_api._cleanup` already has it
+        # because documents were audited before it was written.
+        _admin("DELETE FROM audit_event WHERE workspace_id = %s", (ws,))
         _admin("DELETE FROM board_member WHERE workspace_id = %s", (ws,))
         _admin("DELETE FROM membership WHERE workspace_id = %s", (ws,))
     for pid in principal_ids:
