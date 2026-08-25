@@ -38,6 +38,31 @@ decision created. Removing the parent should not quietly remove the proof.
 `RESTRICT` makes the refusal explicit and forces a caller who really means it to
 unpick the dependants first — deliberately, and in the audit trail.
 
+WHAT IS KNOWINGLY LEFT
+----------------------
+Two relationships still carry two constraints each after this migration:
+
+    commitment_update -> commitment      CASCADE on both sides
+    resolution_vote   -> resolution      CASCADE on both sides
+
+They are **redundant, not contradictory** — both sides agree, so behaviour is
+unambiguous and there is nothing to resolve today. They are left because removing a
+constraint that changes nothing is a schema change with no benefit, and because the
+one that would survive is not obviously either of them.
+
+But the *condition* that produced the five is still standing on these two: two
+constraints on one relationship, with nothing forcing them to agree. **If a later
+migration alters one side of either, it becomes a sixth contradiction silently** — the
+same way `0021` created five without anyone noticing. Recorded here so that a reader
+running the duplicate sweep afterwards can tell a decision from an oversight.
+
+The sweep, for whoever runs it next:
+
+    SELECT c.conrelid::regclass AS tbl, c.conname, c.confdeltype
+      FROM pg_constraint c
+     WHERE c.contype = 'f' AND connamespace = 'public'::regnamespace
+     ORDER BY tbl, c.conname;
+
 TENANT ISOLATION IS UNAFFECTED
 ------------------------------
 Both members of every pair are composite `(x_id, workspace_id) REFERENCES t(id,
