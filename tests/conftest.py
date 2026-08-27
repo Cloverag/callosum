@@ -51,5 +51,11 @@ def pytest_collection_modifyitems(config, items):
         return
     skip = pytest.mark.skip(reason=f"needs a live Postgres — set {_ENV}=1 to run")
     for item in items:
-        if "integration" in item.keywords:
+        # `get_closest_marker`, not `"integration" in item.keywords`: `keywords` is a
+        # namespace of node *names* as well as markers, so a class or module literally
+        # named `integration` would be gated by its name rather than by its marker. No
+        # such name exists today — this is hardening, not a fix — but a gate that can be
+        # satisfied by a coincidence of naming is discriminating on the wrong axis, which
+        # is the defect this whole file is about.
+        if item.get_closest_marker("integration") is not None:
             item.add_marker(skip)
