@@ -15,6 +15,27 @@ Postgres. It is also the reason #171 could not be fixed with the module-level
 have disabled five good tests to gate one.
 
 Ungated, so it runs in the fast tier — which is the tier whose honesty it defends.
+
+---------------------------------------------------------------------------
+WHAT THIS CATCHES, AND THE ONE THING IT CANNOT
+---------------------------------------------------------------------------
+Established by mutating `conftest.py` and running this file against each mutant,
+rather than by watching it pass once:
+
+    inverted env check   (`== "1"` -> `!= "1"`)      -> 2 failed   caught
+    marker name typo     (matches nothing)           -> 2 failed   caught
+    marker check removed (`if True` — skip all)      -> 2 SKIPPED  NOT caught
+
+The third is the dangerous direction and this test does not cover it. A hook that
+skips everything skips *these tests too*, so they cannot fail — the suite reports
+success while running nothing. That is not a fixable flaw in the assertions: no test
+inside a suite can defend against a `conftest.py` that disables the suite.
+
+What actually catches the over-skip direction is the **total count**, which is why the
+number matters and why it is pinned in review: 298 passed ungated, 824 passed / 5
+deselected gated. A hook that skipped everything would show as a collapse in those
+figures, not as a red test. Anyone changing this hook should check the count, not just
+that the suite is green.
 """
 
 import subprocess
