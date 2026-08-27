@@ -91,6 +91,11 @@ def test_cross_workspace_reads_are_isolated():
             ).fetchone()["n"]
         assert n == 0
     finally:
+        # `audit_event` references `workspace(id)` ON DELETE RESTRICT (0016,
+        # deliberately). This file has no shared `_cleanup`, so the line is repeated
+        # at each of the four teardown sites rather than centralised — a shared
+        # helper is #170's open question, not something to settle here. Issue #170.
+        _admin("DELETE FROM audit_event WHERE workspace_id IN (%s, %s)", (wa, wb))
         _admin("DELETE FROM document WHERE content_hash LIKE %s", (f"h%-{token}",))
         _admin("DELETE FROM workspace WHERE id IN (%s, %s)", (wa, wb))
 
@@ -115,6 +120,8 @@ def test_cross_workspace_write_is_rejected():
                     (f"smuggle-{token}", f"hX-{token}", str(wb)),
                 )
     finally:
+        # `audit_event` is ON DELETE RESTRICT on workspace_id — see above. Issue #170.
+        _admin("DELETE FROM audit_event WHERE workspace_id IN (%s, %s)", (wa, wb))
         _admin("DELETE FROM document WHERE content_hash LIKE %s", (f"h%-{token}",))
         _admin("DELETE FROM workspace WHERE id IN (%s, %s)", (wa, wb))
 
@@ -167,6 +174,8 @@ def test_entity_conflict_unique_key_is_workspace_scoped():
         with pytest.raises(psycopg.errors.UniqueViolation):
             _insert(wa)
     finally:
+        # `audit_event` is ON DELETE RESTRICT on workspace_id — see above. Issue #170.
+        _admin("DELETE FROM audit_event WHERE workspace_id IN (%s, %s)", (wa, wb))
         _admin("DELETE FROM entity_conflict WHERE name_a = %s", (name_a,))
         _admin("DELETE FROM workspace WHERE id IN (%s, %s)", (wa, wb))
 
@@ -222,6 +231,8 @@ def test_control_plane_membership_is_workspace_scoped():
                     (pa, wa),
                 )
     finally:
+        # `audit_event` is ON DELETE RESTRICT on workspace_id — see above. Issue #170.
+        _admin("DELETE FROM audit_event WHERE workspace_id IN (%s, %s)", (wa, wb))
         _admin("DELETE FROM membership WHERE workspace_id IN (%s, %s)", (wa, wb))
         _admin("DELETE FROM principal WHERE id IN (%s, %s)", (pa, pb))
         _admin("DELETE FROM workspace WHERE id IN (%s, %s)", (wa, wb))
