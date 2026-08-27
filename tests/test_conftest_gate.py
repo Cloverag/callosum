@@ -46,9 +46,14 @@ _MIXED = "tests/test_backend_security_hardening.py"
 
 
 def _run_ungated(*args: str) -> str:
-    """Collect `_MIXED` with the gate variable explicitly absent."""
+    """Run `_MIXED` with the gate variable explicitly absent.
+
+    No `-q` here. pytest's verbosity is additive, so `-q -v` cancels to normal and the
+    per-test lines the name assertion needs never appear — the caller passes whichever
+    verbosity it actually needs.
+    """
     return subprocess.run(
-        [sys.executable, "-m", "pytest", _MIXED, "-q", "--no-header", *args],
+        [sys.executable, "-m", "pytest", _MIXED, "--no-header", *args],
         capture_output=True,
         text=True,
         env={"PATH": "/usr/bin:/bin", "HOME": "/tmp"},
@@ -57,12 +62,18 @@ def _run_ungated(*args: str) -> str:
 
 def test_the_gate_skips_the_db_test_and_runs_the_rest():
     """5 passed, 1 skipped — not 6 skipped, and not 6 run."""
-    out = _run_ungated()
+    out = _run_ungated("-q")
     assert "5 passed" in out, f"the DB-free tests stopped running:\n{out}"
     assert "1 skipped" in out, f"the DB test was not gated:\n{out}"
 
 
 def test_the_skipped_one_is_the_database_test_by_name():
-    """Naming it, so a future reshuffle cannot satisfy the counts with the wrong test."""
-    out = _run_ungated("-rs")
-    assert "test_composite_tenant_foreign_key_constraint" in out, out
+    """Naming it, so a future reshuffle cannot satisfy the counts with the wrong test.
+
+    `-v` rather than `-rs`: the short-summary form reports a skip as `file.py:105:
+    <reason>`, which carries the line number but never the test name — so an assertion
+    on the name against `-rs` output can only ever fail.
+    """
+    out = _run_ungated("-v")
+    assert "test_composite_tenant_foreign_key_constraint SKIPPED" in out, out
+    assert "test_conflicts_api_router_registered PASSED" in out, out
