@@ -68,6 +68,11 @@ def _member(principal_id: str, workspace_id: str, clearance: int, *, active: boo
 
 def _cleanup(principal_ids: list[str], workspace_ids: list[str]) -> None:
     for ws in workspace_ids:
+        # Before every other delete below. `audit_event` references both
+        # `workspace(id)` and `principal(id)` ON DELETE RESTRICT (0016, deliberately),
+        # so once any route in this file is audited, the workspace cannot be dropped
+        # until its trail is. Issue #170.
+        _admin("DELETE FROM audit_event WHERE workspace_id = %s", (ws,))
         _admin("DELETE FROM membership WHERE workspace_id = %s", (ws,))
     for pid in principal_ids:
         _admin("DELETE FROM principal WHERE id = %s", (pid,))
