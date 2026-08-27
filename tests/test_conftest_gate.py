@@ -31,11 +31,22 @@ skips everything skips *these tests too*, so they cannot fail — the suite repo
 success while running nothing. That is not a fixable flaw in the assertions: no test
 inside a suite can defend against a `conftest.py` that disables the suite.
 
-What actually catches the over-skip direction is the **total count**, which is why the
-number matters and why it is pinned in review: 298 passed ungated, 824 passed / 5
-deselected gated. A hook that skipped everything would show as a collapse in those
-figures, not as a red test. Anyone changing this hook should check the count, not just
-that the suite is green.
+What actually catches the over-skip direction is the **total count**. A hook that
+skipped everything would show as a collapse in these figures, not as a red test, so
+anyone changing this hook should check the count rather than only that the suite is
+green.
+
+**Counts as of this commit — post-change, and they moved in it:**
+
+    ungated (no CALLOSUM_RUN_INTEGRATION)   296 passed, 41 skipped, 5 deselected
+    gated   (CALLOSUM_RUN_INTEGRATION=1)    826 passed, 5 deselected
+
+Stated as post-change because this commit moved both, and a stale pin here is worse
+than no pin at all: the previous draft of this docstring pinned the *pre*-change 298 /
+824, so a reader following its own instruction would have compared 296 against 298, been
+told by this file that a shortfall means over-skipping, and "fixed" it by loosening the
+gate — un-gating the four tests the gate exists for. **A pinned figure inside an
+instruction points the reader somewhere; it must point at the state the reader is in.**
 """
 
 import subprocess
