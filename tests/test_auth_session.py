@@ -54,6 +54,13 @@ def _provisioned_principal(subject: str) -> str:
 
 def _cleanup(*principal_ids: str) -> None:
     for pid in principal_ids:
+        # `audit_event.actor_principal_id` references `principal(id)` ON DELETE
+        # RESTRICT (0016), so a principal who has acted cannot be deleted until
+        # their trail is. This teardown takes no workspace, so the delete is
+        # scoped by actor rather than by workspace as the other files do —
+        # which also covers events this principal wrote in a workspace this
+        # test never names. Issue #170.
+        _admin("DELETE FROM audit_event WHERE actor_principal_id = %s", (pid,))
         _admin("DELETE FROM principal WHERE id = %s", (pid,))
 
 
@@ -265,6 +272,9 @@ def _revoke(principal_id: str, workspace_id: str) -> None:
 
 def _drop_workspaces(*workspace_ids: str) -> None:
     for ws in workspace_ids:
+        # `audit_event.workspace_id` is ON DELETE RESTRICT (0016) — same reason as
+        # `_cleanup` above, on the other of the two restricting columns. Issue #170.
+        _admin("DELETE FROM audit_event WHERE workspace_id = %s", (ws,))
         _admin("DELETE FROM membership WHERE workspace_id = %s", (ws,))
         _admin("DELETE FROM workspace WHERE id = %s", (ws,))
 

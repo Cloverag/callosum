@@ -131,6 +131,18 @@ def _seed_pack(workspace_id: str, docs: list[tuple[str, int]]) -> tuple[str, str
 
 def _cleanup(principal_ids: list[str], workspace_ids: list[str]) -> None:
     for ws in workspace_ids:
+        # Before every other delete below. `audit_event.workspace_id` is ON DELETE
+        # RESTRICT (0016, deliberately), so once any route in this file is audited the
+        # workspace cannot be dropped until its trail is.
+        #
+        # Scoped by workspace only. `audit_event.actor_principal_id` is RESTRICT too,
+        # and the `principal` deletes below are NOT covered by this line — they are
+        # safe because no test here references DEFAULT_WORKSPACE_ID, so every principal
+        # it creates acts only inside a workspace it also creates. That is a property
+        # of how these tests are built, not of the FK. A test that has a principal act
+        # outside `workspace_ids` needs the actor-scoped delete that
+        # `test_auth_session.py` and `test_principal_identity.py` use. Issue #170.
+        _admin("DELETE FROM audit_event WHERE workspace_id = %s", (ws,))
         _admin("DELETE FROM board_pack_item WHERE workspace_id = %s", (ws,))
         _admin("DELETE FROM board_pack WHERE workspace_id = %s", (ws,))
         _admin("DELETE FROM meeting WHERE workspace_id = %s", (ws,))
