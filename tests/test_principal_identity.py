@@ -52,6 +52,13 @@ def _link(principal_id: str, subject: str, provider: str = PROVIDER) -> None:
 
 def _cleanup(*principal_ids: str) -> None:
     for pid in principal_ids:
+        # `audit_event.actor_principal_id` references `principal(id)` ON DELETE
+        # RESTRICT (0016), so a principal who has acted cannot be deleted until
+        # their trail is. This teardown takes no workspace, so the delete is
+        # scoped by actor rather than by workspace as the other files do —
+        # which also covers events this principal wrote in a workspace this
+        # test never names. Issue #170.
+        _admin("DELETE FROM audit_event WHERE actor_principal_id = %s", (pid,))
         _admin("DELETE FROM principal WHERE id = %s", (pid,))
 
 
