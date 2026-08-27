@@ -47,6 +47,7 @@ def test_evaluate_resolution_policy_simple_majority():
     assert unanimous_eval["passed"] is False
 
 
+@pytest.mark.integration
 def test_bridge_adopted_resolution_to_commitment():
     """Verify adopted resolution converts to an owned commitment."""
     w_id = str(uuid.uuid4())
