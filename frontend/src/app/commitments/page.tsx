@@ -152,7 +152,7 @@ export default function CommitmentsPage() {
       {overdueCount > 0 && (
         <p className="mt-4 text-xs font-medium text-danger-emphasis">
           {overdueCount} outstanding {overdueCount === 1 ? "commitment is" : "commitments are"} past
-          its due date.
+          {overdueCount === 1 ? " its" : " their"} due date.
         </p>
       )}
 
