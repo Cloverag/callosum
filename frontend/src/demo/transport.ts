@@ -25,10 +25,25 @@ import { DEMO_ENABLED } from "./mode";
  * found later and cannot be explained quickly, and this feature's whole premise
  * is that demo data must not be able to turn up where it is not expected.
  *
- * Next inlines `NEXT_PUBLIC_MERIDIAN_DEMO` as a literal, so with it unset this
- * reads `if (false)` and the bundler drops the branch and the module behind it.
- * Verified the same way it was found: the strings are absent from the non-demo
- * build and present in the demo one.
+ * **What this does and does not achieve, measured rather than assumed.** The
+ * first version of this comment claimed Next inlines the variable as a literal,
+ * so the branch becomes `if (false)` and the bundler drops the module. That is
+ * wrong, and the build says so: Turbopack compiles the read to a *runtime*
+ * lookup —
+ *
+ *     let t = "1" === e.i(47167).default.env.NEXT_PUBLIC_MERIDIAN_DEMO;
+ *
+ * — so no branch is ever eliminated and the router is emitted to
+ * `.next/static/chunks` whatever the variable says.
+ *
+ * What the dynamic import actually buys is code splitting. The router lands in
+ * a chunk of its own (22KB) reachable only through the async loader
+ * (`e.A(23599)`), so it is in no route's initial import graph and a browser
+ * with demo mode off never requests it. The bytes exist on the server; they do
+ * not reach a client. That is a real improvement over a static import and it is
+ * less than "the fixtures are gone" — worth stating precisely, because the next
+ * person to need them gone will otherwise trust this comment instead of
+ * grepping the build.
  *
  * The import is per-request rather than hoisted because the module registry
  * caches it — the second call resolves an already-evaluated module — and
