@@ -8,7 +8,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { isDemoValue } from "@/demo/mode";
-import { demoResponse } from "@/demo/transport";
+import { demoResponse } from "@/demo/router";
 
 /**
  * Demo mode must be structurally incapable of the `lib/api.ts` failure.
@@ -105,19 +105,29 @@ describe("(d) the banner and the interception are one decision", () => {
 });
 
 describe("(c) there is no route from a failure into fixtures", () => {
-  const transportSource = stripComments(read("demo/transport.ts"));
+  const seamSource = stripComments(read("demo/transport.ts"));
+  const routerSource = stripComments(read("demo/router.ts"));
 
   it("never calls fetch or reacts to a response inside the fixture module", () => {
-    // `transport` itself calls fetch on the real path — that line is the seam.
-    // Nothing else in the file may, and nothing may catch.
-    const body = transportSource.slice(0, transportSource.indexOf("export function transport"));
-    expect(body).not.toMatch(/\bfetch\s*\(/);
-    expect(body).not.toMatch(/\bcatch\b/);
-    expect(body).not.toMatch(/\.ok\b/);
+    // The router answers from fixtures and must have no way to observe the
+    // network at all — not to call it, not to catch it, not to read a status.
+    expect(routerSource).not.toMatch(/\bfetch\s*\(/);
+    expect(routerSource).not.toMatch(/\bcatch\b/);
+    expect(routerSource).not.toMatch(/\.ok\b/);
+  });
+
+  it("keeps the fixtures out of a build that has demo mode off", () => {
+    // The router is reached through a dynamic import inside `if (DEMO_ENABLED)`,
+    // so the bundler drops it when the constant inlines to false. A static
+    // import here compiled the fabricated board into the production client
+    // chunk of a non-demo build — found by grepping `.next/static/chunks`.
+    expect(seamSource).toMatch(/import\("\.\/router"\)/);
+    expect(seamSource).not.toMatch(/^import .*from "\.\/router"/m);
+    expect(seamSource).not.toMatch(/from "\.\/fixtures/);
   });
 
   it("branches on the constant alone, with no try/catch around the real call", () => {
-    const seam = transportSource.slice(transportSource.indexOf("export function transport"));
+    const seam = seamSource.slice(seamSource.indexOf("export function transport"));
     expect(seam).toMatch(/if \(DEMO_ENABLED\)/);
     expect(seam).not.toMatch(/\btry\b|\bcatch\b/);
     // One `fetch` in the seam, on the non-demo branch, reached only when the
