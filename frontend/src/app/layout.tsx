@@ -8,6 +8,7 @@ import { SessionGate } from '@/components/session-gate';
 import { TooltipProvider } from '@/components/vendor/tooltip';
 import { THEME_SCRIPT } from '@/components/theme';
 import { DemoBanner } from '@/demo/banner';
+import { GlassRefraction } from '@/components/glass/glass-refraction';
 
 const inter = Inter({ subsets: ['latin'], display: 'swap' });
 
@@ -54,6 +55,15 @@ export default function RootLayout({
           sign-in screen too, which in demo mode is also answered from fixtures.
         */}
         <DemoBanner />
+        {/*
+          Renders nothing. Installs a per-surface SVG refraction filter on every
+          element already carrying `.surface-glass` / `.surface-glass-chrome`,
+          which is why the four call sites did not have to change. Removing this
+          line drops every surface back to the `blur() saturate()` in its utility
+          class — which is also what Safari, Firefox, and a reader who asked for
+          reduced transparency get.
+        */}
+        <GlassRefraction />
         <TooltipProvider>
           <SessionGate>
             <div className="flex h-screen overflow-hidden bg-surface text-foreground">

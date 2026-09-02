@@ -241,8 +241,16 @@
     --sh-overlay: 0 16px 48px -12px rgba(15, 25, 38, 0.24), 0 4px 12px -4px rgba(15, 25, 38, 0.12);
 
     /* Ambient ground wash, per theme (see body::before). */
-    --wash-a: rgba(133, 91, 220, 0.05);
-    --wash-b: rgba(44, 112, 229, 0.045);
+    --wash-a: rgba(133, 91, 220, 0.20);
+    --wash-b: rgba(44, 112, 229, 0.17);
+    --wash-c: rgba(13, 148, 136, 0.11);
+    --wash-d: rgba(44, 112, 229, 0.10);
+    --flare-strength: 0.5;
+    --flare-core: rgba(255, 250, 238, 0.85);
+    --flare-halo: rgba(255, 236, 204, 0.40);
+    --flare-streak: rgba(255, 243, 222, 0.26);
+    --flare-ghost-a: rgba(133, 91, 220, 0.22);
+    --flare-ghost-b: rgba(44, 112, 229, 0.24);
 
     /* Focal surfaces — elevation level 4 (rules.md §6, 2026-08-13). At most two
        per page. Deep-ink based and anchored to a semantic family: `action` for
@@ -330,8 +338,16 @@
       --sh-raised: 0 1px 2px 0 rgba(0, 0, 0, 0.5), 0 6px 16px -6px rgba(0, 0, 0, 0.6), 0 12px 32px -12px rgba(0, 0, 0, 0.5);
       --sh-overlay: 0 16px 48px -12px rgba(0, 0, 0, 0.7), 0 4px 12px -4px rgba(0, 0, 0, 0.5);
 
-      --wash-a: rgba(142, 113, 214, 0.08);
-      --wash-b: rgba(76, 129, 220, 0.07);
+      --wash-a: rgba(142, 113, 214, 0.30);
+      --wash-b: rgba(76, 129, 220, 0.26);
+      --wash-c: rgba(45, 212, 191, 0.16);
+      --wash-d: rgba(76, 129, 220, 0.14);
+      --flare-strength: 0.85;
+      --flare-core: rgba(206, 228, 255, 0.60);
+      --flare-halo: rgba(140, 178, 255, 0.30);
+      --flare-streak: rgba(176, 205, 255, 0.20);
+      --flare-ghost-a: rgba(166, 134, 240, 0.30);
+      --flare-ghost-b: rgba(91, 147, 255, 0.32);
 
       /* Focal surfaces: the ramps NARROW in dark rather than brighten, so a
          focal card reads as a material and not a light source. */
@@ -388,8 +404,16 @@
     --sh-raised: 0 1px 2px 0 rgba(0, 0, 0, 0.5), 0 6px 16px -6px rgba(0, 0, 0, 0.6), 0 12px 32px -12px rgba(0, 0, 0, 0.5);
     --sh-overlay: 0 16px 48px -12px rgba(0, 0, 0, 0.7), 0 4px 12px -4px rgba(0, 0, 0, 0.5);
 
-    --wash-a: rgba(142, 113, 214, 0.08);
-    --wash-b: rgba(76, 129, 220, 0.07);
+    --wash-a: rgba(142, 113, 214, 0.30);
+    --wash-b: rgba(76, 129, 220, 0.26);
+    --wash-c: rgba(45, 212, 191, 0.16);
+    --wash-d: rgba(76, 129, 220, 0.14);
+    --flare-strength: 0.85;
+    --flare-core: rgba(206, 228, 255, 0.60);
+    --flare-halo: rgba(140, 178, 255, 0.30);
+    --flare-streak: rgba(176, 205, 255, 0.20);
+    --flare-ghost-a: rgba(166, 134, 240, 0.30);
+    --flare-ghost-b: rgba(91, 147, 255, 0.32);
 
     /* Focal surfaces: the ramps NARROW in dark rather than brighten, so a
        focal card reads as a material and not a light source. */
@@ -478,8 +502,6 @@
      (those stay solid white for readability). See DESIGN.md — Elevation. */
   .surface-glass {
     background: var(--surface-glass);
-    backdrop-filter: blur(20px) saturate(1.4);
-    -webkit-backdrop-filter: blur(20px) saturate(1.4);
     border: 1px solid var(--surface-glass-border);
     box-shadow: var(--shadow-overlay);
   }
@@ -488,8 +510,43 @@
      no floating shadow (they are anchored chrome, not floating overlays). */
   .surface-glass-chrome {
     background: var(--surface-glass);
-    backdrop-filter: blur(16px) saturate(1.4);
-    -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  }
+
+  /* ------------------------------------------------------------------------
+     The frost, moved out of the two rules above and behind an @supports guard.
+
+     It was never reaching the browser. The declarations were in this file, but
+     Lightning CSS (Tailwind v4's engine) drops a declaration no target in the
+     browserslist supports, this project pins no browserslist, and Next's
+     default list reaches back to browsers with no `backdrop-filter`. The
+     shipped rule was `background` + `border` + `box-shadow` and nothing else,
+     so every glass surface in the app has been a flat translucent fill.
+
+     An @supports guard states the intent the targets could not infer, and is
+     preserved. It is also true: the query is exactly the capability the
+     declaration needs.
+     ------------------------------------------------------------------------ */
+  @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+    .surface-glass {
+      backdrop-filter: blur(20px) saturate(1.4);
+      -webkit-backdrop-filter: blur(20px) saturate(1.4);
+    }
+
+    .surface-glass-chrome {
+      backdrop-filter: blur(16px) saturate(1.4);
+      -webkit-backdrop-filter: blur(16px) saturate(1.4);
+    }
+  }
+
+  /* A reader who asked for less transparency gets an opaque surface, not a
+     weaker blur. This has to sit after the guard above to win. */
+  @media (prefers-reduced-transparency: reduce) {
+    .surface-glass,
+    .surface-glass-chrome {
+      background: var(--surface-elevated);
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+    }
   }
 
   /* Level 4 — the focal surface (rules.md §6, 2026-08-13). AT MOST TWO per page:
@@ -676,4 +733,72 @@ body:has([data-demo-banner]) > .h-screen {
   height: auto;
   min-height: 0;
   flex: 1 1 auto;
+}
+
+/* ============================================================================
+   AMBIENT FIELD — what the glass has to look through.
+
+   Translucency over a flat fill is invisible, and refraction over a flat fill is
+   worse than invisible: a 2px displacement of a uniform colour is exactly that
+   uniform colour. The material cannot be seen at all without structure behind
+   it, so this is part of the glass, not decoration applied over it.
+
+   `body::before` already carried a two-radial wash at 5–8% alpha for that
+   reason, and it has never been visible: the app frame paints an opaque
+   `bg-surface` directly on top of it. That is fixed here, and the wash is given
+   enough structure and contrast for a near-threshold bend to register.
+
+   DESIGN.md's ambient rule said "light in the room, never decoration". The
+   flare layer below is a deliberate departure, owner's direction 2026-09-02.
+   ========================================================================== */
+
+/* The app frame's own fill is what was hiding the ground. Structural rather than
+   a class on the element, for the same reason as the demo-banner rule: the
+   providers between `<body>` and the frame render no DOM, so this is a real
+   child, and the frame lives in a file this layer does not own. */
+body > .h-screen {
+  background-color: transparent;
+}
+
+/* Ground: four radials rather than two, at wider spread and higher alpha, so a
+   2px shove at a rim has an edge to move. Fixed to the viewport — it is the
+   room, and it must not scroll with the content. */
+body::before {
+  background:
+    radial-gradient(70rem 46rem at 8% -12%, var(--wash-a), transparent 62%),
+    radial-gradient(58rem 40rem at 96% 2%, var(--wash-b), transparent 64%),
+    radial-gradient(46rem 46rem at 74% 108%, var(--wash-c), transparent 60%),
+    radial-gradient(38rem 30rem at 30% 62%, var(--wash-d), transparent 66%);
+}
+
+/* Flare: a bloom off the upper right, an anamorphic streak through it, and the
+   ghost chain a real lens throws back along the axis toward the opposite corner.
+   `screen` so it adds light rather than painting over the ground — an opaque
+   flare would defeat the layer it is meant to make legible. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: var(--flare-strength);
+  background:
+    /* the source */
+    radial-gradient(24rem 24rem at 70% 4%, var(--flare-core), transparent 58%),
+    radial-gradient(52rem 20rem at 70% 4%, var(--flare-halo), transparent 68%),
+    /* anamorphic streak — wide and shallow, through the source */
+    linear-gradient(96deg, transparent 42%, var(--flare-streak) 56%, transparent 70%),
+    /* ghosts, walking back along the axis toward the far corner */
+    radial-gradient(7rem 7rem at 66% 30%, var(--flare-ghost-a), transparent 62%),
+    radial-gradient(4rem 4rem at 52% 46%, var(--flare-ghost-b), transparent 60%),
+    radial-gradient(10rem 10rem at 34% 66%, var(--flare-ghost-a), transparent 66%),
+    radial-gradient(3rem 3rem at 22% 80%, var(--flare-ghost-b), transparent 58%);
+}
+
+/* Reduced transparency means the reader wants surfaces to be surfaces. The
+   ground stays; the light show does not. */
+@media (prefers-reduced-transparency: reduce) {
+  body::after {
+    display: none;
+  }
 }
