@@ -39,6 +39,14 @@ export function DemoBanner() {
 
   return (
     <div
+      /*
+        The hook `globals.css` keys the shell's height off
+        (`body:has([data-demo-banner])`). An attribute rather than a class so it
+        cannot be mistaken for styling and removed as unused, and so the height
+        rule stays inert in a normal build: this component returns null, the
+        attribute never reaches the DOM, and the selector matches nothing.
+      */
+      data-demo-banner=""
       role="status"
       aria-live="polite"
       style={{
