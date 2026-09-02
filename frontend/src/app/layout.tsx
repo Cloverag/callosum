@@ -7,6 +7,7 @@ import { AssistantRail } from '@/components/AssistantRail';
 import { SessionGate } from '@/components/session-gate';
 import { TooltipProvider } from '@/components/vendor/tooltip';
 import { THEME_SCRIPT } from '@/components/theme';
+import { DemoBanner } from '@/demo/banner';
 
 const inter = Inter({ subsets: ['latin'], display: 'swap' });
 
@@ -46,6 +47,13 @@ export default function RootLayout({
           `children` still passes through as rendered output, so it stays a
           Server Component across both client boundaries.
         */}
+        {/*
+          Renders nothing unless demo mode is on, and decides that from the same
+          constant the request interceptor branches on — see `src/demo/banner.tsx`.
+          Outside `SessionGate` on purpose: the notice has to be true of the
+          sign-in screen too, which in demo mode is also answered from fixtures.
+        */}
+        <DemoBanner />
         <TooltipProvider>
           <SessionGate>
             <div className="flex h-screen overflow-hidden bg-surface text-foreground">

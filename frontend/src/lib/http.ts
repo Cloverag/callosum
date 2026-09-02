@@ -13,7 +13,18 @@
  * from the session cookie on every request (ADR-013), and `tests/test_openapi_input_guard.py`
  * fails the build if an endpoint ever accepts one. A client-side option would be a
  * value with nowhere legitimate to go.
+ *
+ * ---------------------------------------------------------------------------
+ * DEMO MODE
+ * ---------------------------------------------------------------------------
+ * Every request below goes through `transport` rather than `fetch`. When
+ * `NEXT_PUBLIC_MERIDIAN_DEMO === "1"` that answers from `src/demo/`; otherwise
+ * it is `fetch` unchanged. The decision is a build-time constant, taken before
+ * a request exists — there is deliberately no path from a failed response back
+ * into fixtures, which is the defect `lib/api.ts` documents at length.
  */
+
+import { transport } from "@/demo/transport";
 
 /** Same-origin by construction: Next.js and the API share a host (ADR-009). */
 const API_BASE = "/api";
@@ -155,7 +166,7 @@ export async function toApiError(response: Response): Promise<ApiError> {
  * rather than as misconfigured.
  */
 export async function apiGet<T>(path: string, params?: Params): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}${query(params)}`, {
+  const response = await transport(`${API_BASE}${path}${query(params)}`, {
     method: "GET",
     credentials: "same-origin",
     headers: { Accept: "application/json" },
@@ -189,7 +200,7 @@ export async function apiGetOrNull<T>(path: string, params?: Params): Promise<T 
  * identical and should not drift between verbs.
  */
 async function send<T>(method: string, path: string, body?: unknown, params?: Params): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}${query(params)}`, {
+  const response = await transport(`${API_BASE}${path}${query(params)}`, {
     method,
     credentials: "same-origin",
     headers: { Accept: "application/json", "Content-Type": "application/json" },

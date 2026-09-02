@@ -1,4 +1,5 @@
 import { ApiError, toApiError } from "@/lib/http";
+import { transport } from "@/demo/transport";
 
 /**
  * The session endpoints.
@@ -10,6 +11,13 @@ import { ApiError, toApiError } from "@/lib/http";
  * routes are mounted at `/auth`, which Next proxies as a separate prefix — so they are
  * a sibling of the API base, not a path beneath it. `toApiError` is shared rather than
  * reimplemented, because two parsers for one error envelope is how the two drift.
+ *
+ * It does share `transport`, and it has to. `SessionGate` renders the shell only for a
+ * session with a principal AND a workspace, so if `/auth/context` were the one request
+ * demo mode did not answer, demo mode would show a sign-in screen and none of the
+ * thirteen pages. Sharing the seam rather than adding a second one keeps "demo mode is
+ * one branch on one constant" true: these two files hold the only `fetch` calls in
+ * `src/`, and neither decides anything for itself.
  */
 
 /**
@@ -30,7 +38,7 @@ export type AuthContext = {
 async function authFetch<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`/auth${path}`, {
+    response = await transport(`/auth${path}`, {
       credentials: "same-origin",
       headers: { Accept: "application/json" },
       ...init,
