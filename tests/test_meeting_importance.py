@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 client = TestClient(main.app)
 
 
+@pytest.mark.integration
 def test_meeting_default_importance():
     """Verify meeting defaults to 'routine' importance."""
     w_id = str(uuid.uuid4())
@@ -19,6 +20,7 @@ def test_meeting_default_importance():
     assert m.importance == "routine"
 
 
+@pytest.mark.integration
 def test_meeting_custom_importance():
     """Verify custom importance levels ('critical', 'high', 'low')."""
     w_id = str(uuid.uuid4())

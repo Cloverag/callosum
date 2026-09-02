@@ -102,6 +102,7 @@ def test_conflicts_api_router_registered():
     assert any("/api/conflicts" in p for p in paths)
 
 
+@pytest.mark.integration
 def test_composite_tenant_foreign_key_constraint():
     """Issue #41: Cross-tenant foreign key reference must fail composite FK constraint."""
     w1 = str(uuid.uuid4())
