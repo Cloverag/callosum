@@ -644,3 +644,36 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Demo-mode banner: give the app shell back the height the banner takes.
+
+   The shell is `h-screen`, so a banner in normal flow above it makes the
+   document taller than the viewport and pushes the last rows of the sidebar
+   below the fold. This is deliberately keyed off `:has()` and a data attribute
+   rather than a `--demo-banner-h` token subtracted with `calc()`: the banner
+   wraps to two lines on a narrow viewport, and a pinned height is wrong the
+   moment it does. Letting flex measure it is right at every width.
+
+   `body:has([data-demo-banner])` matches nothing in a normal build — the
+   component returns null and the attribute never reaches the DOM — so this
+   costs production layout exactly nothing.
+
+   The child selector is safe because the providers between `<body>` and the
+   shell (TooltipProvider, SessionGate's context) render no DOM of their own.
+   Both `.h-screen` shells are covered: the app frame in `layout.tsx` and the
+   signed-out / checking screens in `session-gate.tsx`, which sit under the
+   banner too because demo mode answers the session endpoint from fixtures.
+   --------------------------------------------------------------------------- */
+body:has([data-demo-banner]) {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+body:has([data-demo-banner]) > .h-screen {
+  height: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+}
