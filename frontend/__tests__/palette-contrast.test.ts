@@ -343,7 +343,56 @@ describe("gradients must be declared before they ship", () => {
       kind: "decorative",
       why: "the second ambient radial; same reasoning as wash-a.",
     },
+    {
+      token: "wash-c",
+      kind: "decorative",
+      why: "the third ambient radial, added 2026-09-02. Two radials gave the glass nothing to refract — a 2px displacement of a uniform colour is that uniform colour — so the wash went to four at roughly double the alpha. Same reasoning as wash-a: no text is painted on it.",
+    },
+    {
+      token: "wash-d",
+      kind: "decorative",
+      why: "the fourth ambient radial; same reasoning as wash-c.",
+    },
+    {
+      token: "flare-core",
+      kind: "overlay",
+      why: "body::after lens flare, the bright source. Classed as an overlay rather than decoration because the chrome above it is TRANSLUCENT: header and AI-rail text sits on --surface-glass composited over whatever the flare put underneath. In dark mode the flare lightens that ground, which spends contrast for light text.",
+    },
+    {
+      token: "flare-halo",
+      kind: "overlay",
+      why: "the flare's wide halo, at lower alpha than the core; same reasoning and the same composite.",
+    },
+    {
+      token: "flare-streak",
+      kind: "overlay",
+      why: "the anamorphic streak through the source. Crosses the full width, so it passes under the header along its whole length rather than at one point.",
+    },
+    {
+      token: "flare-ghost-a",
+      kind: "decorative",
+      why: "one of the ghost discs walking back along the flare axis. Decorative rather than overlay: the ghosts sit in the lower-left diagonal, away from both chrome surfaces.",
+    },
+    {
+      token: "flare-ghost-b",
+      kind: "decorative",
+      why: "the second ghost colour; same reasoning as flare-ghost-a.",
+    },
   ];
+
+  /**
+   * KNOWN GAP, stated rather than papered over (2026-09-02).
+   *
+   * The three `overlay` flare tokens above spend contrast under translucent
+   * chrome, and nothing here asserts that composite. It is not asserted because
+   * the amount depends on WHERE the header sits over the radial, which is a
+   * function of viewport size — there is no single worst stop to pin, the way a
+   * ramp has one. Measuring it honestly needs a rendered page, not this file.
+   *
+   * Registering them as `overlay` with no assertion behind it is weaker than the
+   * ramps get. That is the accurate description of the state, and a comment
+   * saying so is better than a `decorative` label that would read as cleared.
+   */
 
   /** A gradient DECLARED as a token value: `--focal-action: linear-gradient(...)`. */
   const found = [...CSS.matchAll(/--([a-z0-9-]+)\s*:\s*((?:linear|radial|conic)-gradient\([^;]*)\s*;/g)].map(
