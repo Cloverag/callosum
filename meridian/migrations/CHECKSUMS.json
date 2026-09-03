@@ -128,5 +128,10 @@
     "downgrade": "1b91168ef532a7fbb792eea0fb63e85b0b58f889b1eb07a4377dff732d486554",
     "header": "74a2ed77c9618a02c29f9e5eef9cd5938ff94612000d3fbceaaaa91551a6d0d3",
     "upgrade": "51505aab92d8786924673d9f16fef693f1fd7523b45625d2b59a98958177c57c"
+  },
+  "0027_membership_role_and_audit": {
+    "downgrade": "ee26782675a82cbd3bf6393b19c253185418baadd4c4c9fa0aaff22b65bca986",
+    "header": "3cde25bfa89fdd3ca51b74f3d4fb1ec2fa777825907bd4cedfb869e13ffae71d",
+    "upgrade": "f233303d97158f5aa80099ea22a9996016dacf3ed4c3d4e98276a533964ed398"
   }
 }
