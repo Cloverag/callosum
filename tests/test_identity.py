@@ -11,6 +11,7 @@ happy path: this is the input to the frozen RBAC gate in `retrieve.py`.
 
 import os
 import uuid
+from unittest import mock
 
 import pytest
 
@@ -19,7 +20,7 @@ if os.environ.get("CALLOSUM_RUN_INTEGRATION") != "1":
 
 import psycopg
 
-from callosum import store
+from callosum import identity, store
 from callosum.config import settings
 from callosum.identity import (
     IdentityNotProvisioned,
@@ -157,25 +158,60 @@ def test_changing_the_membership_role_changes_effective_clearance():
         _cleanup([pid], [ws])
 
 
-def test_an_unrecognised_stored_role_fails_closed_not_open():
-    """`ROLE_TO_CLEARANCE` cannot cover a value it does not know about — this
-    branch carries no CHECK on `membership.role` (that is `0027`, a separate,
-    not-yet-merged branch), so the database will currently accept anything.
+def test_the_database_refuses_a_role_the_mapping_does_not_know():
+    """The outer of the two layers: `0027`'s `membership_role_check`.
 
-    A bare `KeyError` would be a crash a caller has to know to catch; silently
-    defaulting to clearance 0 would be a fail-*open* shape disguised as fail-closed
-    (an unrecognised role still resolving, just quietly). Neither is what
-    `_clearance_for` does — it raises `PrincipalNotFound`, the same refusal an
-    absent membership produces, so an unrecognised role is indistinguishable from
-    "not resolvable" rather than partially trusted.
+    This assertion used to be impossible to make. Written before `0027` merged,
+    this test seeded `role="mythical_role"` directly and checked that
+    `_clearance_for` refused it — and once `0027` landed, the seed itself became
+    illegal and the test failed at its own setup rather than at its assertion.
+    That failure was the finding: neither PR could see it alone, because one adds
+    the constraint and the other adds the code that assumed its absence.
+
+    So the impossible half becomes the assertion. An unrecognised role cannot
+    reach `identity.py` through a normal write at all.
     """
     ws = _workspace()
     pid = _person("Undefined Role Holder")
-    _member(pid, ws, clearance=4, role="mythical_role")
     try:
+        with pytest.raises(psycopg.errors.CheckViolation):
+            _member(pid, ws, clearance=4, role="mythical_role")
+    finally:
+        _cleanup([pid], [ws])
+
+
+def test_a_role_the_database_allows_but_the_mapping_lacks_fails_closed():
+    """The inner layer, exercised by simulating the drift it exists to survive.
+
+    `ROLE_TO_CLEARANCE` (Python) and `membership_role_check` (Postgres) are two
+    hand-maintained lists of the same seven roles, defined independently — the
+    migration cannot import the dict, and the dict cannot depend on the migration
+    having landed. `identity.py` says so in as many words. Nothing forces them to
+    agree, so the interesting case is not an illegal role (the CHECK now stops
+    that, proved above) but a role the CHECK *permits* and the mapping has not
+    caught up to.
+
+    Monkeypatching the mapping to drop `observer` reproduces exactly that, with a
+    row the database considers entirely valid. A bare `KeyError` would be a crash
+    a caller has to know to catch; silently defaulting to clearance 0 would be a
+    fail-*open* shape disguised as fail-closed (an unrecognised role still
+    resolving, just quietly). `_clearance_for` raises `PrincipalNotFound` — the
+    same refusal an absent membership produces — so a role the mapping does not
+    know is indistinguishable from "not resolvable" rather than partially trusted.
+    """
+    ws = _workspace()
+    pid = _person("Drifted Observer")
+    _member(pid, ws, clearance=4, role="observer")
+    try:
+        without_observer = {r: c for r, c in identity.ROLE_TO_CLEARANCE.items() if r != "observer"}
         with store.pg(ws) as conn:
-            with pytest.raises(PrincipalNotFound):
-                resolve_principal_by_id(conn, pid, workspace_id=ws)
+            assert resolve_principal_by_id(conn, pid, workspace_id=ws).clearance == 0
+
+            with mock.patch.object(identity, "ROLE_TO_CLEARANCE", without_observer):
+                with pytest.raises(PrincipalNotFound):
+                    resolve_principal_by_id(conn, pid, workspace_id=ws)
+                with pytest.raises(PrincipalNotFound):
+                    resolve_principal(conn, "Drifted", workspace_id=ws)
     finally:
         _cleanup([pid], [ws])
 
