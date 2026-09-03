@@ -28,6 +28,7 @@ from meridian.api import minutes as minutes_api
 from meridian.api import packs as packs_api
 from meridian.api import prep as prep_api
 from meridian.api import resolutions as resolutions_api
+from meridian.api import workspaces as workspaces_api
 from meridian.api.config import api_settings
 
 app = FastAPI(
@@ -88,6 +89,7 @@ app.include_router(commitments_api.router)
 app.include_router(documents_api.router)
 app.include_router(conflicts_api.router)
 app.include_router(prep_api.router)
+app.include_router(workspaces_api.router)
 
 # Domain exceptions map to HTTP centrally (P3 §5.3). Registered once here rather than
 # caught in each route, so a new endpoint inherits the right statuses — a 409 for a

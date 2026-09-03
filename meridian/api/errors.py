@@ -41,6 +41,7 @@ from meridian import (
     minutes,
     packs,
     resolutions,
+    workspaces,
 )
 from meridian.tenancy import WorkspaceRequired
 
@@ -120,6 +121,11 @@ _EXPLICIT: tuple[tuple[type[BaseException], int, str, str | None], ...] = (
     # permitted to read the document to get here), and without it a client cannot tell
     # them to file higher rather than request access.
     (documents.SensitivityDowngradeError, HTTPStatus.FORBIDDEN, FORBIDDEN, None),
+    # 403 with the detail intact, for the same reason as the two entries above: the
+    # message names the ROLE being requested, which the caller already supplied, and
+    # never the acting principal's own clearance or the target's — see the class
+    # docstring in workspaces.py for why that distinction matters (#166 step 5).
+    (workspaces.EscalationDeniedError, HTTPStatus.FORBIDDEN, FORBIDDEN, None),
     # Infrastructure, not domain. A provider being down or a graph write failing is not
     # the caller's mistake, so 503 rather than a 4xx — see `test_api_errors.py`, which
     # asserts no *domain* exception falls through to a 500. These two are exempt by
@@ -155,6 +161,7 @@ COVERED_MODULES = (
     minutes,
     packs,
     resolutions,
+    workspaces,
 )
 
 
@@ -258,6 +265,7 @@ def install_exception_handlers(app) -> None:
         minutes.MinutesError,
         packs.BoardPackError,
         resolutions.ResolutionError,
+        workspaces.WorkspaceError,
         PrincipalNotFound,
         WorkspaceRequired,
         llm.EmbeddingProviderError,
