@@ -75,6 +75,12 @@ def _admin(sql: str, params: tuple = ()) -> None:
         conn.commit()
 
 
+def _admin_fetch(sql: str, params: tuple = ()) -> list:
+    from psycopg.rows import dict_row
+    with psycopg.connect(settings().postgres_dsn, row_factory=dict_row) as conn:
+        return conn.execute(sql, params).fetchall()
+
+
 class _StubClient:
     def __init__(self, claims):
         self._claims = claims
@@ -236,6 +242,36 @@ def scene(restore_client):
         "ws": ws, "low": low, "high": high, "meeting": meeting_id,
         "secret": secret_doc, "public": public_doc, "revision": revision.json(),
     }
+
+    # A route this sweep reaches can have a side effect this fixture never asked
+    # for. POST /workspaces (#166 step 5) is exactly that: it depends on
+    # CurrentSession only (no membership required to call it — that is the whole
+    # point of the route), takes one required string body that _example()
+    # synthesises, and SUCCEEDS when the write sweep calls it as `low`. No leak —
+    # the response is `{"workspace_id": ...}` and nothing echoes the name back —
+    # but it is a REAL workspace, with `low_pid` as its founder, that this
+    # fixture's `ws` was never told about. Found by clover-38 reviewing the route,
+    # not by the sweep failing: every assertion still passes, and without this the
+    # database is left worse by one zero-membership workspace per sweep run —
+    # exactly the state `test_workspace_bootstrap.py::
+    # test_a_workspace_without_its_founder_membership_makes_its_creator_unresolvable`
+    # calls unusable, and it would accumulate forever (same class as #177).
+    #
+    # Discovered generically — by asking what OTHER workspaces `high_pid`/`low_pid`
+    # ended up in, rather than by naming this one route — so a DIFFERENT future
+    # route with the same kind of side effect is caught by this fixture without
+    # anyone having to remember to extend it, the same reason `_reachable_writes`
+    # itself walks the schema instead of a hand-written list.
+    extra_workspace_ids = [
+        r["workspace_id"] for r in _admin_fetch(
+            "SELECT DISTINCT workspace_id FROM membership WHERE principal_id IN (%s, %s) AND workspace_id != %s",
+            (high_pid, low_pid, ws),
+        )
+    ]
+    for extra in extra_workspace_ids:
+        _admin("DELETE FROM audit_event WHERE workspace_id = %s", (extra,))
+        _admin("DELETE FROM membership WHERE workspace_id = %s", (extra,))
+        _admin("DELETE FROM workspace WHERE id = %s", (extra,))
 
     _admin("DELETE FROM meeting_document WHERE workspace_id = %s", (ws,))
     _admin("DELETE FROM meeting WHERE workspace_id = %s", (ws,))
