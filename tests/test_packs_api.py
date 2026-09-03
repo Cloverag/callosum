@@ -25,6 +25,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.middleware.sessions import SessionMiddleware
 
+from callosum import identity
 from callosum.config import settings
 from meridian import meetings, packs
 from meridian.api import auth, errors
@@ -88,11 +89,16 @@ def _principal_with_identity(subject: str) -> str:
     return pid
 
 
-def _member(principal_id: str, workspace_id: str, clearance: int = 4) -> None:
+def _member(principal_id: str, workspace_id: str, role: str = "founder") -> None:
+    """`role`, not `clearance` (#166): effective clearance is derived from
+    `membership.role` at read time — a stored `clearance` this helper's caller
+    picked independently is inert. Default `'founder'` matches this file's old
+    default (`clearance=4`).
+    """
     _admin(
         "INSERT INTO membership (principal_id, workspace_id, role, clearance, active)"
-        " VALUES (%s, %s, 'director', %s, true)",
-        (principal_id, workspace_id, clearance),
+        " VALUES (%s, %s, %s, %s, true)",
+        (principal_id, workspace_id, role, identity.ROLE_TO_CLEARANCE[role]),
     )
 
 
@@ -183,8 +189,8 @@ class TestClearanceComesFromTheSession:
         )
         hi_subject, lo_subject = f"sub-{uuid.uuid4()}", f"sub-{uuid.uuid4()}"
         hi, lo = _principal_with_identity(hi_subject), _principal_with_identity(lo_subject)
-        _member(hi, ws, clearance=4)
-        _member(lo, ws, clearance=1)
+        _member(hi, ws, role="founder")
+        _member(lo, ws, role="investor")
         try:
             founder = _client(hi_subject, ws).get(f"/api/packs/{pack_id}").json()
             investor = _client(lo_subject, ws).get(f"/api/packs/{pack_id}").json()
@@ -214,8 +220,8 @@ class TestClearanceComesFromTheSession:
         _, pack_id = _seed_pack(ws, [("Deck", 1), ("Comp", 4), ("KPI", 1)])
         hi_subject, lo_subject = f"sub-{uuid.uuid4()}", f"sub-{uuid.uuid4()}"
         hi, lo = _principal_with_identity(hi_subject), _principal_with_identity(lo_subject)
-        _member(hi, ws, clearance=4)
-        _member(lo, ws, clearance=1)
+        _member(hi, ws, role="founder")
+        _member(lo, ws, role="investor")
         try:
             founder = _client(hi_subject, ws).get(f"/api/packs/{pack_id}").json()["items"]
             investor = _client(lo_subject, ws).get(f"/api/packs/{pack_id}").json()["items"]
@@ -232,7 +238,7 @@ class TestClearanceComesFromTheSession:
         _, pack_id = _seed_pack(ws, [("Deck", 1), ("Comp", 4)])
         subject = f"sub-{uuid.uuid4()}"
         pid = _principal_with_identity(subject)
-        _member(pid, ws, clearance=1)
+        _member(pid, ws, role="investor")
         try:
             body = _client(subject, ws).get(f"/api/packs/{pack_id}").json()
             for forbidden in ("item_count", "total_items", "withheld", "total"):
@@ -241,18 +247,29 @@ class TestClearanceComesFromTheSession:
             _cleanup([pid], [ws])
 
     def test_a_demoted_reader_loses_items_on_the_next_request(self, restore_client):
-        """Clearance is re-derived per request, so this needs no logout."""
+        """Clearance is re-derived per request, so this needs no logout.
+
+        `UPDATE membership SET role = ...`, not `clearance` (#166): a demotion is now
+        a role change, and clearance follows it because it is derived, not stored.
+        Updating the old `clearance` column directly — this test's original form —
+        stopped doing anything the moment `identity.py` stopped reading it. Not a
+        silent pass here: this file's fixtures were already fixed to a genuine
+        `role="founder"` reader by the time this was reached, and a founder reading a
+        level-4 document was correctly unaffected by an inert `clearance` UPDATE — the
+        `assert ... == 1` after "demotion" failed loudly (`assert 2 == 1`, count
+        unchanged) because nothing had actually demoted the reader.
+        """
         ws = _workspace("demote")
         _, pack_id = _seed_pack(ws, [("Deck", 1), ("Comp", 4)])
         subject = f"sub-{uuid.uuid4()}"
         pid = _principal_with_identity(subject)
-        _member(pid, ws, clearance=4)
+        _member(pid, ws, role="founder")
         try:
             client = _client(subject, ws)
             assert len(client.get(f"/api/packs/{pack_id}").json()["items"]) == 2
 
             _admin(
-                "UPDATE membership SET clearance = 1 WHERE principal_id = %s AND workspace_id = %s",
+                "UPDATE membership SET role = 'investor' WHERE principal_id = %s AND workspace_id = %s",
                 (pid, ws),
             )
             assert len(client.get(f"/api/packs/{pack_id}").json()["items"]) == 1

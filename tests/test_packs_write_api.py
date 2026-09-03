@@ -30,6 +30,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.middleware.sessions import SessionMiddleware
 
+from callosum import identity
 from callosum.config import settings
 from meridian import meetings
 from meridian.api import auth, errors
@@ -86,11 +87,11 @@ def _workspace(label: str) -> str:
     return ws
 
 
-def _principal_with_identity(subject: str, clearance: int) -> str:
+def _principal_with_identity(subject: str, role: str) -> str:
     pid = str(uuid.uuid4())
     _admin(
-        "INSERT INTO principal (id, name, role, clearance) VALUES (%s, %s, 'director', %s)",
-        (pid, f"API User {pid[:6]}", clearance),
+        "INSERT INTO principal (id, name, role, clearance) VALUES (%s, %s, %s, %s)",
+        (pid, f"API User {pid[:6]}", role, identity.ROLE_TO_CLEARANCE[role]),
     )
     _admin(
         "INSERT INTO principal_identity (principal_id, provider, subject) VALUES (%s, %s, %s)",
@@ -99,11 +100,14 @@ def _principal_with_identity(subject: str, clearance: int) -> str:
     return pid
 
 
-def _member(principal_id: str, workspace_id: str, clearance: int) -> None:
+def _member(principal_id: str, workspace_id: str, role: str) -> None:
+    """`role`, not `clearance` (#166): effective clearance is derived from
+    `membership.role` at read time.
+    """
     _admin(
         "INSERT INTO membership (principal_id, workspace_id, role, clearance, active)"
-        " VALUES (%s, %s, 'director', %s, true)",
-        (principal_id, workspace_id, clearance),
+        " VALUES (%s, %s, %s, %s, true)",
+        (principal_id, workspace_id, role, identity.ROLE_TO_CLEARANCE[role]),
     )
 
 
@@ -143,11 +147,11 @@ def _client(subject: str, workspace_id: str | None) -> TestClient:
 
 
 class _Fixture:
-    def __init__(self, label: str, clearance: int = CONFIDENTIAL):
+    def __init__(self, label: str, role: str = "director"):
         self.subject = f"sub-{uuid.uuid4()}"
-        self.pid = _principal_with_identity(self.subject, clearance)
+        self.pid = _principal_with_identity(self.subject, role)
         self.ws = _workspace(label)
-        _member(self.pid, self.ws, clearance)
+        _member(self.pid, self.ws, role)
         self.meeting = meetings.create_meeting("Board Meeting", workspace_id=self.ws)
         self.client = _client(self.subject, self.ws)
         self.extra_pids: list[str] = []
@@ -170,11 +174,11 @@ class _Fixture:
         """Adding an item bumps the pack's version, so the create response goes stale."""
         return self.client.get(f"/api/packs/{pack['id']}").json()
 
-    def member_at(self, clearance: int) -> TestClient:
-        """A second signed-in member of the same workspace at a lower clearance."""
+    def member_at(self, role: str) -> TestClient:
+        """A second signed-in member of the same workspace at a different role."""
         subject = f"sub-{uuid.uuid4()}"
-        pid = _principal_with_identity(subject, clearance)
-        _member(pid, self.ws, clearance)
+        pid = _principal_with_identity(subject, role)
+        _member(pid, self.ws, role)
         self.extra_pids.append(pid)
         return _client(subject, self.ws)
 
@@ -315,7 +319,7 @@ class TestClearanceSurvivesTheWritePath:
             f.add(p, restricted_doc)
             f.add(p, public_doc)
 
-            investor = f.member_at(INVESTOR)
+            investor = f.member_at("investor")
             current = investor.get(f"/api/packs/{p['id']}").json()
             patched = investor.patch(
                 f"/api/packs/{p['id']}",
@@ -346,7 +350,7 @@ class TestClearanceSurvivesTheWritePath:
             public_doc = _document(f.ws, "Public.pdf", 0)
             f.add(p, public_doc)
 
-            investor = f.member_at(INVESTOR)
+            investor = f.member_at("investor")
             current = investor.get(f"/api/packs/{p['id']}").json()
             published = investor.post(
                 f"/api/packs/{p['id']}/publish", json={"expected_version": current["version"]}
@@ -425,7 +429,7 @@ class TestReorder:
             f.add(p, _document(f.ws, "Restricted.pdf", CONFIDENTIAL))
             f.add(p, _document(f.ws, "Public.pdf", 0))
 
-            investor = f.member_at(INVESTOR)
+            investor = f.member_at("investor")
             visible = investor.get(f"/api/packs/{p['id']}").json()["items"]
             assert len(visible) == 1
 

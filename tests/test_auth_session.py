@@ -25,6 +25,7 @@ from fastapi.testclient import TestClient
 from starlette.middleware.sessions import SessionMiddleware
 
 from callosum.config import settings
+from callosum import identity
 from meridian.api import auth
 from meridian.api import session as sess
 
@@ -255,11 +256,16 @@ def _workspace(label: str) -> str:
     return ws
 
 
-def _membership(principal_id: str, workspace_id: str, clearance: int, *, active: bool = True) -> None:
+def _membership(principal_id: str, workspace_id: str, role: str, *, active: bool = True) -> None:
+    """`role`, not `clearance` (#166): effective clearance is derived from
+    `membership.role` at read time. `test_changing_workspace_changes_the_active_
+    authorization` is exactly the shape that broke when this helper hardcoded
+    `role='director'` on two memberships distinguished only by stored `clearance`.
+    """
     _admin(
         "INSERT INTO membership (principal_id, workspace_id, role, clearance, active)"
-        " VALUES (%s, %s, 'director', %s, %s)",
-        (principal_id, workspace_id, clearance, active),
+        " VALUES (%s, %s, %s, %s, %s)",
+        (principal_id, workspace_id, role, identity.ROLE_TO_CLEARANCE[role], active),
     )
 
 
@@ -291,7 +297,7 @@ class TestWorkspaceSelection:
         subject = f"sub-{uuid.uuid4()}"
         pid = _provisioned_principal(subject)
         ws = _workspace("sel")
-        _membership(pid, ws, clearance=3)
+        _membership(pid, ws, "director")
         try:
             client = _logged_in(subject)
             response = client.post("/auth/workspace", json={"workspace_id": ws})
@@ -309,7 +315,7 @@ class TestWorkspaceSelection:
         subject = f"sub-{uuid.uuid4()}"
         pid = _provisioned_principal(subject)
         mine, theirs = _workspace("mine"), _workspace("theirs")
-        _membership(pid, mine, clearance=2)
+        _membership(pid, mine, "advisor")
         try:
             client = _logged_in(subject)
             response = client.post("/auth/workspace", json={"workspace_id": theirs})
@@ -342,8 +348,8 @@ class TestWorkspaceSelection:
         subject = f"sub-{uuid.uuid4()}"
         pid = _provisioned_principal(subject)
         low, high = _workspace("low"), _workspace("high")
-        _membership(pid, low, clearance=1)
-        _membership(pid, high, clearance=4)
+        _membership(pid, low, "investor")
+        _membership(pid, high, "founder")
         try:
             client = _logged_in(subject)
 
@@ -383,7 +389,7 @@ class TestAuthorizationIsDerivedPerRequest:
         subject = f"sub-{uuid.uuid4()}"
         pid = _provisioned_principal(subject)
         ws = _workspace("revoke")
-        _membership(pid, ws, clearance=4)
+        _membership(pid, ws, "founder")
         try:
             client = _logged_in(subject)
             client.post("/auth/workspace", json={"workspace_id": ws})
@@ -401,14 +407,14 @@ class TestAuthorizationIsDerivedPerRequest:
         subject = f"sub-{uuid.uuid4()}"
         pid = _provisioned_principal(subject)
         ws = _workspace("demote")
-        _membership(pid, ws, clearance=4)
+        _membership(pid, ws, "founder")
         try:
             client = _logged_in(subject)
             client.post("/auth/workspace", json={"workspace_id": ws})
             assert client.get("/auth/context").json()["clearance"] == 4
 
             _admin(
-                "UPDATE membership SET clearance = 1 WHERE principal_id = %s AND workspace_id = %s",
+                "UPDATE membership SET role = 'investor' WHERE principal_id = %s AND workspace_id = %s",
                 (pid, ws),
             )
             # A demoted director must not keep reading confidential material until
@@ -427,7 +433,7 @@ class TestAuthorizationIsDerivedPerRequest:
         subject = f"sub-{uuid.uuid4()}"
         pid = _provisioned_principal(subject)
         ws = _workspace("stale")
-        _membership(pid, ws, clearance=2)
+        _membership(pid, ws, "advisor")
         try:
             client = _logged_in(subject)
             client.post("/auth/workspace", json={"workspace_id": ws})
@@ -461,7 +467,7 @@ class TestAuthorizationIsDerivedPerRequest:
         subject = f"sub-{uuid.uuid4()}"
         pid = _provisioned_principal(subject)
         ws = _workspace("relogin")
-        _membership(pid, ws, clearance=2)
+        _membership(pid, ws, "advisor")
         try:
             client = _logged_in(subject)
             client.post("/auth/workspace", json={"workspace_id": ws})
@@ -480,7 +486,7 @@ class TestTheSessionStoresNoAuthorization:
         subject = f"sub-{uuid.uuid4()}"
         pid = _provisioned_principal(subject)
         ws = _workspace("cookie")
-        _membership(pid, ws, clearance=4)
+        _membership(pid, ws, "founder")
         try:
             client = _logged_in(subject)
             client.post("/auth/workspace", json={"workspace_id": ws})

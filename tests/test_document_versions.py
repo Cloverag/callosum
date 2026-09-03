@@ -25,7 +25,7 @@ from starlette.middleware.sessions import SessionMiddleware
 if os.environ.get("CALLOSUM_RUN_INTEGRATION") != "1":
     pytest.skip("set CALLOSUM_RUN_INTEGRATION=1 to run live-store integration tests", allow_module_level=True)
 
-from callosum import llm
+from callosum import identity, llm
 from callosum.config import settings
 from meridian import documents
 from meridian.api import auth, errors
@@ -129,17 +129,22 @@ def _workspace(label: str) -> str:
     return ws
 
 
-def _principal_with_identity(subject: str, clearance: int) -> str:
+def _principal_with_identity(subject: str, role: str) -> str:
     pid = str(uuid.uuid4())
-    _admin("INSERT INTO principal (id, name, role, clearance) VALUES (%s, %s, 'director', %s)", (pid, f"User {pid[:6]}", clearance))
+    _admin("INSERT INTO principal (id, name, role, clearance) VALUES (%s, %s, %s, %s)", (pid, f"User {pid[:6]}", role, identity.ROLE_TO_CLEARANCE[role]))
     _admin("INSERT INTO principal_identity (principal_id, provider, subject) VALUES (%s, %s, %s)", (pid, ISSUER, subject))
     return pid
 
 
-def _member(principal_id: str, workspace_id: str, clearance: int) -> None:
+def _member(principal_id: str, workspace_id: str, role: str) -> None:
+    """`role`, not `clearance` (#166): effective clearance is derived from
+    `membership.role` at read time. This file's two-reader (`_signed_in`/`_joins`)
+    withholding tests are exactly the shape that broke when both readers hardcoded
+    `role='director'` while only their stored `clearance` differed.
+    """
     _admin(
-        "INSERT INTO membership (principal_id, workspace_id, role, clearance, active) VALUES (%s, %s, 'director', %s, true)",
-        (principal_id, workspace_id, clearance),
+        "INSERT INTO membership (principal_id, workspace_id, role, clearance, active) VALUES (%s, %s, %s, %s, true)",
+        (principal_id, workspace_id, role, identity.ROLE_TO_CLEARANCE[role]),
     )
 
 
@@ -168,16 +173,16 @@ def _client(subject: str, workspace_id: str | None) -> TestClient:
     return client
 
 
-def _signed_in(label: str, clearance: int) -> tuple[TestClient, str, str]:
+def _signed_in(label: str, role: str) -> tuple[TestClient, str, str]:
     subject = f"sub-{uuid.uuid4()}"
-    pid = _principal_with_identity(subject, clearance)
+    pid = _principal_with_identity(subject, role)
     ws = _workspace(label)
-    _member(pid, ws, clearance)
+    _member(pid, ws, role)
     return _client(subject, ws), pid, ws
 
 
-def _joins(ws: str, clearance: int) -> tuple[TestClient, str]:
-    """A second signed-in principal in an EXISTING workspace, at a different clearance.
+def _joins(ws: str, role: str) -> tuple[TestClient, str]:
+    """A second signed-in principal in an EXISTING workspace, at a different role.
 
     Every withholding test needs two readers of one chain. The principal is returned so
     the caller can hand it to the *same* `_cleanup` as the first: a principal who has
@@ -186,8 +191,8 @@ def _joins(ws: str, clearance: int) -> tuple[TestClient, str]:
     is what the first draft of this file did, and all five two-reader tests failed on it.
     """
     subject = f"sub-{uuid.uuid4()}"
-    pid = _principal_with_identity(subject, clearance)
-    _member(pid, ws, clearance)
+    pid = _principal_with_identity(subject, role)
+    _member(pid, ws, role)
     return _client(subject, ws), pid
 
 
@@ -212,7 +217,7 @@ def _supersede(client: TestClient, doc_id: str, title: str, text: str, sensitivi
 
 class TestSupersede:
     def test_supersede_links_both_ways_and_increments_the_revision(self, restore_client):
-        client, pid, ws = _signed_in("chain", CONFIDENTIAL)
+        client, pid, ws = _signed_in("chain", "director")
         try:
             v1 = _intake(client, "Q3 forecast", "Revenue is 12M.", INTERNAL)
             assert v1["revision"] == 1
@@ -237,7 +242,7 @@ class TestSupersede:
             _cleanup([pid], [ws])
 
     def test_the_chain_reports_every_revision_in_order(self, restore_client):
-        client, pid, ws = _signed_in("order", CONFIDENTIAL)
+        client, pid, ws = _signed_in("order", "director")
         try:
             v1 = _intake(client, "Policy v1", "First statement.", PUBLIC)
             v2 = _supersede(client, v1["id"], "Policy v2", "Second statement.", PUBLIC).json()
@@ -259,7 +264,7 @@ class TestSupersede:
         where the reader entered it, which is the same defect as a chain that ends at
         the reader's clearance.
         """
-        client, pid, ws = _signed_in("anyentry", CONFIDENTIAL)
+        client, pid, ws = _signed_in("anyentry", "director")
         try:
             v1 = _intake(client, "A", "one", PUBLIC)
             v2 = _supersede(client, v1["id"], "B", "two", PUBLIC).json()
@@ -271,7 +276,7 @@ class TestSupersede:
             _cleanup([pid], [ws])
 
     def test_an_ordinary_document_has_a_chain_of_one(self, restore_client):
-        client, pid, ws = _signed_in("single", CONFIDENTIAL)
+        client, pid, ws = _signed_in("single", "director")
         try:
             v1 = _intake(client, "Standalone", "Only ever this.", PUBLIC)
             body = client.get(f"/api/documents/{v1['id']}/versions").json()
@@ -288,7 +293,7 @@ class TestSupersede:
 class TestRefusals:
     def test_a_revision_may_not_lower_sensitivity(self, restore_client):
         """The security core: no silent declassification through a correction."""
-        client, pid, ws = _signed_in("downgrade", CONFIDENTIAL)
+        client, pid, ws = _signed_in("downgrade", "director")
         try:
             v1 = _intake(client, "Comp review", "Confidential body.", CONFIDENTIAL)
             res = _supersede(client, v1["id"], "Comp review (public)", "Corrected body.", PUBLIC)
@@ -307,7 +312,7 @@ class TestRefusals:
 
     def test_a_revision_may_raise_sensitivity(self, restore_client):
         """The other direction is a legitimate correction — it withdraws access."""
-        client, pid, ws = _signed_in("upgrade", CONFIDENTIAL)
+        client, pid, ws = _signed_in("upgrade", "director")
         try:
             v1 = _intake(client, "Memo", "Looks harmless.", PUBLIC)
             res = _supersede(client, v1["id"], "Memo (reclassified)", "Actually sensitive.", CONFIDENTIAL)
@@ -318,7 +323,7 @@ class TestRefusals:
 
     def test_a_revision_above_the_callers_clearance_is_refused(self, restore_client):
         """The intake ceiling from #143 still applies — supersede is an intake."""
-        client, pid, ws = _signed_in("ceiling", INVESTOR)
+        client, pid, ws = _signed_in("ceiling", "investor")
         try:
             v1 = _intake(client, "Investor note", "Body.", INVESTOR)
             res = _supersede(client, v1["id"], "Investor note v2", "Corrected.", CONFIDENTIAL)
@@ -328,7 +333,7 @@ class TestRefusals:
             _cleanup([pid], [ws])
 
     def test_superseding_twice_is_a_409(self, restore_client):
-        client, pid, ws = _signed_in("twice", CONFIDENTIAL)
+        client, pid, ws = _signed_in("twice", "director")
         try:
             v1 = _intake(client, "Once", "one", PUBLIC)
             assert _supersede(client, v1["id"], "Twice", "two", PUBLIC).status_code == 201
@@ -346,7 +351,7 @@ class TestRefusals:
         is not necessarily one you can read. An id in an error message is a disclosure
         the read paths would have refused.
         """
-        client, pid, ws = _signed_in("noname", CONFIDENTIAL)
+        client, pid, ws = _signed_in("noname", "director")
         try:
             v1 = _intake(client, "Base", "base text", PUBLIC)
             v2 = _supersede(client, v1["id"], "Secret revision", "secret text", CONFIDENTIAL).json()
@@ -361,10 +366,10 @@ class TestRefusals:
 
     def test_superseding_a_document_above_clearance_is_404_not_403(self, restore_client):
         """The existence oracle stays closed on the write path too."""
-        low, low_pid, ws = _signed_in("oracle", INVESTOR)
+        low, low_pid, ws = _signed_in("oracle", "investor")
         # Outside the try: if this raised, `high_pid` would be unbound in the finally
         # and a NameError would replace whatever actually went wrong.
-        high, high_pid = _joins(ws, CONFIDENTIAL)
+        high, high_pid = _joins(ws, "director")
         try:
             secret = _intake(high, "Termination terms", "Confidential.", CONFIDENTIAL)
             res = _supersede(low, secret["id"], "Revision", "text", INVESTOR)
@@ -375,8 +380,8 @@ class TestRefusals:
             _cleanup([low_pid, high_pid], [ws])
 
     def test_a_document_in_another_workspace_cannot_be_superseded(self, restore_client):
-        alice, alice_pid, ws_a = _signed_in("tenant-a", CONFIDENTIAL)
-        bob, bob_pid, ws_b = _signed_in("tenant-b", CONFIDENTIAL)
+        alice, alice_pid, ws_a = _signed_in("tenant-a", "director")
+        bob, bob_pid, ws_b = _signed_in("tenant-b", "director")
         try:
             theirs = _intake(bob, "Their document", "Their text.", PUBLIC)
             res = _supersede(alice, theirs["id"], "Mine now", "my text", PUBLIC)
@@ -391,7 +396,7 @@ class TestRefusals:
 
     def test_a_duplicate_revision_is_still_a_duplicate(self, restore_client):
         """Supersede routes through intake, so dedup still applies to the new text."""
-        client, pid, ws = _signed_in("dupe", CONFIDENTIAL)
+        client, pid, ws = _signed_in("dupe", "director")
         try:
             v1 = _intake(client, "Original", "identical text", PUBLIC)
             res = _supersede(client, v1["id"], "Revision", "identical text", PUBLIC)
@@ -408,10 +413,10 @@ class TestRefusals:
 class TestWithholding:
     def test_a_withheld_revision_is_a_count_and_nothing_else(self, restore_client):
         """Asserted against the RAW body, so a leak into any field fails."""
-        low, low_pid, ws = _signed_in("withheld", INVESTOR)
+        low, low_pid, ws = _signed_in("withheld", "investor")
         # Outside the try: if this raised, `high_pid` would be unbound in the finally
         # and a NameError would replace whatever actually went wrong.
-        high, high_pid = _joins(ws, CONFIDENTIAL)
+        high, high_pid = _joins(ws, "director")
         try:
             v1 = _intake(high, "Vendor terms", "Public draft.", INVESTOR)
             v2 = _supersede(high, v1["id"], "Project Halberd termination terms", "Confidential correction.", CONFIDENTIAL).json()
@@ -444,8 +449,8 @@ class TestWithholding:
         derive and compare. Returning one for a document above the caller's clearance is
         a content-confirmation oracle, not an unusable handle.
         """
-        low, low_pid, ws = _signed_in("redact", INVESTOR)
-        high, high_pid = _joins(ws, CONFIDENTIAL)
+        low, low_pid, ws = _signed_in("redact", "investor")
+        high, high_pid = _joins(ws, "director")
         try:
             v1 = _intake(high, "Vendor terms", "Public draft.", INVESTOR)
             v2 = _supersede(high, v1["id"], "Sealed correction", "Confidential.", CONFIDENTIAL).json()
@@ -473,10 +478,10 @@ class TestWithholding:
         That fallback would mark a superseded document as current — worse than saying
         nothing, because the reader acts on a corrected document with no signal.
         """
-        low, low_pid, ws = _signed_in("nocurrent", INVESTOR)
+        low, low_pid, ws = _signed_in("nocurrent", "investor")
         # Outside the try: if this raised, `high_pid` would be unbound in the finally
         # and a NameError would replace whatever actually went wrong.
-        high, high_pid = _joins(ws, CONFIDENTIAL)
+        high, high_pid = _joins(ws, "director")
         try:
             v1 = _intake(high, "Open figure", "12M.", INVESTOR)
             _supersede(high, v1["id"], "Corrected figure", "11.6M.", CONFIDENTIAL)
@@ -489,10 +494,10 @@ class TestWithholding:
 
     def test_the_chain_of_a_document_above_clearance_is_404(self, restore_client):
         """A chain read must not be a way around `get_document`'s clearance gate."""
-        low, low_pid, ws = _signed_in("chain404", INVESTOR)
+        low, low_pid, ws = _signed_in("chain404", "investor")
         # Outside the try: if this raised, `high_pid` would be unbound in the finally
         # and a NameError would replace whatever actually went wrong.
-        high, high_pid = _joins(ws, CONFIDENTIAL)
+        high, high_pid = _joins(ws, "director")
         try:
             secret = _intake(high, "Sealed", "Confidential.", CONFIDENTIAL)
             res = low.get(f"/api/documents/{secret['id']}/versions")
@@ -514,10 +519,10 @@ class TestWithholding:
         that rule is ever relaxed, this test fails and the disclosure question is reopened
         deliberately instead of changing underneath the code.
         """
-        low, low_pid, ws = _signed_in("prefix", INVESTOR)
+        low, low_pid, ws = _signed_in("prefix", "investor")
         # Outside the try: if this raised, `high_pid` would be unbound in the finally
         # and a NameError would replace whatever actually went wrong.
-        high, high_pid = _joins(ws, CONFIDENTIAL)
+        high, high_pid = _joins(ws, "director")
         try:
             v1 = _intake(high, "R1", "one", PUBLIC)
             v2 = _supersede(high, v1["id"], "R2", "two", INVESTOR).json()
@@ -540,7 +545,7 @@ class TestWithholding:
 
 class TestAudit:
     def test_supersession_records_both_sensitivities(self, restore_client):
-        client, pid, ws = _signed_in("audit", CONFIDENTIAL)
+        client, pid, ws = _signed_in("audit", "director")
         try:
             v1 = _intake(client, "Before", "before text", INVESTOR)
             v2 = _supersede(client, v1["id"], "After", "after text", INTERNAL).json()
@@ -567,7 +572,7 @@ class TestAudit:
             _cleanup([pid], [ws])
 
     def test_a_refused_supersession_records_no_event(self, restore_client):
-        client, pid, ws = _signed_in("norecord", CONFIDENTIAL)
+        client, pid, ws = _signed_in("norecord", "director")
         try:
             v1 = _intake(client, "Sealed", "sealed text", CONFIDENTIAL)
             assert _supersede(client, v1["id"], "Leak", "leak text", PUBLIC).status_code == 403
@@ -593,7 +598,7 @@ class TestChainWalk:
         that supersedes with an *existing* document would produce — and asserts the read
         refuses rather than holding a connection until something else times out.
         """
-        client, pid, ws = _signed_in("cycle", CONFIDENTIAL)
+        client, pid, ws = _signed_in("cycle", "director")
         try:
             a = _intake(client, "A", "a text", PUBLIC)
             b = _supersede(client, a["id"], "B", "b text", PUBLIC).json()

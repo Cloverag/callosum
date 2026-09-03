@@ -19,6 +19,7 @@ if os.environ.get("CALLOSUM_RUN_INTEGRATION") != "1":
 
 import psycopg
 
+from callosum import identity
 from callosum.config import settings
 from meridian import audit, board_members
 from meridian.board_members import (
@@ -138,9 +139,20 @@ def test_the_actor_is_recorded():
     """
     ws = _new_workspace()
     actor = str(uuid.uuid4())
+    # `identity.ROLE_TO_CLEARANCE["director"]` (3), not the literal `4` this used to
+    # read (#166): 'director' maps to 3, and a fixture asserting 4 was simply false —
+    # not load-bearing for this test (only an active membership is needed, for
+    # `ActorNotInWorkspace` below), but a fixture should not state a number it does
+    # not mean. Applied to `principal.clearance` too, even though that column is
+    # documented legacy/bootstrap-only and unread for authorization — chosen for
+    # this file specifically, not as a repo-wide claim: a broader sweep after this
+    # fix found the same `role`/literal-`clearance` mismatch on `principal` in
+    # roughly 15 other test files this rewrite did not touch. Not fixed here; see
+    # the report this was flagged in.
+    director_clearance = identity.ROLE_TO_CLEARANCE["director"]
     _admin(
         "INSERT INTO principal (id, name, role, clearance) VALUES (%s, %s, 'director', %s)",
-        (actor, f"Audit Actor {actor[:6]}", 4),
+        (actor, f"Audit Actor {actor[:6]}", director_clearance),
     )
     # `record_audit_event` refuses an actor with no active membership in the workspace
     # (`audit.py:188`, ActorNotInWorkspace) — the trail cannot name someone who was not
@@ -148,7 +160,7 @@ def test_the_actor_is_recorded():
     _admin(
         "INSERT INTO membership (principal_id, workspace_id, role, clearance, active)"
         " VALUES (%s, %s, 'director', %s, true)",
-        (actor, ws, 4),
+        (actor, ws, director_clearance),
     )
     try:
         m = board_members.create_member(

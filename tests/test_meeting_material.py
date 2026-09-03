@@ -32,7 +32,7 @@ from starlette.middleware.sessions import SessionMiddleware
 if os.environ.get("CALLOSUM_RUN_INTEGRATION") != "1":
     pytest.skip("set CALLOSUM_RUN_INTEGRATION=1 to run live-store integration tests", allow_module_level=True)
 
-from callosum import llm
+from callosum import identity, llm
 from callosum.config import settings
 from meridian import documents
 from meridian.api import auth, errors
@@ -138,17 +138,22 @@ def _workspace(label: str) -> str:
     return ws
 
 
-def _principal_with_identity(subject: str, clearance: int) -> str:
+def _principal_with_identity(subject: str, role: str) -> str:
     pid = str(uuid.uuid4())
-    _admin("INSERT INTO principal (id, name, role, clearance) VALUES (%s, %s, 'director', %s)", (pid, f"User {pid[:6]}", clearance))
+    _admin("INSERT INTO principal (id, name, role, clearance) VALUES (%s, %s, %s, %s)", (pid, f"User {pid[:6]}", role, identity.ROLE_TO_CLEARANCE[role]))
     _admin("INSERT INTO principal_identity (principal_id, provider, subject) VALUES (%s, %s, %s)", (pid, ISSUER, subject))
     return pid
 
 
-def _member(principal_id: str, workspace_id: str, clearance: int) -> None:
+def _member(principal_id: str, workspace_id: str, role: str) -> None:
+    """`role`, not `clearance` (#166): effective clearance is derived from
+    `membership.role` at read time. This file's two-reader (`_signed_in`/`_joins`)
+    withholding tests are exactly the shape that broke when both readers hardcoded
+    `role='director'` while only their stored `clearance` differed.
+    """
     _admin(
-        "INSERT INTO membership (principal_id, workspace_id, role, clearance, active) VALUES (%s, %s, 'director', %s, true)",
-        (principal_id, workspace_id, clearance),
+        "INSERT INTO membership (principal_id, workspace_id, role, clearance, active) VALUES (%s, %s, %s, %s, true)",
+        (principal_id, workspace_id, role, identity.ROLE_TO_CLEARANCE[role]),
     )
 
 
@@ -181,16 +186,16 @@ def _client(subject: str, workspace_id: str | None) -> TestClient:
     return client
 
 
-def _signed_in(label: str, clearance: int) -> tuple[TestClient, str, str]:
+def _signed_in(label: str, role: str) -> tuple[TestClient, str, str]:
     subject = f"sub-{uuid.uuid4()}"
-    pid = _principal_with_identity(subject, clearance)
+    pid = _principal_with_identity(subject, role)
     ws = _workspace(label)
-    _member(pid, ws, clearance)
+    _member(pid, ws, role)
     return _client(subject, ws), pid, ws
 
 
-def _joins(ws: str, clearance: int) -> tuple[TestClient, str]:
-    """A second signed-in principal in an EXISTING workspace, at a different clearance.
+def _joins(ws: str, role: str) -> tuple[TestClient, str]:
+    """A second signed-in principal in an EXISTING workspace, at a different role.
 
     Every withholding test needs two readers of one chain. The principal is returned so
     the caller can hand it to the *same* `_cleanup` as the first: a principal who has
@@ -199,8 +204,8 @@ def _joins(ws: str, clearance: int) -> tuple[TestClient, str]:
     is what the first draft of this file did, and all five two-reader tests failed on it.
     """
     subject = f"sub-{uuid.uuid4()}"
-    pid = _principal_with_identity(subject, clearance)
-    _member(pid, ws, clearance)
+    pid = _principal_with_identity(subject, role)
+    _member(pid, ws, role)
     return _client(subject, ws), pid
 
 
@@ -232,7 +237,7 @@ def _material(client: TestClient, meeting_id: str):
 
 class TestAssign:
     def test_assign_then_read_back(self, restore_client):
-        client, pid, ws = _signed_in("material", CONFIDENTIAL)
+        client, pid, ws = _signed_in("material", "director")
         try:
             doc = _intake(client, "Vendor contract", "Northwind terms.", INVESTOR)
             meeting = _meeting(client)
@@ -253,7 +258,7 @@ class TestAssign:
         A director reading a meeting's material sees it in the order someone decided it
         belonged there, which is the only order this table records.
         """
-        client, pid, ws = _signed_in("order", CONFIDENTIAL)
+        client, pid, ws = _signed_in("order", "director")
         try:
             first = _intake(client, "Filed first", "one", INVESTOR)
             second = _intake(client, "Filed second", "two", INVESTOR)
@@ -275,7 +280,7 @@ class TestAssign:
 
 class TestRefusals:
     def test_assigning_twice_is_a_conflict(self, restore_client):
-        client, pid, ws = _signed_in("dupe", CONFIDENTIAL)
+        client, pid, ws = _signed_in("dupe", "director")
         try:
             doc = _intake(client, "Contract", "terms", INVESTOR)
             meeting = _meeting(client)
@@ -292,8 +297,8 @@ class TestRefusals:
         confirm the board holds it without reading anything. Same rule as
         `supersede_document`'s predecessor lookup.
         """
-        client, pid, ws = _signed_in("oracle", CONFIDENTIAL)
-        low, low_pid = _joins(ws, INVESTOR)
+        client, pid, ws = _signed_in("oracle", "director")
+        low, low_pid = _joins(ws, "investor")
         try:
             secret = _intake(client, "Board comp memo", "salaries", CONFIDENTIAL)
             meeting = _meeting(client)
@@ -311,8 +316,8 @@ class TestRefusals:
         Answering 404 for a hidden document is worth nothing if a document that simply
         does not exist answers something else — the difference is the disclosure.
         """
-        client, pid, ws = _signed_in("same", CONFIDENTIAL)
-        low, low_pid = _joins(ws, INVESTOR)
+        client, pid, ws = _signed_in("same", "director")
+        low, low_pid = _joins(ws, "investor")
         try:
             secret = _intake(client, "Hidden", "text", CONFIDENTIAL)
             meeting = _meeting(client)
@@ -326,8 +331,8 @@ class TestRefusals:
 
     def test_a_meeting_in_another_workspace_cannot_be_given_material(self, restore_client):
         """Tenancy, proved rather than assumed."""
-        client, pid, ws = _signed_in("mine", CONFIDENTIAL)
-        other, other_pid, other_ws = _signed_in("theirs", CONFIDENTIAL)
+        client, pid, ws = _signed_in("mine", "director")
+        other, other_pid, other_ws = _signed_in("theirs", "director")
         try:
             doc = _intake(client, "Ours", "text", INVESTOR)
             their_meeting = _meeting(other)
@@ -339,7 +344,7 @@ class TestRefusals:
             _cleanup([other_pid], [other_ws])
 
     def test_unassigning_what_is_not_assigned_is_404(self, restore_client):
-        client, pid, ws = _signed_in("unassigned", CONFIDENTIAL)
+        client, pid, ws = _signed_in("unassigned", "director")
         try:
             doc = _intake(client, "Never assigned", "text", INVESTOR)
             meeting = _meeting(client)
@@ -355,8 +360,8 @@ class TestRefusals:
         board's material for a meeting without ever being able to see what they removed —
         a write that acts on data the writer is not cleared for.
         """
-        client, pid, ws = _signed_in("strip", CONFIDENTIAL)
-        low, low_pid = _joins(ws, INVESTOR)
+        client, pid, ws = _signed_in("strip", "director")
+        low, low_pid = _joins(ws, "investor")
         try:
             secret = _intake(client, "Confidential contract", "terms", CONFIDENTIAL)
             meeting = _meeting(client)
@@ -375,8 +380,8 @@ class TestRefusals:
 
 class TestWithholding:
     def test_a_document_above_clearance_is_counted_not_listed(self, restore_client):
-        client, pid, ws = _signed_in("withheld", CONFIDENTIAL)
-        low, low_pid = _joins(ws, INVESTOR)
+        client, pid, ws = _signed_in("withheld", "director")
+        low, low_pid = _joins(ws, "investor")
         try:
             public = _intake(client, "Agenda pack", "public text", INVESTOR)
             secret = _intake(client, "Board comp memo", "SECRET_BODY salaries", CONFIDENTIAL)
@@ -409,8 +414,8 @@ class TestWithholding:
         reader for whom that is most misleading. The count comes from the complement,
         which is why it survives here.
         """
-        client, pid, ws = _signed_in("allwithheld", CONFIDENTIAL)
-        low, low_pid = _joins(ws, INVESTOR)
+        client, pid, ws = _signed_in("allwithheld", "director")
+        low, low_pid = _joins(ws, "investor")
         try:
             meeting = _meeting(client)
             for i in range(3):
@@ -430,8 +435,8 @@ class TestWithholding:
         "there is something here you may not see", and a director preparing for the
         meeting needs that difference.
         """
-        client, pid, ws = _signed_in("distinct", CONFIDENTIAL)
-        low, low_pid = _joins(ws, INVESTOR)
+        client, pid, ws = _signed_in("distinct", "director")
+        low, low_pid = _joins(ws, "investor")
         try:
             empty = _meeting(client, "Nothing filed yet")
             hidden = _meeting(client, "All above your clearance")
@@ -445,8 +450,8 @@ class TestWithholding:
 
     def test_the_withheld_count_moves_with_the_reader_not_with_the_meeting(self, restore_client):
         """One meeting, two readers, two different true answers."""
-        client, pid, ws = _signed_in("perreader", CONFIDENTIAL)
-        low, low_pid = _joins(ws, INVESTOR)
+        client, pid, ws = _signed_in("perreader", "director")
+        low, low_pid = _joins(ws, "investor")
         try:
             meeting = _meeting(client)
             _assign(client, meeting, _intake(client, "Open", "a", INVESTOR)["id"])
@@ -463,7 +468,7 @@ class TestWithholding:
 
 class TestAudit:
     def test_assignment_and_removal_are_audited(self, restore_client):
-        client, pid, ws = _signed_in("audit", CONFIDENTIAL)
+        client, pid, ws = _signed_in("audit", "director")
         try:
             doc = _intake(client, "Contract", "text", INVESTOR)
             meeting = _meeting(client)
@@ -488,8 +493,8 @@ class TestAudit:
 
     def test_a_refused_assignment_writes_no_audit_event(self, restore_client):
         """No event may record something that did not happen (rules.md §2)."""
-        client, pid, ws = _signed_in("noaudit", CONFIDENTIAL)
-        low, low_pid = _joins(ws, INVESTOR)
+        client, pid, ws = _signed_in("noaudit", "director")
+        low, low_pid = _joins(ws, "investor")
         try:
             secret = _intake(client, "Secret", "text", CONFIDENTIAL)
             meeting = _meeting(client)
