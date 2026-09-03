@@ -41,14 +41,15 @@ the connection already scoped to the target workspace, is what makes that hold.
 
 Anti-escalation is the one rule both a grant and a revoke enforce, symmetrically:
 a caller may never act at a clearance ABOVE their own. Granting a role whose
-`ROLE_TO_CLEARANCE` exceeds the actor's own clearance is refused outright — this
-half is the maintainer's explicit ruling. Revoking a member whose current clearance
-exceeds the actor's is refused for the same reason, though the ruling only stated
-the grant half: an actor who could not have granted that role should not be able to
-strip it either, or revoke-then-regrant becomes an escalation path the grant-side
-check does not close. **Flagged here as my own extension of the rule, raised with
-the maintainer for a ruling and not yet one — do not read this paragraph as policy
-until that lands.**
+`ROLE_TO_CLEARANCE` exceeds the actor's own clearance is refused outright — the
+maintainer's explicit ruling. Revoking a member whose current clearance exceeds
+the actor's is refused for the same reason: an actor who could not have granted
+that role should not be able to strip it either, or revoke-then-regrant becomes
+an escalation path the grant-side check does not close. **Originally shipped as
+an unratified extension of the grant-side ruling (#186), raised with the
+maintainer explicitly rather than merged as settled by implication — RATIFIED
+in the same ruling that commissioned #185's last-member guard below. This is
+policy, not a standing extension.**
 
 Both checks compare against a role-derived clearance, on BOTH sides, never against
 `membership.clearance` directly. That column is written on every mutation here
@@ -96,6 +97,20 @@ class EscalationDeniedError(WorkspaceError):
 
 class MembershipNotFoundError(WorkspaceError):
     """No membership row for that principal in this workspace."""
+
+
+class LastActiveMembershipError(WorkspaceError):
+    """Refusing to revoke the last active membership in a workspace (#185).
+
+    Named deliberately, not out of habit: `errors.py`'s name-suffix pass maps
+    anything ending `NotFound` to 404, and this is not that — the membership
+    exists and is found, the request is refused because of what removing it
+    would do to the workspace, not because the target is missing. See
+    `revoke_membership()` for why this is a different failure from
+    `MembershipNotFoundError` and must stay distinguishable from it: a caller
+    needs to tell "there is nothing here to revoke" apart from "there is
+    something here and it cannot be revoked right now."
+    """
 
 
 @dataclass(frozen=True)
@@ -275,6 +290,82 @@ def revoke_membership(
     same mapping, so the two columns AGREE by construction in that test and it
     cannot exercise the disagreement the bug depended on. Replaced with a test that
     seeds the disagreement directly through the admin connection.
+
+    **Refuses to revoke the last active membership in the workspace (#185, the
+    maintainer's ruling — option 2, not option 1: refuse removing the LAST ACTIVE
+    membership, not refuse SELF-revocation).** Option 1 targets a proxy — it would
+    still let an admin strand a workspace by revoking the only OTHER member, and
+    it would refuse a harmless self-revocation by someone who is not the last one
+    out. Option 2 targets what actually goes wrong: a workspace with zero active
+    memberships is unreachable by anything short of a superuser `UPDATE` — nothing
+    in this module can resolve a principal into it (`identity.resolve_principal_
+    by_id` requires an active membership), `grant_membership`/`revoke_membership`
+    both resolve the actor the same way, and `create_workspace_with_founder`
+    cannot target an existing workspace by design (migration 0029) — which is
+    exactly the situation step 5 exists to remove.
+
+    **The count and the update are ONE atomic statement, and this is the one place
+    in this module where that matters.** The obvious shape —
+    `SELECT count(*) ... ; if n <= 1: raise ...; UPDATE ...` — races: two
+    concurrent revokes of two different (non-last) members can each see two active
+    members, each independently decide they are not the last, and both succeed —
+    leaving zero. That passes every single-threaded test written against it, which
+    is what makes it dangerous rather than merely wrong. `rowcount == 0` means
+    "refused, they were the last active member", decided at the instant of the
+    write, not against a count read moments earlier that could already be stale.
+    The next person to touch this will reach for count-then-update because it
+    reads more obviously — this paragraph is why not to.
+
+    **One statement is necessary but was NOT sufficient — the `FOR UPDATE` on the
+    `EXISTS` subquery is load-bearing, and its absence is a real bug this module
+    shipped with once, found by testing concurrency rather than by reasoning about
+    the SQL.** A first version of this query used the `EXISTS` subquery exactly as
+    written below but WITHOUT `FOR UPDATE`, on the reasoning that "one statement"
+    was enough. It looked atomic, it passed every single-threaded test including
+    the mutation test (disabling the whole clause correctly turned tests 2, 4 and
+    5 red), and it was still racy: `UPDATE`'s row lock covers only the row being
+    updated, and `EXISTS`'s inner `SELECT` — a plain, non-locking read under
+    Postgres's default READ COMMITTED isolation — reads the *other* row's
+    last-committed value without waiting for a concurrent transaction that has not
+    committed yet. Two threads revoking two different members of a two-member
+    workspace could each run their `EXISTS` check, each see the OTHER as still
+    active (because neither had committed), and both proceed — reproduced directly:
+    a live two-thread test against exactly that shape left 0 active members,
+    consistently. Adding `FOR UPDATE` makes the `EXISTS` subquery take a real row
+    lock on the "other" candidate rows, so the second transaction's `EXISTS` check
+    now blocks on the first transaction's lock instead of reading past it — the
+    same two-thread test run 10 times against the `FOR UPDATE` version produced
+    exactly one success and one `LastActiveMembershipError` every time, winner
+    alternating, no deadlocks. The lesson is not "always add `FOR UPDATE`" — it is
+    that a subquery deciding whether a write is ALLOWED needs to lock what it
+    reads, the same way the write itself locks what it writes, or the "one
+    statement" property is cosmetic.
+
+    Inactive rows do not count as "others exist" — the `EXISTS` subquery filters
+    `active`, so a workspace whose only other memberships are already revoked
+    correctly treats the remaining one as the last, not as one of several.
+
+    **The audit write happens BEFORE the `UPDATE`, not after — reversed from
+    every other mutation in this module, and deliberately.** Self-revocation is
+    a real, ruled-on case (#185's own required tests: "self-revocation by a
+    NON-last member succeeds" is the assertion the ruling turns on), and when
+    the actor revokes THEMSELVES, the `UPDATE` deactivates the actor's own
+    membership as part of the same statement that is meant to be audited.
+    `record_audit_event()` requires its actor to hold an ACTIVE membership in
+    the workspace (`ActorNotInWorkspace`) — a real defence elsewhere, see the
+    module docstring on `create_workspace` — but writing the audit event AFTER
+    the `UPDATE` would check that requirement against a row the same statement
+    just deactivated, and a legitimate self-revocation would raise
+    `ActorNotInWorkspace` on itself. Confirmed as a live bug, not a hypothetical
+    one: self-revocation by a non-last member failed exactly this way before
+    this reordering, and no test before #185 had ever exercised it — every
+    existing test revoked someone OTHER than the caller. Writing the audit
+    first, while the actor's own row is still active, and only then attempting
+    the `UPDATE`, fixes it. Atomicity is unaffected either way: both statements
+    are in the same `store.pg()` transaction, and `LastActiveMembershipError`
+    below still rolls the audit write back along with everything else — test 5
+    ("the audit event is written on success, not on refusal") pins exactly
+    that.
     """
     with store.pg(workspace_id) as conn:
         actor = identity.resolve_principal_by_id(conn, actor_principal_id, workspace_id=workspace_id)
@@ -290,23 +381,45 @@ def revoke_membership(
                 "cannot revoke a membership whose clearance exceeds the acting principal's own"
             )
 
-        row = conn.execute(
-            """
-            UPDATE membership SET active = false
-             WHERE principal_id = %s AND workspace_id = %s
-            RETURNING *
-            """,
-            (principal_id, workspace_id),
-        ).fetchone()
-
+        # Before the UPDATE — see the docstring above for why self-revocation
+        # requires this order. Uses `current["role"]`, read moments ago, rather
+        # than a post-update row: the role does not change on revoke, only
+        # `active` does, and that new value is already known here (`False`).
         audit.record_audit_event(
             conn,
             aggregate_type="membership",
             aggregate_id=principal_id,
             action="status_changed",
             actor_principal_id=actor_principal_id,
-            payload={"role": row["role"], "active": False},
+            payload={"role": current["role"], "active": False},
             workspace_id=workspace_id,
         )
+
+        row = conn.execute(
+            """
+            UPDATE membership SET active = false
+             WHERE principal_id = %s AND workspace_id = %s
+               AND EXISTS (
+                   SELECT 1 FROM membership
+                    WHERE workspace_id = %s AND active AND principal_id <> %s
+                      FOR UPDATE
+               )
+            RETURNING *
+            """,
+            (principal_id, workspace_id, workspace_id, principal_id),
+        ).fetchone()
+
+        if row is None:
+            # The existence check above already ruled out "no such membership" —
+            # a row that vanished between the two statements would mean something
+            # else deleted it, which nothing in this module does (revocation is
+            # `active = false`, never a delete). So `rowcount == 0` here means
+            # exactly one thing: the `EXISTS` clause found no other active member,
+            # and this was the last one. Raising propagates out of `store.pg()`'s
+            # `with` block, which rolls back the whole transaction — the audit
+            # write above included, so a refusal leaves no trail.
+            raise LastActiveMembershipError(
+                f"cannot revoke {principal_id}: the last active membership in {workspace_id}"
+            )
 
     return _row_to_membership(row)

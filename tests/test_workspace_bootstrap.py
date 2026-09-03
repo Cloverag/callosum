@@ -453,6 +453,164 @@ class TestGrantAndRevoke:
         finally:
             _cleanup(workspace_ids=[ws], principal_ids=[founder, member])
 
+    # -----------------------------------------------------------------------
+    # The last-member guard (#185, the maintainer's ruling — option 2: refuse
+    # revoking the LAST ACTIVE membership, not refuse self-revocation). Five
+    # tests, numbered to match the ruling's own list.
+    # -----------------------------------------------------------------------
+
+    def test_1_revoking_a_member_when_others_remain_active_succeeds(self):
+        """1. The ordinary case — `test_revoking_sets_active_false_not_a_delete`
+        above already exercises this shape; this one names it explicitly as the
+        first of the ruling's five, so the boundary tests read as a set.
+        """
+        founder = _principal()
+        member = _principal(role="observer")
+        ws = None
+        try:
+            ws = workspaces.create_workspace("Others Remain", None, founder)
+            workspaces.grant_membership(
+                member, "advisor", workspace_id=ws, actor_principal_id=founder,
+            )
+
+            revoked = workspaces.revoke_membership(
+                member, workspace_id=ws, actor_principal_id=founder,
+            )
+            assert revoked.active is False
+
+            founder_row = _admin_fetch(
+                "SELECT active FROM membership WHERE principal_id = %s AND workspace_id = %s",
+                (founder, ws),
+            )[0]
+            assert founder_row["active"] is True
+        finally:
+            _cleanup(workspace_ids=[ws], principal_ids=[founder, member])
+
+    def test_2_revoking_the_last_active_member_is_refused(self):
+        """2. A single-member workspace: the founder is necessarily the only
+        possible actor (`revoke_membership` resolves the actor through an ACTIVE
+        membership, and there is only one), so this is inherently a
+        self-revocation attempt — and it is refused, not because it is
+        self-revocation, but because it would leave zero active members.
+        """
+        founder = _principal()
+        ws = None
+        try:
+            ws = workspaces.create_workspace("Last Member", None, founder)
+
+            with pytest.raises(workspaces.LastActiveMembershipError):
+                workspaces.revoke_membership(
+                    founder, workspace_id=ws, actor_principal_id=founder,
+                )
+
+            row = _admin_fetch(
+                "SELECT active FROM membership WHERE principal_id = %s AND workspace_id = %s",
+                (founder, ws),
+            )[0]
+            assert row["active"] is True
+        finally:
+            _cleanup(workspace_ids=[ws], principal_ids=[founder])
+
+    def test_3_self_revocation_by_a_non_last_member_succeeds(self):
+        """3. The assertion the ruling turns on. Option 1 (refuse self-revocation
+        outright) would deny this; option 2 (refuse only the LAST active member)
+        allows it, because the founder remains after `member` leaves. If this
+        test is red, the guard was built as option 1 and needs to be re-read
+        against the ruling, not adjusted to pass.
+        """
+        founder = _principal()
+        member = _principal(role="advisor")
+        ws = None
+        try:
+            ws = workspaces.create_workspace("Self Revoke Non Last", None, founder)
+            workspaces.grant_membership(
+                member, "advisor", workspace_id=ws, actor_principal_id=founder,
+            )
+
+            revoked = workspaces.revoke_membership(
+                member, workspace_id=ws, actor_principal_id=member,
+            )
+            assert revoked.active is False
+
+            founder_row = _admin_fetch(
+                "SELECT active FROM membership WHERE principal_id = %s AND workspace_id = %s",
+                (founder, ws),
+            )[0]
+            assert founder_row["active"] is True
+        finally:
+            _cleanup(workspace_ids=[ws], principal_ids=[founder, member])
+
+    def test_4_inactive_others_do_not_count_toward_others_exist(self):
+        """4. Two membership ROWS exist in this workspace by the time of the
+        final call, but only one is ACTIVE — the guard must see the workspace as
+        having a single (last) active member, not two, or a revoked row's mere
+        presence would wrongly let the real last member be removed too.
+        """
+        founder = _principal()
+        already_gone = _principal(role="observer")
+        ws = None
+        try:
+            ws = workspaces.create_workspace("Inactive Others", None, founder)
+            workspaces.grant_membership(
+                already_gone, "observer", workspace_id=ws, actor_principal_id=founder,
+            )
+            workspaces.revoke_membership(
+                already_gone, workspace_id=ws, actor_principal_id=founder,
+            )
+
+            with pytest.raises(workspaces.LastActiveMembershipError):
+                workspaces.revoke_membership(
+                    founder, workspace_id=ws, actor_principal_id=founder,
+                )
+
+            row = _admin_fetch(
+                "SELECT active FROM membership WHERE principal_id = %s AND workspace_id = %s",
+                (founder, ws),
+            )[0]
+            assert row["active"] is True
+        finally:
+            _cleanup(workspace_ids=[ws], principal_ids=[founder, already_gone])
+
+    def test_5_the_audit_event_is_written_on_success_not_on_refusal(self):
+        """5. A refusal must not leave a trail claiming a revocation happened —
+        the same discipline `audit.record_audit_event` and its callers apply
+        everywhere else in this codebase, checked here for the new guard
+        specifically.
+        """
+        founder = _principal()
+        member = _principal(role="observer")
+        ws = None
+        try:
+            ws = workspaces.create_workspace("Audited Refusal", None, founder)
+            workspaces.grant_membership(
+                member, "advisor", workspace_id=ws, actor_principal_id=founder,
+            )
+            workspaces.revoke_membership(
+                member, workspace_id=ws, actor_principal_id=founder,
+            )
+            member_events_before = _admin_fetch(
+                "SELECT action FROM audit_event"
+                " WHERE workspace_id = %s AND aggregate_type = 'membership' AND aggregate_id = %s"
+                " ORDER BY created_at",
+                (ws, member),
+            )
+            assert [e["action"] for e in member_events_before] == ["created", "status_changed"]
+
+            with pytest.raises(workspaces.LastActiveMembershipError):
+                workspaces.revoke_membership(
+                    founder, workspace_id=ws, actor_principal_id=founder,
+                )
+
+            founder_events = _admin_fetch(
+                "SELECT action FROM audit_event"
+                " WHERE workspace_id = %s AND aggregate_type = 'membership' AND aggregate_id = %s",
+                (ws, founder),
+            )
+            # Only the bootstrap `created` event — the refused revoke wrote nothing.
+            assert [e["action"] for e in founder_events] == ["created"]
+        finally:
+            _cleanup(workspace_ids=[ws], principal_ids=[founder, member])
+
     def test_revoking_a_higher_clearance_member_is_denied(self):
         """Symmetric extension of F for revoke — see the module docstring in
         workspaces.py for why this exists though the ruling only stated the grant
