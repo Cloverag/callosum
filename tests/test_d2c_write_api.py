@@ -90,7 +90,7 @@ def _workspace(label: str) -> str:
 def _principal_with_identity(subject: str) -> str:
     pid = str(uuid.uuid4())
     _admin(
-        "INSERT INTO principal (id, name, role, clearance) VALUES (%s, %s, 'director', 2)",
+        "INSERT INTO principal (id, name, role, clearance) VALUES (%s, %s, 'director', 3)",
         (pid, f"API User {pid[:6]}"),
     )
     _admin(
@@ -101,9 +101,12 @@ def _principal_with_identity(subject: str) -> str:
 
 
 def _member(principal_id: str, workspace_id: str) -> None:
+    # clearance 3, not the old 2: 'director' maps to 3 (#166) and this file never
+    # varied clearance, so the fixture only needs to stop lying about the number,
+    # not gain a role parameter no test would use.
     _admin(
         "INSERT INTO membership (principal_id, workspace_id, role, clearance, active)"
-        " VALUES (%s, %s, 'director', 2, true)",
+        " VALUES (%s, %s, 'director', 3, true)",
         (principal_id, workspace_id),
     )
 

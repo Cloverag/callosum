@@ -13,6 +13,32 @@ grants cross-tenant access at whatever level the person holds anywhere.
 This module is deliberately NOT part of the frozen core. `retrieve.py` is frozen
 and stays untouched: it receives a `Principal` and gates on `.clearance` exactly
 as before. Only the *construction* of that object moves here.
+
+--------------------------------------------------------------------------------
+ROLE IS NOW AUTHORITATIVE; STORED `membership.clearance` IS NOT (#166, P4)
+--------------------------------------------------------------------------------
+Superseding the checkpoint-5b design above without erasing it: that design made
+`membership.clearance` the read authority, which was correct relative to the
+column it replaced (`principal.clearance`, global, wrong for a tenancy model) but
+is itself now superseded. `membership.role` is authoritative; clearance is
+*derived* from it via `ROLE_TO_CLEARANCE`, and the stored `membership.clearance`
+column is no longer read for authorization at all.
+
+The reason is drift: `membership.clearance` and `membership.role` are two columns
+with nothing forcing them to agree (`docs/reviews/2026-09-03-p4-membership-
+decision-brief.md` §12.3, an artefact `cli.py:123`'s single-INSERT seeding made
+look like agreement until it was checked). A role change that left the stored
+clearance stale would make the anti-escalation check compare against an obsolete
+privilege level — reading the mapping, not the column, is what makes that
+impossible rather than merely unlikely.
+
+`ROLE_TO_CLEARANCE` lives here and not in `meridian/` even though it exists for
+`membership.role` — a `meridian`-owned table — because this module is on the
+*frozen* CLI/eval path too (`cli.py` calls `resolve_principal`/
+`resolve_principal_id` directly), and Meridian imports Callosum, never the
+reverse. A mapping importable only from `meridian` would leave that path unable
+to derive clearance from role, forcing it back onto the stored column and
+reopening exactly the drift this change exists to close.
 """
 
 import uuid
@@ -21,6 +47,26 @@ import psycopg
 
 from callosum.retrieve import Principal
 from callosum.store import DEFAULT_WORKSPACE_ID
+
+#: The canonical seven, and the clearance each maps to. Mirrors the vocabulary
+#: `0027_membership_role_and_audit`'s `membership_role_check` constrains at the
+#: database layer (a separate, not-yet-merged branch) — defined independently
+#: here rather than imported, because this module cannot assume that branch has
+#: landed, and a Python dict has no migration dependency to declare.
+#:
+#: Maintainer-approved values (decision brief §11, Q2/Q3): `admin` carries
+#: clearance 4 *and* separately carries membership-management authority — the
+#: two are distinct grants on one role, and this mapping is only the first of
+#: them. The second (who may grant which role to whom) is `#166` step 5, not here.
+ROLE_TO_CLEARANCE: dict[str, int] = {
+    "founder": 4,
+    "admin": 4,
+    "exec": 3,
+    "director": 3,
+    "advisor": 2,
+    "investor": 1,
+    "observer": 0,
+}
 
 
 class PrincipalNotFound(Exception):
@@ -55,15 +101,22 @@ class IdentityNotProvisioned(PrincipalNotFound):
 # The membership rule, written once.
 #
 # "A principal is resolvable here only if they hold an ACTIVE membership in THIS
-# workspace, and their clearance is the membership's" — that sentence is the whole
+# workspace, and their role is the membership's" — that sentence is the whole
 # of P1's tenancy model, and it should exist in exactly one place. Every lookup in
 # this module formats its own match predicate into this and changes nothing else.
 #
 # The JOIN is what enforces it. A post-filter would leave a code path on which a
 # principal row is returned without a membership beside it; there is no such path
 # here, and adding one would be the regression to watch for.
+#
+# `m.role`, not `p.role`: role is per-workspace now (#166), the same way clearance
+# became per-workspace at checkpoint 5b — a founder in their own workspace may hold
+# a lesser role, and therefore lesser clearance, in another. `m.clearance` is
+# deliberately NOT selected: it is written (`cli.py:125`) but no longer read for
+# authorization anywhere, and selecting a column this module does not use would
+# invite a future edit to reach for it out of habit.
 _PRINCIPAL_WITH_ACTIVE_MEMBERSHIP = """
-    SELECT p.id, p.name, p.role, m.clearance
+    SELECT p.id, p.name, m.role
       FROM principal p
       JOIN membership m ON m.principal_id = p.id
      WHERE {match}
@@ -89,6 +142,22 @@ def _fetch_principal(
     """
     sql = _PRINCIPAL_WITH_ACTIVE_MEMBERSHIP.format(match=match, order=order)
     return conn.execute(sql, (match_param, workspace_id)).fetchone()
+
+
+def _clearance_for(role: str) -> int:
+    """Maps a `membership.role` to its clearance. Fails closed on an unrecognised one.
+
+    Reachable today only if a role enters `membership` that `0027`'s CHECK would
+    refuse — this branch does not carry that migration, and `ROLE_TO_CLEARANCE`
+    could in principle drift from a CHECK that does land, in either direction. An
+    unrecognised role is treated as unresolvable rather than given clearance 0 or
+    raising a bare `KeyError`: this module's existing idiom is one failure shape,
+    not a partial grant and not a crash a caller has to know to catch.
+    """
+    try:
+        return ROLE_TO_CLEARANCE[role]
+    except KeyError:
+        raise PrincipalNotFound(role) from None
 
 
 def resolve_principal(
@@ -122,7 +191,7 @@ def resolve_principal(
         id=row["id"],
         name=row["name"],
         role=row["role"],
-        clearance=row["clearance"],
+        clearance=_clearance_for(row["role"]),
         workspace_id=workspace_id,
     )
 
@@ -186,7 +255,7 @@ def resolve_principal_by_id(
         id=row["id"],
         name=row["name"],
         role=row["role"],
-        clearance=row["clearance"],
+        clearance=_clearance_for(row["role"]),
         workspace_id=workspace_id,
     )
 

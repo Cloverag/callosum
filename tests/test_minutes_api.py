@@ -24,6 +24,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.middleware.sessions import SessionMiddleware
 
+from callosum import identity
 from callosum.config import settings
 from meridian import meetings, minutes
 from meridian.api import auth, errors
@@ -87,11 +88,17 @@ def _principal_with_identity(subject: str) -> str:
     return pid
 
 
-def _member(principal_id: str, workspace_id: str, clearance: int = 4) -> None:
+def _member(principal_id: str, workspace_id: str, role: str = "founder") -> None:
+    """`role`, not `clearance` (#166): clearance is derived from role at read time
+    (`callosum.identity.ROLE_TO_CLEARANCE`), so a stored `clearance` value this
+    helper's caller chose independently would be inert — written, never read.
+    Default `'founder'` matches this file's old default (`clearance=4`), for every
+    call site here that never cared which value it got, only that membership existed.
+    """
     _admin(
         "INSERT INTO membership (principal_id, workspace_id, role, clearance, active)"
-        " VALUES (%s, %s, 'director', %s, true)",
-        (principal_id, workspace_id, clearance),
+        " VALUES (%s, %s, %s, %s, true)",
+        (principal_id, workspace_id, role, identity.ROLE_TO_CLEARANCE[role]),
     )
 
 
@@ -213,13 +220,24 @@ class TestThereIsNoClearanceHere:
         sensitivity column. A reader at clearance 1 and a reader at clearance 4 get
         the same bytes — which is the contract today, and exactly what issue #49 asks
         whether we want.
+
+        `role='founder'`/`role='investor'`, not two `clearance=` numbers (#166):
+        clearance is derived from role now, so the two readers must actually hold
+        different roles or their derived clearance collapses to the same value and
+        `assert founder == investor` below stops being able to fail. This test's
+        original fixture hardcoded `role='director'` for BOTH readers and varied
+        only a stored `clearance` argument that identity.py no longer reads — both
+        readers silently became clearance 3, and the assertion passed because it had
+        become unfalsifiable, not because minutes are actually unfiltered.
+        Mutation-tested (see the report this was flagged in): reverting to a shared
+        role does turn this red, confirming founder(4)/investor(1) is the fix.
         """
         ws = _workspace("noclr")
         mid, _ = _seed_minutes(ws, ["Compensation was discussed at length."])
         hi_subject, lo_subject = f"sub-{uuid.uuid4()}", f"sub-{uuid.uuid4()}"
         hi, lo = _principal_with_identity(hi_subject), _principal_with_identity(lo_subject)
-        _member(hi, ws, clearance=4)
-        _member(lo, ws, clearance=1)
+        _member(hi, ws, role="founder")
+        _member(lo, ws, role="investor")
         try:
             founder = _client(hi_subject, ws).get("/api/minutes", params={"meeting_id": mid}).json()
             investor = _client(lo_subject, ws).get("/api/minutes", params={"meeting_id": mid}).json()
