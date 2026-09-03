@@ -38,6 +38,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.middleware.sessions import SessionMiddleware
 
+from callosum import identity
 from callosum.config import settings
 from meridian.api import auth, errors
 from meridian.api import conflicts as conflicts_api
@@ -100,11 +101,15 @@ def _principal_with_identity(subject: str) -> str:
     return pid
 
 
-def _member(principal_id: str, workspace_id: str, clearance: int = 2, active: bool = True) -> None:
+def _member(principal_id: str, workspace_id: str, role: str = "advisor", active: bool = True) -> None:
+    """`role`, not `clearance` (#166): effective clearance is derived from
+    `membership.role` at read time. Default `'advisor'` matches this file's old
+    default (`clearance=2`).
+    """
     _admin(
         "INSERT INTO membership (principal_id, workspace_id, role, clearance, active)"
-        " VALUES (%s, %s, 'director', %s, %s)",
-        (principal_id, workspace_id, clearance, active),
+        " VALUES (%s, %s, %s, %s, %s)",
+        (principal_id, workspace_id, role, identity.ROLE_TO_CLEARANCE[role], active),
     )
 
 
@@ -212,7 +217,7 @@ class TestListing:
         subject = f"sub-{uuid.uuid4()}"
         pid = _principal_with_identity(subject)
         ws = _workspace("clearance")
-        _member(pid, ws, clearance=1)
+        _member(pid, ws, role="investor")
         visible = _seed_conflict(ws, name_a="Visible Co", sensitivity=1)
         _seed_conflict(ws, name_a="Restricted Co", sensitivity=3)
         try:

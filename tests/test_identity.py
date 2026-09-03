@@ -58,11 +58,24 @@ def _person(name: str, *, role: str = "founder", legacy_clearance: int = 4) -> s
     return pid
 
 
-def _member(principal_id: str, workspace_id: str, clearance: int, *, active: bool = True) -> None:
+def _member(
+    principal_id: str,
+    workspace_id: str,
+    clearance: int,
+    *,
+    role: str = "founder",
+    active: bool = True,
+) -> None:
+    """`clearance` is the STORED value only — #166 made it a non-authoritative
+    column (see `identity.ROLE_TO_CLEARANCE`). Most callers below still pass a
+    `clearance` that happens to equal the effective one for `role='founder'` (4),
+    which is what makes them pass without meaning to assert anything about the
+    stored column. The ones that don't are the tests that actually exercise it.
+    """
     _admin(
         "INSERT INTO membership (principal_id, workspace_id, role, clearance, active)"
-        " VALUES (%s, %s, 'founder', %s, %s)",
-        (principal_id, workspace_id, clearance, active),
+        " VALUES (%s, %s, %s, %s, %s)",
+        (principal_id, workspace_id, role, clearance, active),
     )
 
 
@@ -87,20 +100,82 @@ def _cleanup(principal_ids: list[str], workspace_ids: list[str]) -> None:
         _admin("DELETE FROM workspace WHERE id = %s", (ws,))
 
 
-def test_clearance_comes_from_membership_not_the_legacy_column():
-    """The membership value wins, and the two are deliberately made to disagree.
+def test_clearance_comes_from_the_role_mapping_not_either_stored_column():
+    """Two supersessions, both pinned by one fixture with three disagreeing values.
 
-    Seeding them identically would let this pass while still reading the old
-    column, which is exactly the bug being fixed.
+    Originally asserted `p.clearance == 1` (the stored `membership.clearance`),
+    proving clearance no longer read the legacy global `principal.clearance` (4).
+    That design was itself superseded by #166: `membership.clearance` stopped
+    being an authorization source too, for the same class of reason — nothing
+    forced it to agree with `membership.role`, and `cli.py`'s single-INSERT
+    seeding made that agreement look tested when it was only ever a coincidence
+    of how the fixture was built (`docs/reviews/2026-09-03-p4-membership-
+    decision-brief.md` §3, §12.3).
+
+    All three values are made to disagree on purpose: legacy `principal.clearance`
+    4, stored `membership.clearance` 1, role `director` mapping to 3. Only the
+    role mapping winning proves this — seeding any two alike would let a resolver
+    reading the wrong column pass by accident.
     """
     ws = _workspace()
     pid = _person("Divergent Director", legacy_clearance=4)
-    _member(pid, ws, clearance=1)
+    _member(pid, ws, clearance=1, role="director")
     try:
         with store.pg(ws) as conn:
             p = resolve_principal(conn, "Divergent", workspace_id=ws)
-            assert p.clearance == 1, "resolver read principal.clearance, not the membership"
+            assert p.clearance == 3, "resolver did not read the role->clearance mapping"
+            assert p.role == "director"
             assert p.workspace_id == ws
+    finally:
+        _cleanup([pid], [ws])
+
+
+def test_changing_the_membership_role_changes_effective_clearance():
+    """The direct claim #166 makes: role drives clearance, not the other way round.
+
+    Same principal, same workspace, same stored `membership.clearance` throughout
+    (2, chosen to disagree with every mapped value below) — only `role` changes
+    between resolutions, and clearance tracks it every time. This is the test the
+    ruling asked for by name: "changing `membership.role` changes effective
+    clearance."
+    """
+    ws = _workspace()
+    pid = _person("Promoted Observer")
+    try:
+        for role, expected in (
+            ("observer", 0),
+            ("advisor", 2),
+            ("director", 3),
+            ("founder", 4),
+        ):
+            _admin("DELETE FROM membership WHERE principal_id = %s", (pid,))
+            _member(pid, ws, clearance=2, role=role)
+            with store.pg(ws) as conn:
+                p = resolve_principal_by_id(conn, pid, workspace_id=ws)
+            assert p.clearance == expected, f"role={role!r} should map to {expected}"
+    finally:
+        _cleanup([pid], [ws])
+
+
+def test_an_unrecognised_stored_role_fails_closed_not_open():
+    """`ROLE_TO_CLEARANCE` cannot cover a value it does not know about — this
+    branch carries no CHECK on `membership.role` (that is `0027`, a separate,
+    not-yet-merged branch), so the database will currently accept anything.
+
+    A bare `KeyError` would be a crash a caller has to know to catch; silently
+    defaulting to clearance 0 would be a fail-*open* shape disguised as fail-closed
+    (an unrecognised role still resolving, just quietly). Neither is what
+    `_clearance_for` does — it raises `PrincipalNotFound`, the same refusal an
+    absent membership produces, so an unrecognised role is indistinguishable from
+    "not resolvable" rather than partially trusted.
+    """
+    ws = _workspace()
+    pid = _person("Undefined Role Holder")
+    _member(pid, ws, clearance=4, role="mythical_role")
+    try:
+        with store.pg(ws) as conn:
+            with pytest.raises(PrincipalNotFound):
+                resolve_principal_by_id(conn, pid, workspace_id=ws)
     finally:
         _cleanup([pid], [ws])
 
@@ -196,19 +271,22 @@ def test_reviewer_id_resolution_is_also_membership_scoped():
 # unacceptable as an authentication path. These pin the exact-identifier behaviour.
 # ---------------------------------------------------------------------------
 
-def test_by_id_resolves_clearance_from_membership_not_the_legacy_column():
-    """Same disagreement fixture as the name-based test, for the same reason.
+def test_by_id_resolves_clearance_from_the_role_mapping_not_either_stored_column():
+    """Same three-way disagreement fixture as the name-based test, same reason.
 
-    Seeding the two values identically would let this pass while still reading the
-    old column — which is the bug CP5b existed to fix.
+    See `test_clearance_comes_from_the_role_mapping_not_either_stored_column` —
+    this pins the identical property through `resolve_principal_by_id` instead of
+    `resolve_principal`, since the two do not share an implementation past the
+    common JOIN.
     """
     ws = _workspace()
     pid = _person("Exact Match Director", legacy_clearance=4)
-    _member(pid, ws, clearance=1)
+    _member(pid, ws, clearance=1, role="director")
     try:
         with store.pg(ws) as conn:
             p = resolve_principal_by_id(conn, pid, workspace_id=ws)
-            assert p.clearance == 1, "read principal.clearance, not the membership"
+            assert p.clearance == 3, "did not read the role->clearance mapping"
+            assert p.role == "director"
             assert str(p.id) == pid
             assert p.workspace_id == ws
     finally:
@@ -218,10 +296,13 @@ def test_by_id_resolves_clearance_from_membership_not_the_legacy_column():
 def test_by_id_accepts_a_uuid_object_as_well_as_a_string():
     ws = _workspace()
     pid = _person("Uuid Form Director")
-    _member(pid, ws, clearance=2)
+    _member(pid, ws, clearance=2, role="observer")
     try:
         with store.pg(ws) as conn:
-            assert resolve_principal_by_id(conn, uuid.UUID(pid), workspace_id=ws).clearance == 2
+            # clearance=2 is the stored value and irrelevant (#166) — 'observer' maps
+            # to 0. Asserting 0 here is what makes this test still mean something
+            # rather than merely happening to pass at the coincidental default (4).
+            assert resolve_principal_by_id(conn, uuid.UUID(pid), workspace_id=ws).clearance == 0
     finally:
         _cleanup([pid], [ws])
 
@@ -292,8 +373,12 @@ def test_by_id_is_exact_where_the_name_lookup_is_fuzzy():
     ws = _workspace()
     anna = _person("Anna Fischer")
     joanna = _person("Joanna Fischer")
-    _member(anna, ws, clearance=1)
-    _member(joanna, ws, clearance=4)
+    # Distinguished by role, not by the now-inert stored clearance (#166) — both
+    # get clearance=4 stored, so a resolver that fell back to the stored column
+    # would pass this test by accident. 'observer' vs 'founder' is the only thing
+    # that actually gives them different effective clearance.
+    _member(anna, ws, clearance=4, role="observer")
+    _member(joanna, ws, clearance=4, role="founder")
     try:
         with store.pg(ws) as conn:
             # The fuzzy lookup collapses both onto one arbitrary winner...
@@ -302,7 +387,7 @@ def test_by_id_is_exact_where_the_name_lookup_is_fuzzy():
 
             # ...while the exact lookup cannot confuse them, and — the part that
             # matters — cannot hand the low-clearance reader the high clearance.
-            assert resolve_principal_by_id(conn, anna, workspace_id=ws).clearance == 1
+            assert resolve_principal_by_id(conn, anna, workspace_id=ws).clearance == 0
             assert resolve_principal_by_id(conn, joanna, workspace_id=ws).clearance == 4
     finally:
         _cleanup([anna, joanna], [ws])
@@ -445,15 +530,17 @@ def test_matching_is_exact_and_case_sensitive():
 def test_by_subject_composes_both_halves():
     ws = _workspace()
     pid = _person("Composed Director", legacy_clearance=4)
-    _member(pid, ws, clearance=1)
+    _member(pid, ws, clearance=1, role="director")
     subject = f"sub-{uuid.uuid4()}"
     _identity(pid, subject)
     try:
         with store.pg(ws) as conn:
             p = resolve_principal_by_subject(conn, PROVIDER, subject, workspace_id=ws)
-            # Clearance still comes from the membership, not the legacy column — the
-            # composition must not have found a shortcut around the JOIN.
-            assert p.clearance == 1
+            # Clearance comes from the role mapping, not either stored column
+            # (#166) — the composition must not have found a shortcut around
+            # `resolve_principal_by_id`'s JOIN.
+            assert p.clearance == 3
+            assert p.role == "director"
             assert str(p.id) == pid
             assert p.workspace_id == ws
     finally:
@@ -469,7 +556,7 @@ def test_by_subject_fails_closed_when_the_identity_has_no_membership_here():
     """
     ws_a, ws_b = _workspace(), _workspace()
     pid = _person("Member Of B Only")
-    _member(pid, ws_b, clearance=3)
+    _member(pid, ws_b, clearance=3, role="director")
     subject = f"sub-{uuid.uuid4()}"
     _identity(pid, subject)
     try:
@@ -477,6 +564,9 @@ def test_by_subject_fails_closed_when_the_identity_has_no_membership_here():
             with pytest.raises(PrincipalNotFound):
                 resolve_principal_by_subject(conn, PROVIDER, subject, workspace_id=ws_a)
         with store.pg(ws_b) as conn:
+            # 3 is 'director's mapped clearance (#166), not the stored value it
+            # happens to equal here — see the other divergent-fixture tests for
+            # why that distinction is asserted explicitly elsewhere.
             assert resolve_principal_by_subject(conn, PROVIDER, subject, workspace_id=ws_b).clearance == 3
     finally:
         _cleanup([pid], [ws_a, ws_b])

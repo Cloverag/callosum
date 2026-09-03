@@ -50,7 +50,7 @@ from starlette.middleware.sessions import SessionMiddleware
 if os.environ.get("CALLOSUM_RUN_INTEGRATION") != "1":
     pytest.skip("set CALLOSUM_RUN_INTEGRATION=1 to run live-store integration tests", allow_module_level=True)
 
-from callosum import llm
+from callosum import identity, llm
 from callosum.config import settings
 from meridian.api import auth, errors
 from meridian.api import documents as documents_api
@@ -160,14 +160,24 @@ def _app(subject: str) -> FastAPI:
     return application
 
 
-def _signed_in(ws: str, clearance: int) -> TestClient:
+def _signed_in(ws: str, role: str) -> TestClient:
+    """`role`, not `clearance` (#166): the caller's effective clearance is derived
+    from `membership.role` at read time, so hardcoding `role='director'` here while
+    varying only the stored `clearance` argument — the original shape of this
+    helper — silently gave every caller `director`'s mapped clearance (3)
+    regardless of what was requested. Confirmed the hard way: with `CONFIDENTIAL`
+    also `== 3`, the "low" (`INVESTOR`-requesting) reader in this file's `scene`
+    fixture was actually granted director-level access, and the sweep caught it —
+    see the report this was found and fixed in.
+    """
     subject = f"sub-{uuid.uuid4()}"
     pid = str(uuid.uuid4())
-    _admin("INSERT INTO principal (id, name, role, clearance) VALUES (%s, %s, 'director', %s)", (pid, f"U {pid[:6]}", clearance))
+    clearance = identity.ROLE_TO_CLEARANCE[role]
+    _admin("INSERT INTO principal (id, name, role, clearance) VALUES (%s, %s, %s, %s)", (pid, f"U {pid[:6]}", role, clearance))
     _admin("INSERT INTO principal_identity (principal_id, provider, subject) VALUES (%s, %s, %s)", (pid, ISSUER, subject))
     _admin(
-        "INSERT INTO membership (principal_id, workspace_id, role, clearance, active) VALUES (%s, %s, 'director', %s, true)",
-        (pid, ws, clearance),
+        "INSERT INTO membership (principal_id, workspace_id, role, clearance, active) VALUES (%s, %s, %s, %s, true)",
+        (pid, ws, role, clearance),
     )
     client = TestClient(_app(subject), follow_redirects=False)
     assert client.get("/auth/callback").status_code == 303
@@ -186,8 +196,11 @@ def scene(restore_client):
     ws = str(uuid.uuid4())
     _admin("INSERT INTO workspace (id, name, external_id) VALUES (%s, %s, %s)", (ws, f"sweep-{ws[:6]}", ws))
 
-    high, high_pid = _signed_in(ws, CONFIDENTIAL)
-    low, low_pid = _signed_in(ws, INVESTOR)
+    # 'director' maps to clearance 3, exactly CONFIDENTIAL; 'investor' maps to 1,
+    # exactly INVESTOR — the roles are chosen to reproduce the same numeric levels
+    # this fixture named before #166, not picked arbitrarily.
+    high, high_pid = _signed_in(ws, "director")
+    low, low_pid = _signed_in(ws, "investor")
 
     secret = high.post("/api/documents/intake", json={
         "title": SECRET_TITLE, "doc_type": "memo", "raw_text": SECRET_BODY, "sensitivity": CONFIDENTIAL,

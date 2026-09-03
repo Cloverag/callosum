@@ -43,6 +43,7 @@ if os.environ.get("CALLOSUM_RUN_INTEGRATION") != "1":
         allow_module_level=True,
     )
 
+from callosum import identity
 from callosum.config import settings
 from meridian import meetings
 from meridian.api import auth, errors
@@ -51,7 +52,11 @@ from meridian.api import prep as prep_api
 pytestmark = pytest.mark.integration
 
 ISSUER = "https://keycloak.example/realms/meridian"
-DIRECTOR_CLEARANCE = 2
+#: `role`, not `clearance` (#166): every principal in this file is a hardcoded
+#: 'director' — this constant was `2` while `director` maps to `3`, a mismatch that
+#: was never load-bearing (no test here varies it) but was still writing a role and
+#: a clearance that disagreed. Named for the mapping now, not the stale number.
+DIRECTOR_CLEARANCE = identity.ROLE_TO_CLEARANCE["director"]
 
 
 def _admin(sql: str, params: tuple = ()) -> None:
