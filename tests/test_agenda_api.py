@@ -21,6 +21,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.middleware.sessions import SessionMiddleware
 
+from callosum import identity
 from callosum.config import settings
 from meridian import agenda, meetings
 from meridian.api import agenda as agenda_api
@@ -84,11 +85,18 @@ def _principal_with_identity(subject: str) -> str:
     return pid
 
 
-def _member(principal_id: str, workspace_id: str, clearance: int = 2) -> None:
+def _member(principal_id: str, workspace_id: str, role: str = "advisor") -> None:
+    """`role`, not `clearance` (#166): effective clearance is derived from
+    `membership.role` at read time — a stored `clearance` this helper's caller
+    picked independently is inert. No call site in this file ever passed an
+    explicit value, so there was no boundary being tested by the old default
+    (`clearance=2`); `role="advisor"` (2) keeps the same effective clearance
+    rather than changing what any existing test exercises.
+    """
     _admin(
         "INSERT INTO membership (principal_id, workspace_id, role, clearance, active)"
-        " VALUES (%s, %s, 'director', %s, true)",
-        (principal_id, workspace_id, clearance),
+        " VALUES (%s, %s, %s, %s, true)",
+        (principal_id, workspace_id, role, identity.ROLE_TO_CLEARANCE[role]),
     )
 
 

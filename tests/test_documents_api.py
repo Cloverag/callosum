@@ -30,7 +30,7 @@ from starlette.middleware.sessions import SessionMiddleware
 if os.environ.get("CALLOSUM_RUN_INTEGRATION") != "1":
     pytest.skip("set CALLOSUM_RUN_INTEGRATION=1 to run live-store integration tests", allow_module_level=True)
 
-from callosum import llm
+from callosum import identity, llm
 from callosum.config import settings
 from meridian import documents
 from meridian.api import auth, errors
@@ -156,11 +156,11 @@ def _workspace(label: str) -> str:
     return ws
 
 
-def _principal_with_identity(subject: str, clearance: int) -> str:
+def _principal_with_identity(subject: str, role: str) -> str:
     pid = str(uuid.uuid4())
     _admin(
-        "INSERT INTO principal (id, name, role, clearance) VALUES (%s, %s, 'director', %s)",
-        (pid, f"API User {pid[:6]}", clearance),
+        "INSERT INTO principal (id, name, role, clearance) VALUES (%s, %s, %s, %s)",
+        (pid, f"API User {pid[:6]}", role, identity.ROLE_TO_CLEARANCE[role]),
     )
     _admin(
         "INSERT INTO principal_identity (principal_id, provider, subject) VALUES (%s, %s, %s)",
@@ -169,11 +169,18 @@ def _principal_with_identity(subject: str, clearance: int) -> str:
     return pid
 
 
-def _member(principal_id: str, workspace_id: str, clearance: int) -> None:
+def _member(principal_id: str, workspace_id: str, role: str) -> None:
+    """`role`, not `clearance` (#166): effective clearance is derived from
+    `membership.role`, so every caller in this file that varied only the stored
+    `clearance` argument while this helper hardcoded `role='director'` was
+    silently collapsed onto director's mapped clearance (3) regardless of what
+    was requested — caught by this branch's gated run (10+ tests in this file
+    failed for exactly that reason before this fix).
+    """
     _admin(
         "INSERT INTO membership (principal_id, workspace_id, role, clearance, active)"
-        " VALUES (%s, %s, 'director', %s, true)",
-        (principal_id, workspace_id, clearance),
+        " VALUES (%s, %s, %s, %s, true)",
+        (principal_id, workspace_id, role, identity.ROLE_TO_CLEARANCE[role]),
     )
 
 
@@ -211,17 +218,17 @@ def _client(subject: str, workspace_id: str | None) -> TestClient:
     return client
 
 
-def _signed_in(label: str, clearance: int) -> tuple[TestClient, str, str]:
+def _signed_in(label: str, role: str) -> tuple[TestClient, str, str]:
     subject = f"sub-{uuid.uuid4()}"
-    pid = _principal_with_identity(subject, clearance)
+    pid = _principal_with_identity(subject, role)
     ws = _workspace(label)
-    _member(pid, ws, clearance)
+    _member(pid, ws, role)
     return _client(subject, ws), pid, ws
 
 
 class TestReads:
     def test_lists_documents_newest_ingestion_first(self, restore_client):
-        client, pid, ws = _signed_in("list", CONFIDENTIAL)
+        client, pid, ws = _signed_in("list", "director")
         try:
             _document(ws, "Older.pdf", PUBLIC)
             _document(ws, "Newer.pdf", PUBLIC)
@@ -231,7 +238,7 @@ class TestReads:
             _cleanup([pid], [ws])
 
     def test_filters_by_doc_type(self, restore_client):
-        client, pid, ws = _signed_in("bytype", CONFIDENTIAL)
+        client, pid, ws = _signed_in("bytype", "director")
         try:
             _document(ws, "Deck.pdf", PUBLIC, doc_type="board_deck")
             _document(ws, "Notes.txt", PUBLIC, doc_type="transcript")
@@ -247,7 +254,7 @@ class TestReads:
         out of the query rather than dropped in Python, so they never leave the
         database at all.
         """
-        client, pid, ws = _signed_in("nobody", CONFIDENTIAL)
+        client, pid, ws = _signed_in("nobody", "director")
         try:
             _document(ws, "Deck.pdf", PUBLIC)
             body = client.get("/api/documents").json()
@@ -276,7 +283,7 @@ class TestClearance:
     """A document above the caller's level is absent, not redacted."""
 
     def test_a_restricted_document_is_not_listed(self, restore_client):
-        client, pid, ws = _signed_in("filter", INVESTOR)
+        client, pid, ws = _signed_in("filter", "investor")
         try:
             _document(ws, "Public.pdf", PUBLIC)
             _document(ws, "Confidential.pdf", CONFIDENTIAL)
@@ -290,7 +297,7 @@ class TestClearance:
 
     def test_fetching_a_restricted_document_is_404_not_403(self, restore_client):
         """403 would confirm it exists. 404 is the same answer as 'no such document'."""
-        client, pid, ws = _signed_in("oracle", INVESTOR)
+        client, pid, ws = _signed_in("oracle", "investor")
         try:
             doc = _document(ws, "Confidential.pdf", CONFIDENTIAL)
             assert client.get(f"/api/documents/{doc}").status_code == 404
@@ -300,7 +307,7 @@ class TestClearance:
 
     def test_clearance_cannot_be_supplied_by_the_client(self, restore_client):
         """ADR-013: Clearance cannot be supplied as a query param."""
-        client, pid, ws = _signed_in("noclearance", INVESTOR)
+        client, pid, ws = _signed_in("noclearance", "investor")
         try:
             _document(ws, "Public.pdf", PUBLIC)
             _document(ws, "Confidential.pdf", CONFIDENTIAL)
@@ -310,7 +317,7 @@ class TestClearance:
             _cleanup([pid], [ws])
 
     def test_a_document_in_another_workspace_is_invisible(self, restore_client):
-        client, pid, mine = _signed_in("mine", CONFIDENTIAL)
+        client, pid, mine = _signed_in("mine", "director")
         theirs = _workspace("theirs")
         try:
             doc = _document(theirs, "Not yours.pdf", PUBLIC)
@@ -335,7 +342,7 @@ def test_the_clearance_argument_has_no_default(restore_client):
 
 class TestIntakeLifecycle:
     def test_intake_document_success(self, restore_client):
-        client, pid, ws = _signed_in("intake_user", CONFIDENTIAL)
+        client, pid, ws = _signed_in("intake_user", "director")
         try:
             payload = {
                 "title": "Q3 Board Strategy Deck",
@@ -361,7 +368,7 @@ class TestIntakeLifecycle:
             _cleanup([pid], [ws])
 
     def test_intake_duplicate_hash_409(self, restore_client):
-        client, pid, ws = _signed_in("dedupe_user", CONFIDENTIAL)
+        client, pid, ws = _signed_in("dedupe_user", "director")
         try:
             payload = {
                 "title": "Unique Document 1",
@@ -383,8 +390,8 @@ class TestIntakeLifecycle:
 
     def test_cross_workspace_identical_content_hash_allowed(self, restore_client):
         """Cross-tenant isolation: identical text in two different workspaces is allowed."""
-        client_a, pid_a, ws_a = _signed_in("user_a", CONFIDENTIAL)
-        client_b, pid_b, ws_b = _signed_in("user_b", CONFIDENTIAL)
+        client_a, pid_a, ws_a = _signed_in("user_a", "director")
+        client_b, pid_b, ws_b = _signed_in("user_b", "director")
         try:
             payload = {
                 "title": "Shared Contract Template",
@@ -406,7 +413,7 @@ class TestIntakeLifecycle:
             _cleanup([pid_a, pid_b], [ws_a, ws_b])
 
     def test_intake_invalid_sensitivity_422(self, restore_client):
-        client, pid, ws = _signed_in("user", CONFIDENTIAL)
+        client, pid, ws = _signed_in("user", "director")
         try:
             payload = {
                 "title": "Bad Sensitivity",
@@ -421,7 +428,7 @@ class TestIntakeLifecycle:
             _cleanup([pid], [ws])
 
     def test_intake_empty_title_or_text_rejected(self, restore_client):
-        client, pid, ws = _signed_in("user", CONFIDENTIAL)
+        client, pid, ws = _signed_in("user", "director")
         try:
             res_empty_title = client.post("/api/documents/intake", json={
                 "title": "   ",
@@ -442,7 +449,7 @@ class TestIntakeLifecycle:
             _cleanup([pid], [ws])
 
     def test_embedding_failure_fails_intake_without_zero_vectors(self, restore_client):
-        client, pid, ws = _signed_in("fail_user", CONFIDENTIAL)
+        client, pid, ws = _signed_in("fail_user", "director")
         try:
             # `EmbeddingProviderError`, not a bare `RuntimeError`: `llm.embed` is the
             # provider boundary and converts every backend failure into that one type,
@@ -469,7 +476,7 @@ class TestIntakeLifecycle:
             _cleanup([pid], [ws])
 
     def test_neo4j_bridge_failure_fails_intake(self, restore_client):
-        client, pid, ws = _signed_in("neo_fail_user", CONFIDENTIAL)
+        client, pid, ws = _signed_in("neo_fail_user", "director")
         try:
             # Patches the underlying per-node write rather than the bridge helper, so
             # the failure enters through the same door a real Neo4j outage would.
@@ -487,7 +494,7 @@ class TestIntakeLifecycle:
             _cleanup([pid], [ws])
 
     def test_audit_event_recorded_on_intake(self, restore_client):
-        client, pid, ws = _signed_in("audit_user", CONFIDENTIAL)
+        client, pid, ws = _signed_in("audit_user", "director")
         try:
             payload = {
                 "title": "Audit Verified Document",
@@ -518,7 +525,7 @@ class TestIntakeLifecycle:
             _cleanup([pid], [ws])
 
     def test_list_quarantine(self, restore_client):
-        client, pid, ws = _signed_in("quarantine_user", CONFIDENTIAL)
+        client, pid, ws = _signed_in("quarantine_user", "director")
         try:
             res = client.get("/api/documents/quarantine")
             assert res.status_code == 200
@@ -553,7 +560,7 @@ class TestQuarantineClearance:
     """
 
     def test_a_row_from_a_restricted_document_is_not_listed(self, restore_client):
-        client, pid, ws = _signed_in("q_investor", INVESTOR)
+        client, pid, ws = _signed_in("q_investor", "investor")
         try:
             secret = _document(ws, "Compensation.pdf", CONFIDENTIAL)
             readable = _document(ws, "Minutes.pdf", PUBLIC)
@@ -572,7 +579,7 @@ class TestQuarantineClearance:
         A leak that arrives in a field the test does not name is still a leak, so this
         checks the bytes on the wire rather than a key it remembered to look at.
         """
-        client, pid, ws = _signed_in("q_leak", INVESTOR)
+        client, pid, ws = _signed_in("q_leak", "investor")
         try:
             secret = _document(ws, "Compensation.pdf", CONFIDENTIAL)
             _quarantine_row(ws, secret, SECRET_QUOTE)
@@ -587,7 +594,7 @@ class TestQuarantineClearance:
 
     def test_a_cleared_reader_still_sees_it(self, restore_client):
         """The filter must remove rows, not the feature."""
-        client, pid, ws = _signed_in("q_confidential", CONFIDENTIAL)
+        client, pid, ws = _signed_in("q_confidential", "director")
         try:
             secret = _document(ws, "Compensation.pdf", CONFIDENTIAL)
             _quarantine_row(ws, secret, SECRET_QUOTE)
@@ -600,7 +607,7 @@ class TestQuarantineClearance:
             _cleanup([pid], [ws])
 
     def test_another_workspaces_quarantine_is_invisible(self, restore_client):
-        client, pid, mine = _signed_in("q_mine", CONFIDENTIAL)
+        client, pid, mine = _signed_in("q_mine", "director")
         theirs = _workspace("q_theirs")
         try:
             doc = _document(theirs, "Theirs.pdf", PUBLIC)
@@ -679,7 +686,7 @@ class TestSensitivityCeiling:
     """Criterion 1 — a principal may not file above their own clearance."""
 
     def test_a_principal_cannot_file_above_their_clearance(self, restore_client):
-        client, pid, ws = _signed_in("low", INVESTOR)  # clearance 1
+        client, pid, ws = _signed_in("low", "investor")  # clearance 1
         try:
             res = client.post(
                 "/api/documents/intake",
@@ -703,7 +710,7 @@ class TestSensitivityCeiling:
         people they excluded. The listing is the check that matters — a 403 with
         a row behind it would still be a disclosure.
         """
-        client, pid, ws = _signed_in("noclamp", INVESTOR)
+        client, pid, ws = _signed_in("noclamp", "investor")
         try:
             client.post(
                 "/api/documents/intake",
@@ -721,7 +728,7 @@ class TestSensitivityCeiling:
             _cleanup([pid], [ws])
 
     def test_a_principal_may_file_at_or_below_their_clearance(self, restore_client):
-        client, pid, ws = _signed_in("ok", CONFIDENTIAL)  # clearance 3
+        client, pid, ws = _signed_in("ok", "director")  # clearance 3
         try:
             for level in (PUBLIC, INVESTOR, 2, CONFIDENTIAL):
                 res = client.post(
@@ -744,7 +751,7 @@ class TestSensitivityCeiling:
         A client that cannot tell them apart cannot tell the user whether to pick
         a lower level or to ask for clearance.
         """
-        client, pid, ws = _signed_in("distinct", INVESTOR)
+        client, pid, ws = _signed_in("distinct", "investor")
         try:
             unauthorised = client.post(
                 "/api/documents/intake",
@@ -765,7 +772,7 @@ class TestSensitivityIsRequired:
     """Criterion 2 — a missing classification is an error, never a public document."""
 
     def test_omitted_sensitivity_is_rejected(self, restore_client):
-        client, pid, ws = _signed_in("omit", CONFIDENTIAL)
+        client, pid, ws = _signed_in("omit", "director")
         try:
             res = client.post(
                 "/api/documents/intake",
@@ -791,7 +798,7 @@ class TestSensitivityIsRequired:
         code alone would not catch a regression here; the absence of the row is
         the assertion that matters.
         """
-        client, pid, ws = _signed_in("nopublic", CONFIDENTIAL)
+        client, pid, ws = _signed_in("nopublic", "director")
         try:
             client.post(
                 "/api/documents/intake",
@@ -811,7 +818,7 @@ class TestReservedLevelFour:
     """Criterion 3 — `4 restricted` is reserved, and the gap is deliberate."""
 
     def test_level_four_is_not_creatable_through_intake(self, restore_client):
-        client, pid, ws = _signed_in("founder", 4)
+        client, pid, ws = _signed_in("founder", "founder")
         try:
             res = client.post(
                 "/api/documents/intake",
@@ -869,7 +876,7 @@ class TestDedupRefusalIsAudited:
         The 409 is unchanged — that is the accepted half of ADR-016. What must exist
         afterwards is the row that makes the probe visible.
         """
-        client, pid, ws = _signed_in("prober", INVESTOR)  # clearance 1
+        client, pid, ws = _signed_in("prober", "investor")  # clearance 1
         try:
             body = "A confidential memo the observer already holds a copy of."
             digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
@@ -906,7 +913,7 @@ class TestDedupRefusalIsAudited:
         original, then anyone able to read the trail could infer exactly what the 409
         was hiding. The distinction lives in the payload instead.
         """
-        client, pid, ws = _signed_in("ordinary", CONFIDENTIAL)  # clearance 3
+        client, pid, ws = _signed_in("ordinary", "director")  # clearance 3
         try:
             body = "An ordinary duplicate the author can read perfectly well."
             first = client.post(
@@ -935,7 +942,7 @@ class TestDedupRefusalIsAudited:
         The caller learns that the content exists. They must not also learn the existing
         document's title, id, or the level it sits at.
         """
-        client, pid, ws = _signed_in("bounded", INVESTOR)
+        client, pid, ws = _signed_in("bounded", "investor")
         try:
             body = "Bytes filed above the caller, with a distinctive title elsewhere."
             secret_id = uuid.uuid4()
@@ -964,7 +971,7 @@ class TestDedupRefusalIsAudited:
 
     def test_a_successful_intake_records_no_refusal(self, restore_client):
         """Guards the obvious false positive: the row must mark a refusal, not any intake."""
-        client, pid, ws = _signed_in("clean", CONFIDENTIAL)
+        client, pid, ws = _signed_in("clean", "director")
         try:
             res = client.post(
                 "/api/documents/intake",
@@ -983,7 +990,7 @@ class TestDedupRefusalIsAudited:
         Losing the audit row is bad and is logged. Converting a correct 409 into a 500
         because the logging failed would be worse.
         """
-        client, pid, ws = _signed_in("audit_down", CONFIDENTIAL)
+        client, pid, ws = _signed_in("audit_down", "director")
         try:
             body = "Content submitted twice while auditing is broken."
             assert client.post(
