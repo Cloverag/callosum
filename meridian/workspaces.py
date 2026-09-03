@@ -20,9 +20,10 @@ comment 5530505507, the maintainer's ruling):
                  write even by mistake, because the SQL cannot express one.
 
 Anti-escalation is the one rule both a grant and a revoke enforce, symmetrically:
-a caller may never act at a clearance ABOVE their own. Granting `ROLE_TO_CLEARANCE[
-role] > actor.clearance` is refused outright — this half is the maintainer's
-explicit ruling. Revoking a member whose current clearance exceeds the actor's is
+a caller may never act at a clearance ABOVE their own. Granting a role whose
+`ROLE_TO_CLEARANCE` exceeds the actor's own clearance is refused outright — this
+half is the maintainer's explicit ruling. Revoking a member whose current clearance
+exceeds the actor's is
 refused for the same reason, though the ruling only stated the grant half: an
 actor who could not have granted that role should not be able to strip it either,
 or revoke-then-regrant becomes an escalation path the grant-side check does not
@@ -39,7 +40,6 @@ no way to tell "never written" from "deliberately inert".
 from dataclasses import dataclass
 
 from callosum import identity, store
-from callosum.retrieve import Principal
 from callosum.store import DEFAULT_WORKSPACE_ID
 
 from meridian import audit
@@ -166,23 +166,26 @@ def grant_membership(
     role: str,
     *,
     workspace_id: str,
-    actor: Principal,
+    actor_principal_id: str,
+    actor_clearance: int,
 ) -> Membership:
     """Grants a new membership, or changes an existing one's role. Upsert on the PK.
 
-    Anti-escalation: `actor` may never grant a role whose clearance exceeds their
+    Takes the acting principal's id and clearance as primitives, not a `Principal`
+    object — matching `documents.list_documents(*, clearance: int, ...)`, this
+    codebase's existing convention for a domain function that gates on clearance.
+    The API layer reads both off `CurrentPrincipal`; `workspace_id` MUST be that
+    same principal's own `workspace_id` — the caller's currently-selected
+    workspace, never a client-supplied value (ADR-013's rule, restated for this
+    route) — which `meridian/api/workspaces.py` enforces by never accepting a
+    `workspace_id` field on the wire.
+
+    Anti-escalation: the actor may never grant a role whose clearance exceeds their
     own — the maintainer's ruling, enforced before any write is attempted so a
     denied request never reaches the database at all.
-
-    `workspace_id` MUST be `actor.workspace_id` — the caller's currently-selected
-    workspace, never a client-supplied value (ADR-013's rule, restated for this
-    route). This function does not re-derive it from `actor` itself so the
-    anti-escalation guard's inputs are visible at the call site rather than
-    reached for implicitly; `meridian/api/workspaces.py` is where that invariant
-    is actually enforced, by never accepting a `workspace_id` field on the wire.
     """
     requested_clearance = _clearance_for(role)
-    if requested_clearance > actor.clearance:
+    if requested_clearance > actor_clearance:
         raise EscalationDeniedError(
             f"cannot grant role {role!r}: exceeds the acting principal's own clearance"
         )
@@ -204,7 +207,7 @@ def grant_membership(
             aggregate_type="membership",
             aggregate_id=principal_id,
             action="created" if row["inserted"] else "updated",
-            actor_principal_id=str(actor.id),
+            actor_principal_id=actor_principal_id,
             payload={"role": row["role"], "active": row["active"]},
             workspace_id=workspace_id,
         )
@@ -216,7 +219,8 @@ def revoke_membership(
     principal_id: str,
     *,
     workspace_id: str,
-    actor: Principal,
+    actor_principal_id: str,
+    actor_clearance: int,
 ) -> Membership:
     """Revokes a membership: `active = false`. Never a delete — see module docstring.
 
@@ -233,7 +237,7 @@ def revoke_membership(
         ).fetchone()
         if current is None:
             raise MembershipNotFoundError(f"no membership for {principal_id} in {workspace_id}")
-        if current["clearance"] > actor.clearance:
+        if current["clearance"] > actor_clearance:
             raise EscalationDeniedError(
                 "cannot revoke a membership whose clearance exceeds the acting principal's own"
             )
@@ -252,7 +256,7 @@ def revoke_membership(
             aggregate_type="membership",
             aggregate_id=principal_id,
             action="status_changed",
-            actor_principal_id=str(actor.id),
+            actor_principal_id=actor_principal_id,
             payload={"role": row["role"], "active": False},
             workspace_id=workspace_id,
         )

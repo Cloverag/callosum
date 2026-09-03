@@ -71,7 +71,8 @@ def grant_membership(payload: MembershipGrant, principal: CurrentPrincipal) -> d
         str(payload.principal_id),
         payload.role,
         workspace_id=principal.workspace_id,
-        actor=principal,
+        actor_principal_id=str(principal.id),
+        actor_clearance=principal.clearance,
     )
 
 
@@ -81,5 +82,6 @@ def revoke_membership(principal_id: uuid.UUID, principal: CurrentPrincipal) -> d
     return domain.revoke_membership(
         str(principal_id),
         workspace_id=principal.workspace_id,
-        actor=principal,
+        actor_principal_id=str(principal.id),
+        actor_clearance=principal.clearance,
     )
