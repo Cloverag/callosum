@@ -19,7 +19,7 @@ from psycopg.rows import dict_row
 
 from callosum import identity, store
 from callosum.config import settings
-from meridian import workspaces
+from meridian import audit, workspaces
 
 pytestmark = pytest.mark.integration
 
@@ -539,6 +539,72 @@ class TestGrantAndRevoke:
             assert founder_row["active"] is True
         finally:
             _cleanup(workspace_ids=[ws], principal_ids=[founder, member])
+
+    def test_the_guard_and_the_audit_reorder_are_one_change_not_two(self):
+        """The two fixes in this same commit are COUPLED, not independent, and
+        this test is what pins that rather than leaving it as a claim in a
+        docstring. On merged master (#186, before this PR), `revoke_membership`
+        wrote its audit event AFTER the `UPDATE` — which made self-revocation of
+        ANY member, last or not, raise `audit.ActorNotInWorkspace` (the actor's
+        own row was already deactivated by the time the actor-active check ran).
+        That was a bug, but it had a side effect nobody designed: a lone founder
+        self-revoking got a 422 and stayed active, because the audit-ordering bug
+        fired before the workspace could ever reach zero members. #185's guard
+        did not exist yet, but master could not be stranded — by accident.
+
+        Reordering the audit write to fix self-revocation (this PR) REMOVES that
+        accidental protection. Without the last-member guard landing in the SAME
+        change, a lone founder's self-revocation would newly SUCCEED. Shipping
+        the audit fix and the guard as two separate PRs would create a real
+        window — a commit on master where self-revocation works and nothing
+        stops the last member from using it — which must never be a real state
+        of this repository, even briefly.
+
+        This test does not (and structurally cannot, by testing the shipped
+        code rather than a hypothetical intermediate state) reproduce that
+        dangerous window — it pins the CURRENT, combined behaviour precisely
+        enough that a future edit which reintroduces the old audit ordering, or
+        weakens the guard, is caught by name: a lone founder's self-revocation
+        must be refused by `LastActiveMembershipError` specifically, never by
+        `ActorNotInWorkspace` — the latter would mean the guard stopped being
+        what does the work, silently, because the call would still fail either
+        way and a coarser `pytest.raises(Exception)` would not tell them apart.
+
+        Empirically, the two fixes are not symmetric here: reverting ONLY the
+        audit reorder (keeping the guard) does not turn THIS test red — the
+        guard's `EXISTS` clause still blocks the `UPDATE` before the actor's own
+        row is touched, so the audit-ordering bug is invisible in the
+        last-member case specifically; the transaction rolls back either way.
+        It is `test_3_self_revocation_by_a_non_last_member_succeeds` that
+        catches an audit-ordering regression — verified by reverting the
+        reorder locally and observing which test actually failed, rather than
+        assumed. Both tests are required; neither alone pins the full coupling.
+        """
+        founder = _principal()
+        ws = None
+        try:
+            ws = workspaces.create_workspace("Coupling Pin", None, founder)
+
+            try:
+                workspaces.revoke_membership(
+                    founder, workspace_id=ws, actor_principal_id=founder,
+                )
+                pytest.fail("lone founder self-revocation must be refused, not succeed")
+            except workspaces.LastActiveMembershipError:
+                pass
+            except audit.ActorNotInWorkspace:
+                pytest.fail(
+                    "refused for the wrong reason: the guard is not what stopped this — "
+                    "the audit-ordering bug is back, and it is only accidentally safe"
+                )
+
+            row = _admin_fetch(
+                "SELECT active FROM membership WHERE principal_id = %s AND workspace_id = %s",
+                (founder, ws),
+            )[0]
+            assert row["active"] is True
+        finally:
+            _cleanup(workspace_ids=[ws], principal_ids=[founder])
 
     def test_4_inactive_others_do_not_count_toward_others_exist(self):
         """4. Two membership ROWS exist in this workspace by the time of the

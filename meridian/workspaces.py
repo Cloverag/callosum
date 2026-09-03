@@ -14,6 +14,32 @@ comment 5530505507, the maintainer's ruling):
                  is ALREADY a member of. `callosum_app` holds these grants directly
                  (narrowed from 0011 by the same migration).
 
+THE LAST-MEMBER GUARD AND THE SELF-REVOCATION FIX ARE ONE CHANGE, NOT TWO
+--------------------------------------------------------------------------------
+`revoke_membership()` ships two changes together (#185) that MUST NOT be split
+across separate PRs, separate commits reordered, or a rebase that lands one
+without the other: the last-active-membership guard, and reordering the audit
+write to fix self-revocation. They are coupled, not independent, and the
+coupling runs in the dangerous direction.
+
+On merged master before this change, self-revocation of ANY member raised
+`audit.ActorNotInWorkspace` — a bug (see `revoke_membership`'s own docstring) —
+but that bug had an undesigned side effect: a lone founder self-revoking got a
+422 and stayed active, because the audit-ordering bug fired before a workspace
+could ever reach zero members. #185 was filed against that state and its
+severity assumed the strand was reachable; it was not yet, by accident.
+
+Fixing the audit-ordering bug on its own — without the guard landing in the
+SAME change — would have REMOVED that accidental protection and made the
+strand `#185` describes newly reachable for the first time. Shipping the two
+separately would create a real commit on master where self-revocation works
+and nothing stops the last member from using it, which must never be a real
+state of this repository even briefly. `test_the_guard_and_the_audit_reorder_
+are_one_change_not_two` pins this by asserting a lone founder's self-revocation
+is refused specifically by `LastActiveMembershipError`, never by
+`ActorNotInWorkspace` — the latter would mean the guard had stopped being what
+does the work, silently, because the call would still fail either way.
+
 CROSS-WORKSPACE REFUSAL IS AN AUTHORIZATION CHECK, NOT AN RLS SIDE EFFECT
 --------------------------------------------------------------------------------
 An earlier version of this docstring claimed "there is no code path in this module
