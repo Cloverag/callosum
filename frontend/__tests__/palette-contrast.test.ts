@@ -378,6 +378,16 @@ describe("gradients must be declared before they ship", () => {
       kind: "decorative",
       why: "the second ghost colour; same reasoning as flare-ghost-a.",
     },
+    {
+      token: "grid-minor",
+      kind: "decorative",
+      why: "the 24px rule of the dashboard coordinate grid, on a z-index -1 pseudo-element scoped to [data-surface=\"grid\"]. Caught by this gate because `repeating-linear-gradient` contains the string it matches on, which is the gate working: a hairline behind every dashboard card is worth declaring. No text is painted on it.",
+    },
+    {
+      token: "grid-major",
+      kind: "decorative",
+      why: "the 120px rule of the same grid, at higher alpha and in the accent hue. Same layer, same reasoning as grid-minor.",
+    },
   ];
 
   /**

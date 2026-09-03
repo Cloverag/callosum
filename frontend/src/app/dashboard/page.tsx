@@ -115,7 +115,10 @@ export default function DashboardPage() {
   }, [meetings]);
 
   return (
-    <div className="p-8">
+    // `data-surface="grid"` turns on the coordinate grid and the translucent data
+    // cards, both scoped to this attribute in globals.css. The dashboard is the one
+    // route that reads as an instrument; everywhere else keeps solid cards.
+    <div className="p-8" data-surface="grid">
       <PageHeader title="Dashboard" description="What needs you now, and whether the memory can be trusted." icon={<LayoutDashboard />} />
 
       {/* A failed load is stated once, at the top. Every card below already renders

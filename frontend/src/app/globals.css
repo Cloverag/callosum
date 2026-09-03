@@ -251,6 +251,11 @@
     --flare-streak: rgba(255, 243, 222, 0.26);
     --flare-ghost-a: rgba(133, 91, 220, 0.22);
     --flare-ghost-b: rgba(44, 112, 229, 0.24);
+    --grid-minor: rgba(15, 25, 38, 0.045);
+    --grid-major: rgba(44, 112, 229, 0.10);
+    --data-glass: rgba(255, 255, 255, 0.62);
+    --data-glass-border: rgba(255, 255, 255, 0.85);
+    --data-glass-sheen: rgba(255, 255, 255, 0.9);
 
     /* Focal surfaces — elevation level 4 (rules.md §6, 2026-08-13). At most two
        per page. Deep-ink based and anchored to a semantic family: `action` for
@@ -348,6 +353,11 @@
       --flare-streak: rgba(176, 205, 255, 0.20);
       --flare-ghost-a: rgba(166, 134, 240, 0.30);
       --flare-ghost-b: rgba(91, 147, 255, 0.32);
+      --grid-minor: rgba(190, 210, 240, 0.055);
+      --grid-major: rgba(91, 147, 255, 0.15);
+      --data-glass: rgba(38, 46, 58, 0.52);
+      --data-glass-border: rgba(255, 255, 255, 0.10);
+      --data-glass-sheen: rgba(255, 255, 255, 0.09);
 
       /* Focal surfaces: the ramps NARROW in dark rather than brighten, so a
          focal card reads as a material and not a light source. */
@@ -414,6 +424,11 @@
     --flare-streak: rgba(176, 205, 255, 0.20);
     --flare-ghost-a: rgba(166, 134, 240, 0.30);
     --flare-ghost-b: rgba(91, 147, 255, 0.32);
+    --grid-minor: rgba(190, 210, 240, 0.055);
+    --grid-major: rgba(91, 147, 255, 0.15);
+    --data-glass: rgba(38, 46, 58, 0.52);
+    --data-glass-border: rgba(255, 255, 255, 0.10);
+    --data-glass-sheen: rgba(255, 255, 255, 0.09);
 
     /* Focal surfaces: the ramps NARROW in dark rather than brighten, so a
        focal card reads as a material and not a light source. */
@@ -515,26 +530,48 @@
   /* ------------------------------------------------------------------------
      The frost, moved out of the two rules above and behind an @supports guard.
 
-     It was never reaching the browser. The declarations were in this file, but
-     Lightning CSS (Tailwind v4's engine) drops a declaration no target in the
-     browserslist supports, this project pins no browserslist, and Next's
-     default list reaches back to browsers with no `backdrop-filter`. The
-     shipped rule was `background` + `border` + `box-shadow` and nothing else,
-     so every glass surface in the app has been a flat translucent fill.
+     It was not reaching the browser, and the reason is not the obvious one.
+     Read this before touching the `var()` indirection below, because it looks
+     pointless and is not.
 
-     An @supports guard states the intent the targets could not infer, and is
-     preserved. It is also true: the query is exactly the capability the
-     declaration needs.
+     Lightning CSS (Tailwind v4's engine) collapses a prefixed/unprefixed pair
+     to the prefix alone whenever it believes every target accepts the prefix.
+     Written literally, `backdrop-filter: blur(20px) saturate(1.4)` plus its
+     `-webkit-` twin ships as the `-webkit-` line ONLY. Current Chrome does not
+     accept that alias — measured, not looked up:
+
+         el.style.setProperty('-webkit-backdrop-filter', 'blur(9px)')
+         getComputedStyle(el).getPropertyValue('-webkit-backdrop-filter')  // ""
+         CSS.supports('-webkit-backdrop-filter', 'blur(1px)')              // false
+
+     so the surviving declaration was dead on arrival, Chrome dropped it at
+     parse time, and a CSSOM dump showed `.surface-glass { }` — which reads
+     exactly like the declaration was stripped from the build. It was not. It
+     was in the stylesheet the whole time, in a form Chrome discards.
+
+     The fix is the indirection. Lightning cannot prove two `var()` values are
+     equivalent, so it keeps both declarations. This is the same shape Tailwind
+     emits for its own `backdrop-*` utilities, and the reason those work while
+     hand-written literals do not. Inlining these values re-breaks the glass.
+
+     Do not "fix" this with a browserslist. One was tried: `.browserslistrc`
+     with the targets this design system actually needs changed the emitted CSS
+     by zero bytes. Next's CSS pipeline does not read it.
+
+     The @supports guard is real and stays: the query is exactly the capability
+     the declaration needs.
      ------------------------------------------------------------------------ */
   @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
     .surface-glass {
-      backdrop-filter: blur(20px) saturate(1.4);
-      -webkit-backdrop-filter: blur(20px) saturate(1.4);
+      --frost: blur(20px) saturate(1.4);
+      -webkit-backdrop-filter: var(--frost);
+      backdrop-filter: var(--frost);
     }
 
     .surface-glass-chrome {
-      backdrop-filter: blur(16px) saturate(1.4);
-      -webkit-backdrop-filter: blur(16px) saturate(1.4);
+      --frost: blur(16px) saturate(1.4);
+      -webkit-backdrop-filter: var(--frost);
+      backdrop-filter: var(--frost);
     }
   }
 
@@ -544,8 +581,9 @@
     .surface-glass,
     .surface-glass-chrome {
       background: var(--surface-elevated);
-      backdrop-filter: none;
-      -webkit-backdrop-filter: none;
+      --frost: none;
+      -webkit-backdrop-filter: var(--frost);
+      backdrop-filter: var(--frost);
     }
   }
 
@@ -800,5 +838,76 @@ body::after {
 @media (prefers-reduced-transparency: reduce) {
   body::after {
     display: none;
+  }
+}
+
+/* ============================================================================
+   COORDINATE GRID + DATA GLASS — the dashboard only.
+
+   Scoped to `[data-surface="grid"]`, which the dashboard page sets on its root.
+   Every other route keeps the plain ambient field: a plotting grid under a
+   minutes document or a document-intake queue would be decoration with nothing
+   to say, and DESIGN.md's cards-are-solid rule still holds everywhere else.
+
+   Owner's direction 2026-09-02: the dashboard is the one surface that reads as
+   an instrument, so it gets the grid and translucent data cards.
+   ========================================================================== */
+
+[data-surface="grid"] {
+  position: relative;
+  isolation: isolate;
+}
+
+/* Minor rule every 24px, major every 120px — a plotting surface, not wallpaper.
+   Masked to fade out toward the edges so the grid never competes with the
+   content sitting on it; a grid that reaches the margins reads as a texture. */
+[data-surface="grid"]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    repeating-linear-gradient(to right, var(--grid-major) 0 1px, transparent 1px 120px),
+    repeating-linear-gradient(to bottom, var(--grid-major) 0 1px, transparent 1px 120px),
+    repeating-linear-gradient(to right, var(--grid-minor) 0 1px, transparent 1px 24px),
+    repeating-linear-gradient(to bottom, var(--grid-minor) 0 1px, transparent 1px 24px);
+  mask-image: radial-gradient(120% 90% at 30% 0%, #000 30%, transparent 78%);
+  -webkit-mask-image: radial-gradient(120% 90% at 30% 0%, #000 30%, transparent 78%);
+}
+
+/* Data cards, dashboard only.
+
+   Frost and tint, deliberately WITHOUT the SVG refraction the chrome and
+   overlays get. Ten displaced backdrops on one scrolling page is ten repaints
+   for an effect that reads as noise at card scale — the bend is worth paying
+   for on a few floating surfaces, not on every panel. Glassmorphism here is
+   what it actually is: translucency, blur, and a lit top edge. */
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  [data-surface="grid"] .bg-surface-raised {
+    background: var(--data-glass);
+    /* var() indirection, not decoration — see the note on `.surface-glass`. */
+    --frost: blur(14px) saturate(1.6);
+    -webkit-backdrop-filter: var(--frost);
+    backdrop-filter: var(--frost);
+    border-color: var(--data-glass-border);
+    box-shadow:
+      var(--sh-card),
+      inset 0 1px 0 var(--data-glass-sheen);
+  }
+}
+
+/* Reduced transparency: an opaque card, not a weaker blur. The grid goes too —
+   a plotting surface behind solid panels is texture with nothing behind it. */
+@media (prefers-reduced-transparency: reduce) {
+  [data-surface="grid"]::before {
+    display: none;
+  }
+
+  [data-surface="grid"] .bg-surface-raised {
+    background: var(--surface-raised);
+    --frost: none;
+    -webkit-backdrop-filter: var(--frost);
+    backdrop-filter: var(--frost);
   }
 }
