@@ -464,6 +464,64 @@ def test_aggregate_type_and_action_are_constrained_by_the_DATABASE():
         _purge(ws)
 
 
+def test_membership_role_check_accepts_and_rejects_correctly():
+    """`membership_role_check` (0027) is the security boundary option (c) rests on —
+    it constrains the only column the future clearance mapping will key off. Proving
+    the constraint was *created* (`pg_constraint` shows the definition) is not proof
+    it *rejects* anything; those are different claims. A CHECK narrow enough to reject
+    every value passes a rejection-only test exactly as well as a correct one, so this
+    asserts both directions rather than only the negative one.
+
+    Case sensitivity is deliberate, not incidental: Postgres `IN` is case-sensitive,
+    so `'Founder'` is rejected on purpose alongside `'superuser'` and `''`. The
+    vocabulary is the seven lowercase tokens exactly — if a future route ever accepts
+    a role from a request body, it must validate against this same exact-match
+    boundary rather than normalise case around it.
+    """
+    ws = _workspace("role-check")
+    pid = uuid.uuid4()
+    _admin(
+        "INSERT INTO principal (id, name, role, clearance) VALUES (%s, %s, 'founder', 4)",
+        (pid, f"Role-Check-{pid.hex[:6]}"),
+    )
+    try:
+        with psycopg.connect(settings().postgres_dsn) as conn:
+            # In-vocabulary: must succeed. Not padding — see docstring.
+            conn.execute(
+                """
+                INSERT INTO membership (principal_id, workspace_id, role, clearance)
+                VALUES (%s, %s, 'observer', 0)
+                """,
+                (pid, ws),
+            )
+            row = conn.execute(
+                "SELECT role FROM membership WHERE principal_id = %s AND workspace_id = %s",
+                (pid, ws),
+            ).fetchone()
+            assert row[0] == "observer"
+            conn.execute(
+                "DELETE FROM membership WHERE principal_id = %s AND workspace_id = %s",
+                (pid, ws),
+            )
+            conn.commit()
+
+            # Out-of-vocabulary: an unknown value, an empty string, and a
+            # case-shifted in-vocabulary value all rejected.
+            for bad_role in ("superuser", "", "Founder"):
+                with pytest.raises(psycopg.errors.CheckViolation):
+                    conn.execute(
+                        """
+                        INSERT INTO membership (principal_id, workspace_id, role, clearance)
+                        VALUES (%s, %s, %s, 0)
+                        """,
+                        (pid, ws, bad_role),
+                    )
+                conn.rollback()
+    finally:
+        _purge(ws)
+        _admin("DELETE FROM principal WHERE id = %s", (pid,))
+
+
 def test_the_sql_check_and_the_python_frozensets_agree():
     """A drift between the two should fail loudly rather than rot.
 
