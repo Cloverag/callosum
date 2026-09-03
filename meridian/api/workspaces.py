@@ -72,7 +72,6 @@ def grant_membership(payload: MembershipGrant, principal: CurrentPrincipal) -> d
         payload.role,
         workspace_id=principal.workspace_id,
         actor_principal_id=str(principal.id),
-        actor_clearance=principal.clearance,
     )
 
 
@@ -83,5 +82,4 @@ def revoke_membership(principal_id: uuid.UUID, principal: CurrentPrincipal) -> d
         str(principal_id),
         workspace_id=principal.workspace_id,
         actor_principal_id=str(principal.id),
-        actor_clearance=principal.clearance,
     )
