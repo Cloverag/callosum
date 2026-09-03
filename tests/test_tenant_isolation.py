@@ -222,13 +222,42 @@ def test_control_plane_membership_is_workspace_scoped():
             ).fetchall()
             assert [r["id"] for r in names] == [wa]
 
-            # Least privilege: the control plane is administrative. The runtime
-            # role reads it and must not be able to grant itself membership.
+            # Least privilege changed shape under 0029 (#166 step 5), and this
+            # assertion is updated for that rather than broken by it. It used to
+            # expect `InsufficientPrivilege` for ANY membership insert — true
+            # before 0029, when the control plane was fully revoked and every
+            # membership mutation ran on the superuser/migration path. 0029
+            # narrowed that deliberately: `callosum_app` now holds INSERT/UPDATE
+            # on `membership` (never `workspace`), because step 5 gives the
+            # runtime a real grant/revoke path with its own authorization layered
+            # on top (`meridian.workspaces`'s anti-escalation + actor-resolution
+            # checks) rather than routing every mutation through a superuser.
+            #
+            # So the scoped connection CAN now insert into ITS OWN workspace's
+            # membership — proven below with `pb`, who is not yet a member of
+            # `wa` (using `pa` again would hit `wa`'s already-inserted row and
+            # fail on `membership_pkey`, a different error that would look like
+            # this test still passing for the reason its docstring gives).
+            # `workspace` remains fully revoked, which this test can still show.
+            # A membership insert for a DIFFERENT workspace than the connection's
+            # own scope is exactly what `test_workspace_bootstrap.py`'s own tests
+            # C/D pin in full (including the RLS WITH CHECK failure message), so
+            # it is not repeated here.
+            conn.execute(
+                "INSERT INTO membership (principal_id, workspace_id, role, clearance)"
+                " VALUES (%s, %s, 'observer', 0)",
+                (pb, wa),
+            )
+            granted = conn.execute(
+                "SELECT role FROM membership WHERE principal_id = %s AND workspace_id = %s",
+                (pb, wa),
+            ).fetchone()
+            assert granted["role"] == "observer"
+
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
                 conn.execute(
-                    "INSERT INTO membership (principal_id, workspace_id, role, clearance)"
-                    " VALUES (%s, %s, 'founder', 4)",
-                    (pa, wa),
+                    "INSERT INTO workspace (id, name, external_id) VALUES (%s, %s, %s)",
+                    (uuid.uuid4(), "nope", f"nope-{uuid.uuid4()}"),
                 )
     finally:
         # `audit_event` is ON DELETE RESTRICT on workspace_id — see above. Issue #170.
