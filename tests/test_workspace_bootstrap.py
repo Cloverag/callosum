@@ -207,6 +207,40 @@ class TestBootstrap:
         finally:
             _cleanup(workspace_ids=[mine, theirs], principal_ids=[founder, target])
 
+    def test_the_app_connection_cannot_update_a_membership_outside_the_selected_workspace(self):
+        """D's UPDATE-side twin, and not a formality — it fails a DIFFERENT way.
+
+        0029 grants `callosum_app` UPDATE on `membership` as well as INSERT, and
+        nothing else in the suite pins the UPDATE side of that grant. INSERT's
+        WITH CHECK REFUSES a mismatched row outright (`InsufficientPrivilege`,
+        proven above). UPDATE's USING clause instead FILTERS: a cross-workspace
+        `UPDATE ... WHERE ...` simply matches zero rows and raises nothing at
+        all. A silent no-op is worse than a refusal — a caller cannot tell it
+        apart from success without checking `rowcount`, which nothing forces
+        them to do.
+        """
+        founder = _principal()
+        target = _principal()
+        mine = theirs = None
+        try:
+            mine = workspaces.create_workspace("Mine Update", None, founder)
+            theirs = workspaces.create_workspace("Theirs Update", None, target)
+
+            with store.pg(mine) as conn:
+                cur = conn.execute(
+                    "UPDATE membership SET active = false WHERE principal_id = %s AND workspace_id = %s",
+                    (target, theirs),
+                )
+                assert cur.rowcount == 0
+
+            row = _admin_fetch(
+                "SELECT active FROM membership WHERE principal_id = %s AND workspace_id = %s",
+                (target, theirs),
+            )[0]
+            assert row["active"] is True
+        finally:
+            _cleanup(workspace_ids=[mine, theirs], principal_ids=[founder, target])
+
     def test_a_failed_creation_leaves_no_orphan_workspace_or_membership(self):
         """H. `p_principal_id` that does not exist: the membership INSERT violates
         its FK, and `pytest.raises` below is the actual proof this test provides.

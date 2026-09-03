@@ -239,10 +239,6 @@ def test_control_plane_membership_is_workspace_scoped():
             # fail on `membership_pkey`, a different error that would look like
             # this test still passing for the reason its docstring gives).
             # `workspace` remains fully revoked, which this test can still show.
-            # A membership insert for a DIFFERENT workspace than the connection's
-            # own scope is exactly what `test_workspace_bootstrap.py`'s own tests
-            # C/D pin in full (including the RLS WITH CHECK failure message), so
-            # it is not repeated here.
             conn.execute(
                 "INSERT INTO membership (principal_id, workspace_id, role, clearance)"
                 " VALUES (%s, %s, 'observer', 0)",
@@ -254,6 +250,34 @@ def test_control_plane_membership_is_workspace_scoped():
             ).fetchone()
             assert granted["role"] == "observer"
 
+        # The one of these four checks this test's own NAME promises, and the one
+        # an earlier version of this fix dropped in favour of a duplicate of
+        # `test_workspace_bootstrap.py`'s test D — right on coverage, wrong
+        # structurally: this file is where a reader looks for the tenancy
+        # guarantee, and it should not delegate the central one to a feature
+        # branch's test file, which could be refactored or split without anyone
+        # noticing the guarantee lost its guard here. A write into a DIFFERENT
+        # workspace's membership than the connection's own scope must still be
+        # refused. `wb` is already in this fixture; no new setup needed.
+        #
+        # A FRESH connection, not a further statement on `conn` above: a caught
+        # `psycopg` error leaves the underlying Postgres transaction ABORTED even
+        # though `pytest.raises` catches the Python exception, and any later
+        # statement on that same transaction fails with `InFailedSqlTransaction`
+        # instead of the error actually being asserted — found by running this,
+        # not by reasoning about it, the first version of this fix put both
+        # `pytest.raises` blocks on one connection and the second one failed that
+        # way. `store.pg()` opens a new connection each call, which sidesteps it
+        # rather than requiring a savepoint.
+        with store.pg(workspace_id=str(wa)) as conn:
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                conn.execute(
+                    "INSERT INTO membership (principal_id, workspace_id, role, clearance)"
+                    " VALUES (%s, %s, 'observer', 0)",
+                    (pa, wb),
+                )
+
+        with store.pg(workspace_id=str(wa)) as conn:
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
                 conn.execute(
                     "INSERT INTO workspace (id, name, external_id) VALUES (%s, %s, %s)",
