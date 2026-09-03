@@ -52,6 +52,10 @@ AGGREGATE_TYPES = frozenset(
         "resolution",
         "commitment",
         "audit",
+        # Widened in 0027_membership_role_and_audit for #166's membership route
+        # (not yet built — no route or record_audit_event call in this branch
+        # uses this value yet). See that migration's docstring.
+        "membership",
     }
 )
 
