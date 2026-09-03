@@ -126,6 +126,12 @@ _EXPLICIT: tuple[tuple[type[BaseException], int, str, str | None], ...] = (
     # never the acting principal's own clearance or the target's — see the class
     # docstring in workspaces.py for why that distinction matters (#166 step 5).
     (workspaces.EscalationDeniedError, HTTPStatus.FORBIDDEN, FORBIDDEN, None),
+    # 409, not 404: the membership EXISTS and is found — it is refused because of
+    # what removing it would do to the workspace (#185), which is a state
+    # conflict a caller should re-read and reconsider, not a missing resource.
+    # Named to avoid `errors.py`'s own "NotFound" name-suffix pass, deliberately —
+    # see the class docstring in workspaces.py.
+    (workspaces.LastActiveMembershipError, HTTPStatus.CONFLICT, CONFLICT, None),
     # Infrastructure, not domain. A provider being down or a graph write failing is not
     # the caller's mistake, so 503 rather than a 4xx — see `test_api_errors.py`, which
     # asserts no *domain* exception falls through to a 500. These two are exempt by
