@@ -132,10 +132,25 @@ def upgrade() -> None:
         """
     )
 
-    # Least privilege at the function itself, not only at the table: EXECUTE is not
-    # granted to PUBLIC by default for a function owned by a non-invoking role in the
-    # same way table grants work, but this is stated explicitly rather than relied on
-    # implicitly — the same discipline `0011` used for the tables it touched.
+    # LOAD-BEARING, not belt-and-braces — an earlier version of this comment claimed
+    # the opposite. Postgres functions, UNLIKE tables, grant EXECUTE to PUBLIC by
+    # default. Measured against a live database rather than assumed from docs:
+    #
+    #   SELECT (aclexplode(acldefault('f', oid))).grantee::regrole::text,
+    #          (aclexplode(acldefault('f', oid))).privilege_type
+    #     FROM pg_roles WHERE rolname = 'callosum';
+    #
+    #   grantee  | privilege_type
+    #   ---------+----------------
+    #   (PUBLIC) | EXECUTE
+    #   callosum | EXECUTE
+    #
+    # Without this line, every role in the cluster — not only `callosum_app` — could
+    # call a SECURITY DEFINER function that creates a workspace and a founder
+    # membership. `tests/test_workspace_bootstrap.py::
+    # test_public_holds_no_execute_on_the_bootstrap_function` asserts this
+    # structurally so a future reader cannot mistake this REVOKE for the redundant
+    # line the old comment described and remove it.
     op.execute(f"REVOKE ALL ON FUNCTION {_FUNCTION} FROM PUBLIC")
     op.execute(f"GRANT EXECUTE ON FUNCTION {_FUNCTION} TO callosum_app")
 

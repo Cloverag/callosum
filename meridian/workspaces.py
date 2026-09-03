@@ -12,29 +12,54 @@ comment 5530505507, the maintainer's ruling):
     Grant/change/revoke
                  Ordinary INSERT/UPDATE on `membership` for a workspace the caller
                  is ALREADY a member of. `callosum_app` holds these grants directly
-                 (narrowed from 0011 by the same migration) and Row-Level Security
-                 does the rest: `membership`'s WITH CHECK is `workspace_id =
-                 current_setting('app.workspace_id')`, so a caller cannot name a
-                 workspace other than the one their session selected — there is no
-                 code path in this module that could produce a cross-workspace
-                 write even by mistake, because the SQL cannot express one.
+                 (narrowed from 0011 by the same migration).
+
+CROSS-WORKSPACE REFUSAL IS AN AUTHORIZATION CHECK, NOT AN RLS SIDE EFFECT
+--------------------------------------------------------------------------------
+An earlier version of this docstring claimed "there is no code path in this module
+that could produce a cross-workspace write ... because the SQL cannot express one."
+That was false, and a test written to prove it (`test_a_cross_workspace_grant_is_
+denied`) proved the opposite instead: `membership`'s WITH CHECK (`workspace_id =
+current_setting('app.workspace_id')`) only catches a MISMATCH between the target
+row's `workspace_id` and the connection's own RLS scope — and `store.pg(workspace_id)`
+scopes the connection to the SAME `workspace_id` the write targets, by construction.
+There is no mismatch for WITH CHECK to catch; the raw INSERT succeeds regardless of
+who the actor is.
+
+So the actual guard is `identity.resolve_principal_by_id()`, called first, on the
+same connection: it raises `PrincipalNotFound` for an actor with no ACTIVE
+membership in `workspace_id`, before any write is attempted. That is the real
+cross-workspace refusal, and it does not depend on the audit write happening,
+succeeding, or running before the mutation — unlike an earlier version of this
+module, which took the actor's clearance as a caller-supplied argument and only
+discovered a cross-workspace actor when `record_audit_event()`'s own membership
+check rejected the audit row after the mutation had already been written (rolled
+back by the transaction, but as a side effect of logging, not as an authorization
+decision). The maintainer's ruling on this exact point: "Client-supplied
+role/clearance values are untrusted." Resolving the actor from the database, on
+the connection already scoped to the target workspace, is what makes that hold.
 
 Anti-escalation is the one rule both a grant and a revoke enforce, symmetrically:
 a caller may never act at a clearance ABOVE their own. Granting a role whose
 `ROLE_TO_CLEARANCE` exceeds the actor's own clearance is refused outright — this
 half is the maintainer's explicit ruling. Revoking a member whose current clearance
-exceeds the actor's is
-refused for the same reason, though the ruling only stated the grant half: an
-actor who could not have granted that role should not be able to strip it either,
-or revoke-then-regrant becomes an escalation path the grant-side check does not
-close. Flagged here as my own extension of the rule rather than presented as
-something the maintainer said, in case the review disagrees.
+exceeds the actor's is refused for the same reason, though the ruling only stated
+the grant half: an actor who could not have granted that role should not be able to
+strip it either, or revoke-then-regrant becomes an escalation path the grant-side
+check does not close. **Flagged here as my own extension of the rule, raised with
+the maintainer for a ruling and not yet one — do not read this paragraph as policy
+until that lands.**
 
-`membership.clearance` is still written on every mutation here (mirroring
-`cli.py:125`'s existing convention) even though nothing reads it for authorization
-(`callosum.identity` derives clearance from `role`, #166 step 3). Leaving it null or
-stale would be worse than redundant — a future reader finding the column empty has
-no way to tell "never written" from "deliberately inert".
+Both checks compare against a role-derived clearance, on BOTH sides, never against
+`membership.clearance` directly. That column is written on every mutation here
+(mirroring `cli.py:125`'s existing convention) but it is legacy and can disagree
+with `role` — `cli.py:125` seeds it from `principal.clearance`, independently of
+`principal.role`, and #182 documents fifteen fixtures where the two already
+disagree. Reading the stored column for an authorization decision — which
+`revoke_membership` did, in an earlier version of this function — is exactly the
+drift #166 step 3 closed for reads, reopened here for a write. Caught before this
+module's first PR, not found by CI: see `revoke_membership`'s docstring for the
+test that could not have caught it and the one substituted instead.
 """
 
 from dataclasses import dataclass
@@ -167,30 +192,37 @@ def grant_membership(
     *,
     workspace_id: str,
     actor_principal_id: str,
-    actor_clearance: int,
 ) -> Membership:
     """Grants a new membership, or changes an existing one's role. Upsert on the PK.
 
-    Takes the acting principal's id and clearance as primitives, not a `Principal`
-    object — matching `documents.list_documents(*, clearance: int, ...)`, this
-    codebase's existing convention for a domain function that gates on clearance.
-    The API layer reads both off `CurrentPrincipal`; `workspace_id` MUST be that
-    same principal's own `workspace_id` — the caller's currently-selected
-    workspace, never a client-supplied value (ADR-013's rule, restated for this
-    route) — which `meridian/api/workspaces.py` enforces by never accepting a
-    `workspace_id` field on the wire.
+    Takes only the acting principal's id — NOT their clearance. An earlier version
+    of this function took `actor_clearance: int` as a caller-supplied primitive; the
+    maintainer's ruling is "client-supplied role/clearance values are untrusted",
+    and that includes the ACTOR's, not only the requested role. The actor's
+    clearance is resolved here, from the database, on the same connection already
+    scoped to `workspace_id` — which is also what makes this the cross-workspace
+    guard: `identity.resolve_principal_by_id()` raises `PrincipalNotFound` for an
+    actor with no active membership in `workspace_id`, before any write is
+    attempted. See the module docstring for why that must not be the audit write's
+    job.
+
+    `workspace_id` MUST be the caller's own currently-selected workspace, never a
+    client-supplied value (ADR-013) — `meridian/api/workspaces.py` enforces that by
+    never accepting a `workspace_id` field on the wire; it is not re-checked here.
 
     Anti-escalation: the actor may never grant a role whose clearance exceeds their
-    own — the maintainer's ruling, enforced before any write is attempted so a
-    denied request never reaches the database at all.
+    own — the maintainer's ruling.
     """
     requested_clearance = _clearance_for(role)
-    if requested_clearance > actor_clearance:
-        raise EscalationDeniedError(
-            f"cannot grant role {role!r}: exceeds the acting principal's own clearance"
-        )
 
     with store.pg(workspace_id) as conn:
+        actor = identity.resolve_principal_by_id(conn, actor_principal_id, workspace_id=workspace_id)
+
+        if requested_clearance > actor.clearance:
+            raise EscalationDeniedError(
+                f"cannot grant role {role!r}: exceeds the acting principal's own clearance"
+            )
+
         row = conn.execute(
             """
             INSERT INTO membership (principal_id, workspace_id, role, clearance, active)
@@ -220,7 +252,6 @@ def revoke_membership(
     *,
     workspace_id: str,
     actor_principal_id: str,
-    actor_clearance: int,
 ) -> Membership:
     """Revokes a membership: `active = false`. Never a delete — see module docstring.
 
@@ -229,15 +260,32 @@ def revoke_membership(
     this, an observer could not grant a founder role but could still revoke an
     existing founder's membership outright, which is the same privilege by another
     name.
+
+    **The target's clearance is derived from their `role`, never read from the
+    stored `membership.clearance` column.** An earlier version of this function
+    compared against `current["clearance"]` directly — the exact column #166 step 3
+    ruled must never be read for an authorization decision. Reachable, not
+    theoretical: `cli.py:125` seeds `membership.clearance` from `principal.clearance`
+    independently of `principal.role`, and #182 documents fifteen fixtures where the
+    two already disagree. A stale `clearance=1` beside `role='director'` (which maps
+    to 3) would have let an advisor revoke a director. Caught before this reached a
+    PR, by a peer reviewing the diff rather than by the test that shipped with it —
+    `test_revoking_a_higher_clearance_member_is_denied`'s fixture is created by
+    `grant_membership`, which writes `role` and `clearance` consistently from the
+    same mapping, so the two columns AGREE by construction in that test and it
+    cannot exercise the disagreement the bug depended on. Replaced with a test that
+    seeds the disagreement directly through the admin connection.
     """
     with store.pg(workspace_id) as conn:
+        actor = identity.resolve_principal_by_id(conn, actor_principal_id, workspace_id=workspace_id)
+
         current = conn.execute(
-            "SELECT role, clearance, active FROM membership WHERE principal_id = %s AND workspace_id = %s",
+            "SELECT role, active FROM membership WHERE principal_id = %s AND workspace_id = %s",
             (principal_id, workspace_id),
         ).fetchone()
         if current is None:
             raise MembershipNotFoundError(f"no membership for {principal_id} in {workspace_id}")
-        if current["clearance"] > actor_clearance:
+        if _clearance_for(current["role"]) > actor.clearance:
             raise EscalationDeniedError(
                 "cannot revoke a membership whose clearance exceeds the acting principal's own"
             )
