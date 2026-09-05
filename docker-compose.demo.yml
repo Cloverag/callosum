@@ -1,0 +1,120 @@
+# Callosum public demo stack — home server (2 cores, 5.8GB).
+#
+# Differences from docker-compose.yml, all forced by the hardware or by the fact
+# that this one is reachable from the internet:
+#
+#   * NO KEYCLOAK. A second JVM beside Neo4j on two Core 2 Duo cores makes cold
+#     start minutes and every request seconds. The demo authenticates by principal
+#     selection instead; production OIDC is unchanged and still configured by
+#     MERIDIAN_OIDC_* when a real IdP exists.
+#   * Neo4j is tuned down to a 512m heap + 256m page cache. Correct for a demo
+#     graph, badly wrong for ingest — do ingest on your main machine and restore
+#     a dump here.
+#   * NOTHING IS PUBLISHED TO THE HOST. cloudflared joins this network and reaches
+#     `api:8000` directly, so there is no listening port on the LAN and no
+#     inbound firewall rule anywhere.
+#   * ENVIRONMENT=production is pinned on the api service. This is load-bearing:
+#     meridian/api/deps.py defaults it to "development", which is the permissive
+#     side of the MERIDIAN_DEV_AUTO_AUTH bypass. Do not remove this line.
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: callosum-demo-postgres
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      POSTGRES_USER: callosum
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.demo}
+      POSTGRES_DB: callosum
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./schema/postgres.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    command:
+      - postgres
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - max_connections=40
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U callosum -d callosum"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  neo4j:
+    image: neo4j:5-community
+    container_name: callosum-demo-neo4j
+    restart: unless-stopped
+    mem_limit: 1500m
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:?set NEO4J_PASSWORD in .env.demo}
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+      # Tuned for this box. Neo4j's own advice for a 2-core machine is to leave
+      # headroom for Postgres and the API rather than let the JVM take what it wants.
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 256m
+    volumes:
+      - neo4jdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: callosum-demo-api
+    restart: unless-stopped
+    mem_limit: 768m
+    env_file: .env.demo
+    environment:
+      # --- defence-in-depth, not the fix ---------------------------------
+      # deps.py defaults ENVIRONMENT to "development" and treats any non-production
+      # value as eligible for the MERIDIAN_DEV_AUTO_AUTH bypass, which authenticates
+      # a session-less request as the first principal (Raj, founder, clearance 4).
+      #
+      # Pinning it here protects THIS deployment and nothing else. Production safety
+      # must not depend on a compose file remembering to set it — the fix is the
+      # fail-closed allowlist tracked in #191, after which the default is safe and
+      # this line is redundant belt-and-braces. Keep it anyway; it costs nothing.
+      ENVIRONMENT: production
+      APP_ENV: production
+      # -------------------------------------------------------------------
+      # Container-internal hostnames. The DSNs in .env.demo point at 127.0.0.1 for
+      # local work; inside compose the services resolve by name instead.
+      POSTGRES_DSN: postgresql://callosum:${POSTGRES_PASSWORD}@postgres:5432/callosum?connect_timeout=10
+      POSTGRES_APP_DSN: postgresql://callosum_app:${POSTGRES_APP_PASSWORD}@postgres:5432/callosum?connect_timeout=10
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+      MERIDIAN_SESSION_HTTPS_ONLY: "true"
+      # Impersonation endpoint, on purpose, and safe ONLY because this stack serves
+      # fabricated demo minutes. Sourced from .env.demo so it is a deployment decision
+      # rather than a baked-in default. See #191: the last affordance that let an
+      # anonymous request become the founder was on by default; this one is not.
+      MERIDIAN_DEMO_SELECTOR: ${MERIDIAN_DEMO_SELECTOR:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: callosum-demo-tunnel
+    restart: unless-stopped
+    mem_limit: 128m
+    # Token auth: the tunnel's routes are configured in the Cloudflare dashboard,
+    # so no credentials file is mounted and nothing secret lives in this repo.
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN in .env.demo}
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  neo4jdata:
