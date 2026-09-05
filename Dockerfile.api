@@ -23,7 +23,31 @@ COPY meridian/ ./meridian/
 
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
-RUN pip install --upgrade pip && pip install .
+
+# NumPy before everything else, built from source for a BASELINE x86-64 target.
+#
+# The demo host is a Core 2 Duo E7500: ssse3 + sse4_1, no sse4_2, no popcnt — so
+# x86-64-v1. NumPy's manylinux wheels are built with an x86-64-v2 baseline and
+# refuse to import on it:
+#
+#   RuntimeError: NumPy was built with baseline optimizations:
+#   (X86_V2) but your machine doesn't support: (X86_V2).
+#
+# That is a RuntimeError, not an ImportError, so `neo4j._optional_deps`' try/except
+# around its optional numpy import does not catch it — importing the Neo4j driver
+# kills the process, and the API crash-loops before serving a single request.
+#
+# numpy is a hard requirement of `voyageai` only, and this deployment makes no model
+# calls at all, so deleting it would also "work". Building it correctly is preferred:
+# a wheel removed to dodge an ISA mismatch leaves every other extension module's
+# baseline unverified, and the next one fails the same way at a less obvious moment.
+# --allow-noblas because no BLAS is needed for a dependency nothing here calls.
+RUN pip install --upgrade pip \
+    && pip install --no-binary=numpy \
+        --config-settings=setup-args=-Dcpu-baseline=none \
+        --config-settings=setup-args=-Dallow-noblas=true \
+        numpy \
+    && pip install .
 
 
 FROM python:3.12-slim

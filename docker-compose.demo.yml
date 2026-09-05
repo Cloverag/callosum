@@ -65,6 +65,12 @@ services:
       retries: 30
 
   api:
+    # `image` names the tag; `build` is the fallback when that tag is absent. On the
+    # server the tag is already present (docker load), so compose starts it and never
+    # builds — a Core 2 Duo compiling psycopg and pydantic-core wheels takes tens of
+    # minutes. On a dev machine without the tag, compose builds it. Both work from
+    # the one file, so nothing has to be edited between environments.
+    image: callosum-api:demo
     build:
       context: .
       dockerfile: Dockerfile.api
@@ -73,15 +79,16 @@ services:
     mem_limit: 768m
     env_file: .env.demo
     environment:
-      # --- defence-in-depth, not the fix ---------------------------------
-      # deps.py defaults ENVIRONMENT to "development" and treats any non-production
-      # value as eligible for the MERIDIAN_DEV_AUTO_AUTH bypass, which authenticates
-      # a session-less request as the first principal (Raj, founder, clearance 4).
+      # --- defence-in-depth ----------------------------------------------
+      # deps.py USED to default ENVIRONMENT to "development" and treat any
+      # non-production value as eligible for the MERIDIAN_DEV_AUTO_AUTH bypass,
+      # which authenticated a session-less request as the first principal (Raj,
+      # founder, clearance 4). That was #191, fixed in #192: the default is now
+      # fail-closed and auto-auth requires an explicit environment allowlist.
       #
-      # Pinning it here protects THIS deployment and nothing else. Production safety
-      # must not depend on a compose file remembering to set it — the fix is the
-      # fail-closed allowlist tracked in #191, after which the default is safe and
-      # this line is redundant belt-and-braces. Keep it anyway; it costs nothing.
+      # This pin is therefore now redundant belt-and-braces rather than the only
+      # thing holding the line. Keep it: it costs nothing, and it means this
+      # deployment does not depend on that fix staying correct.
       ENVIRONMENT: production
       APP_ENV: production
       # -------------------------------------------------------------------
@@ -109,9 +116,19 @@ services:
     container_name: callosum-demo-tunnel
     restart: unless-stopped
     mem_limit: 128m
-    # Token auth: the tunnel's routes are configured in the Cloudflare dashboard,
-    # so no credentials file is mounted and nothing secret lives in this repo.
-    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN in .env.demo}
+    # Token auth: no credentials file is mounted and nothing secret lives in this repo.
+    #
+    # --url is the origin, and it is REQUIRED here. A tunnel created with
+    # `cloudflared tunnel create` is locally-managed and carries no remote ingress
+    # configuration, so a token run has no route and the edge answers 503 for every
+    # path — the tunnel connects and registers happily, which makes it look like a
+    # backend fault rather than a missing route. --url supplies the origin directly,
+    # so the deployment does not depend on a public hostname having been added in the
+    # dashboard. Adding one there anyway is harmless: remote config takes precedence.
+    #
+    # `api:8000` is the container name on this network. `localhost` would resolve to
+    # cloudflared's own container.
+    command: tunnel --no-autoupdate run --url http://api:8000 --token ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN in .env.demo}
     depends_on:
       - api
 

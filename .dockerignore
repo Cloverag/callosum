@@ -1,0 +1,23 @@
+# The build context was 1.8GB without this file — .venv and frontend/node_modules
+# alone are 1.1GB of it, and none of it is COPYed by Dockerfile.api. Sending it to
+# the daemon makes the build look hung before it has run a single instruction.
+.git/
+.venv/
+venv/
+frontend/
+node_modules/
+.vercel/
+.env*
+!.env.demo.example
+data/
+docs/
+tests/
+*.dump
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
