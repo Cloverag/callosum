@@ -1,0 +1,64 @@
+# Callosum / Meridian API image.
+#
+# Two stages so the build tools do not ride along into the running image — this
+# box has 5.8GB and two cores; every megabyte and every layer costs.
+#
+# BUILD THIS ON YOUR MAIN MACHINE, NOT ON THE SERVER. A Core 2 Duo compiling
+# psycopg and pydantic-core wheels takes tens of minutes. Build, `docker save`,
+# `scp`, `docker load` — see DEPLOY.md.
+
+FROM python:3.12-slim AS builder
+
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY pyproject.toml README.md ./
+COPY src/ ./src/
+COPY meridian/ ./meridian/
+
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+RUN pip install --upgrade pip && pip install .
+
+
+FROM python:3.12-slim
+
+# libpq5 is the runtime half of libpq-dev; postgresql-client gives the entrypoint
+# `pg_isready` so it can wait rather than crash-loop against a starting database.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libpq5 postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+WORKDIR /app
+# alembic.ini sets script_location=meridian/migrations and prepend_sys_path=.,
+# so the migration tree and the ini have to sit at the workdir root exactly as
+# they do in the repo.
+COPY alembic.ini ./
+COPY meridian/ ./meridian/
+COPY src/ ./src/
+COPY scripts/ ./scripts/
+COPY schema/ ./schema/
+COPY eval/ ./eval/
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# Non-root. The API needs no write access to anything in the image; state lives
+# in Postgres and Neo4j, both in their own volumes.
+RUN useradd --create-home --uid 10001 meridian
+USER meridian
+
+EXPOSE 8000
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+# One worker on purpose. Two cores are already shared with a JVM; a second uvicorn
+# worker buys concurrency the CPU cannot deliver and costs another ~200MB.
+CMD ["uvicorn", "meridian.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

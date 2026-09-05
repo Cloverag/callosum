@@ -1,5 +1,10 @@
-.env
+# `.env*`, not `.env`: the exact-match pattern left `.env.demo` — which holds the
+# demo deployment's database passwords, session secret and Cloudflare tunnel token —
+# perfectly committable. The template is re-included below.
+.env*
+!.env.demo.example
 .venv/
+.vercel/
 __pycache__/
 *.pyc
 *.egg-info/
