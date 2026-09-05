@@ -217,7 +217,12 @@ def detect_conflicts(
                     (name_a, type_a, name_b, type_b, similarity,
                      chunk_id_a, chunk_id_b, quote_a, quote_b, sensitivity, workspace_id)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (name_a, type_a, name_b, type_b) DO NOTHING
+                -- Workspace-scoped, matching uq_entity_conflict_workspace_names.
+                -- Same drift as store.upsert_document (#193): the tenancy migration
+                -- prepended workspace_id to the index and this target was not
+                -- updated, so a conflict scan raised InvalidColumnReference. The
+                -- same pair of names in two tenants is two conflicts, not one.
+                ON CONFLICT (workspace_id, name_a, type_a, name_b, type_b) DO NOTHING
                 """,
                 (
                     name_a, type_a, name_b, type_b, score,

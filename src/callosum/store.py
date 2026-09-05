@@ -81,7 +81,13 @@ def upsert_document(
         INSERT INTO document (title, doc_type, source_uri, raw_text, content_hash,
                               sensitivity, metadata)
         VALUES (%s, %s, %s, %s, %s, %s, %s)
-        ON CONFLICT (content_hash) DO NOTHING
+        -- (workspace_id, content_hash), not (content_hash): 0022 replaced the global
+        -- single-column UNIQUE with a workspace-scoped composite, so the same bytes
+        -- may exist once per tenant. The conflict target has to name the index that
+        -- actually exists or Postgres raises InvalidColumnReference and no document
+        -- can be ingested at all (#193). `workspace_id` is not in the column list
+        -- above; it takes the table default, so this row's tenant is unchanged.
+        ON CONFLICT (workspace_id, content_hash) DO NOTHING
         RETURNING id
         """,
         (title, doc_type, source_uri, raw_text, content_hash, sensitivity,
