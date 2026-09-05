@@ -29,6 +29,7 @@ caller who names one they do not belong to is refused, and learns nothing about
 whether it exists.
 """
 
+import os
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
@@ -46,6 +47,56 @@ NOT_AUTHENTICATED = "not_authenticated"
 SESSION_NOT_CONFIGURED = "session_not_configured"
 WORKSPACE_NOT_SELECTED = "workspace_not_selected"
 FORBIDDEN = "forbidden"
+
+
+#: Environments in which the development auto-login affordance may run at all.
+#:
+#: An **allowlist**. The previous check was `env != "production"`, which is a denylist
+#: of exactly one string, and a denylist of one string is fail-open three ways: the
+#: variable being unset, the variable being empty, and the variable being misspelled
+#: (`prod`, `PRODUCTION `, `production-eu`) all landed on the permissive side. An
+#: allowlist inverts every one of those — anything unrecognised means "not a
+#: development machine", which is the assumption that is safe to be wrong about.
+DEV_AUTH_ENVIRONMENTS = frozenset({"development", "test", "local"})
+
+#: Accepted truthy spellings for `MERIDIAN_DEV_AUTO_AUTH`. Unchanged from the original.
+_DEV_AUTH_TRUTHY = frozenset({"true", "1", "yes"})
+
+
+def _dev_auto_auth_enabled() -> bool:
+    """Whether the development auto-login affordance may run. **Fail-closed.**
+
+    Auto-login fabricates an `AuthenticatedSession` for a request that presented no
+    session at all, choosing `ORDER BY p.created_at ASC LIMIT 1` — the *first* seeded
+    principal, which under `cli.DEMO_PRINCIPALS` is the founder at clearance 4. It is
+    therefore not merely an authentication bypass but one that lands on the highest
+    privilege in the system, and it must be off unless someone has said twice that
+    they want it.
+
+    Two independent conditions, both required:
+
+      1. The environment is *explicitly* one of `DEV_AUTH_ENVIRONMENTS`. Unset,
+         empty, unrecognised or production all mean off. This is the half that
+         changed: the default used to be `"development"`, so an unset variable
+         satisfied the check and a deployment that simply forgot to set it was one
+         env var away from anonymous founder access.
+      2. `MERIDIAN_DEV_AUTO_AUTH` is explicitly truthy.
+
+    Production safety must not depend on a deployment's compose file remembering to
+    pin `ENVIRONMENT=production`. It now depends on nothing being set, which is the
+    state every fresh environment starts in.
+
+    `ENVIRONMENT` takes precedence over `APP_ENV`, and an empty `ENVIRONMENT` falls
+    through to `APP_ENV` rather than short-circuiting to a value — `os.environ.get`
+    with a default returns `""` for a variable set to empty, so the original
+    `get("ENVIRONMENT", get("APP_ENV", ...))` never consulted `APP_ENV` once
+    `ENVIRONMENT=` appeared in a `.env` file. Both spellings reach the same
+    allowlist here, and neither can widen it.
+    """
+    env = (os.environ.get("ENVIRONMENT") or os.environ.get("APP_ENV") or "").strip().lower()
+    if env not in DEV_AUTH_ENVIRONMENTS:
+        return False
+    return os.environ.get("MERIDIAN_DEV_AUTO_AUTH", "").strip().lower() in _DEV_AUTH_TRUTHY
 
 
 def current_session(request: Request) -> AuthenticatedSession:
@@ -77,9 +128,7 @@ def current_session(request: Request) -> AuthenticatedSession:
 
     current = sess.read(raw)
     if current is None:
-        import os
-        env = os.environ.get("ENVIRONMENT", os.environ.get("APP_ENV", "development")).lower()
-        if env != "production" and os.environ.get("MERIDIAN_DEV_AUTO_AUTH", "").lower() in ("true", "1", "yes"):
+        if _dev_auto_auth_enabled():
             with store.pg(store.DEFAULT_WORKSPACE_ID) as conn:
                 row = conn.execute(
                     """
