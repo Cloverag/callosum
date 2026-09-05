@@ -82,12 +82,48 @@ def test_only_the_three_symbols_are_accepted(client, monkeypatch, payload):
 
 
 def test_a_smuggled_principal_id_is_ignored(client, monkeypatch):
-    """An extra key does not become an identity. Pydantic drops it; nothing reads it."""
+    """An extra key does not become an identity. Pydantic drops it; nothing reads it.
+
+    The status depends on the environment and none of the possibilities are a
+    principal-id-driven login, which is the property under test:
+
+      200  seeded database, sessions configured
+      503  sessions not configured (CI has no .env) or demo principals not seeded
+      403  the mapped principal has no active membership
+
+    A 500 is NOT among them, and was: this route wrote `request.session` without the
+    guard `deps.current_session` has, so an unconfigured deployment crashed instead of
+    reporting its configuration. CI caught it; a local `.env` had masked it.
+    """
     monkeypatch.setenv(demo.FLAG, "true")
     body = {"identity": "investor", "principal_id": "2b0b8f1e-0000-0000-0000-000000000000"}
-    # 204 on a seeded database, 503 on an empty one — either way it did not become a
-    # principal-id-driven login, which is what this test is about.
-    assert client.post("/auth/demo/select", json=body).status_code in (200, 503)
+    assert client.post("/auth/demo/select", json=body).status_code in (200, 403, 503)
+
+
+def test_writing_a_session_without_a_secret_is_503_not_500(monkeypatch):
+    """The defect CI found, pinned directly rather than as a tolerated status.
+
+    Builds an app with no session secret — exactly CI's environment, and any
+    deployment that enables the selector before configuring one.
+    """
+    monkeypatch.setenv(demo.FLAG, "true")
+    monkeypatch.setenv("MERIDIAN_SESSION_SECRET", "")
+
+    from fastapi import FastAPI
+
+    from meridian.api import errors
+
+    app = FastAPI()
+    errors.install(app) if hasattr(errors, "install") else None
+    app.include_router(demo.router)  # no SessionMiddleware, deliberately
+
+    response = TestClient(app, raise_server_exceptions=False).post(
+        "/auth/demo/select", json={"identity": "founder"}
+    )
+    assert response.status_code == 503, (
+        f"expected 503 for unconfigured sessions, got {response.status_code} — a 500 "
+        f"here means the AssertionError guard was removed"
+    )
 
 
 # --- the mapping -----------------------------------------------------------

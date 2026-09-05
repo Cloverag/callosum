@@ -151,13 +151,32 @@ def select_identity(request: Request, selection: DemoSelection) -> dict[str, str
             detail={"code": deps.FORBIDDEN, "detail": "Not available to you."},
         ) from exc
 
+    try:
+        raw = request.session
+    except AssertionError as exc:
+        # `SessionMiddleware` is installed only when a signing secret is configured
+        # (`api/main.py`), so writing a session without one raises an `AssertionError`
+        # — a 500, for a configuration problem the operator fixes in one line.
+        # `deps.current_session` already answers 503 for exactly this; a route that
+        # WRITES the session needs the same treatment as one that reads it.
+        #
+        # Found by CI, not locally: a developer `.env` supplies the secret, so the
+        # middleware is always installed here and this path never ran.
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": deps.SESSION_NOT_CONFIGURED,
+                "detail": "Sessions are not configured on this server; set MERIDIAN_SESSION_SECRET.",
+            },
+        ) from exc
+
     sess.establish(
-        request.session,
+        raw,
         principal_id=principal_id,
         provider="demo-selector",
         subject=email,
     )
-    sess.select_workspace(request.session, store.DEFAULT_WORKSPACE_ID)
+    sess.select_workspace(raw, store.DEFAULT_WORKSPACE_ID)
 
     # Echoes the symbol and the provider marker, and nothing else. `auth.select_workspace`
     # returns `clearance` and `role`; this deliberately does not. Those are authorization
