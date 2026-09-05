@@ -27,7 +27,12 @@ export type AuthContext = {
   workspace_id: string;
 };
 
-async function authFetch<T>(path: string, init?: RequestInit): Promise<T> {
+/**
+ * Exported for `lib/demo.ts`, which talks to `/auth/demo/*` and therefore needs this
+ * prefix rather than `/api`. Sharing it beats a second copy of the credentials and
+ * error-envelope handling — the duplication `lib/api.ts`'s header was written about.
+ */
+export async function authFetch<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
     response = await fetch(`/auth${path}`, {

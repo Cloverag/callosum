@@ -21,6 +21,7 @@ from meridian.api import agenda as agenda_api
 from meridian.api import board_members as board_members_api
 from meridian.api import commitments as commitments_api
 from meridian.api import conflicts as conflicts_api
+from meridian.api import demo as demo_api
 from meridian.api import decisions as decisions_api
 from meridian.api import documents as documents_api
 from meridian.api import meetings as meetings_api
@@ -90,6 +91,10 @@ app.include_router(documents_api.router)
 app.include_router(conflicts_api.router)
 app.include_router(prep_api.router)
 app.include_router(workspaces_api.router)
+# Mounted unconditionally; the route itself answers 404 unless MERIDIAN_DEMO_SELECTOR
+# is explicitly set, so a disabled impersonation endpoint does not announce itself and
+# the guard stays testable at request time rather than at import.
+app.include_router(demo_api.router)
 
 # Domain exceptions map to HTTP centrally (P3 §5.3). Registered once here rather than
 # caught in each route, so a new endpoint inherits the right statuses — a 409 for a
