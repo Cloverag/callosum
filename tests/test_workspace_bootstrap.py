@@ -191,10 +191,11 @@ class TestBootstrap:
         """
         founder = _principal()
         target = _principal()
+        other_founder = _principal()  # captured, not inlined — see the note in test G
         mine = theirs = None
         try:
             mine = workspaces.create_workspace("Mine", None, founder)
-            theirs = workspaces.create_workspace("Theirs", None, _principal())
+            theirs = workspaces.create_workspace("Theirs", None, other_founder)
 
             with store.pg(mine) as conn:
                 with pytest.raises(psycopg.errors.InsufficientPrivilege) as exc_info:
@@ -205,7 +206,7 @@ class TestBootstrap:
                     )
                 assert "row-level security" in str(exc_info.value).lower()
         finally:
-            _cleanup(workspace_ids=[mine, theirs], principal_ids=[founder, target])
+            _cleanup(workspace_ids=[mine, theirs], principal_ids=[founder, target, other_founder])
 
     def test_the_app_connection_cannot_update_a_membership_outside_the_selected_workspace(self):
         """D's UPDATE-side twin, and not a formality — it fails a DIFFERENT way.
@@ -422,10 +423,17 @@ class TestGrantAndRevoke:
         """
         founder_a = _principal()
         target = _principal()
+        # Captured, not inlined: an earlier version passed `_principal()` directly
+        # as this argument, which creates the row but discards the only reference
+        # to its id — `_cleanup()` below could never be given it, so every run of
+        # this test leaked one `principal` row into the shared database. Found by
+        # bisecting an unrelated row-count anomaly across a full-file test run,
+        # not by inspection — it had been leaking silently before this fix.
+        founder_b = _principal()
         ws_a = ws_b = None
         try:
             ws_a = workspaces.create_workspace("Cross A", None, founder_a)
-            ws_b = workspaces.create_workspace("Cross B", None, _principal())
+            ws_b = workspaces.create_workspace("Cross B", None, founder_b)
 
             with pytest.raises(identity.PrincipalNotFound):
                 workspaces.grant_membership(
@@ -448,7 +456,7 @@ class TestGrantAndRevoke:
             )
             assert events == []
         finally:
-            _cleanup(workspace_ids=[ws_a, ws_b], principal_ids=[founder_a, target])
+            _cleanup(workspace_ids=[ws_a, ws_b], principal_ids=[founder_a, founder_b, target])
 
     def test_revoking_sets_active_false_not_a_delete(self):
         founder = _principal()
