@@ -243,3 +243,46 @@ class TestTheGoldSetStaysTraceable:
             f"{len(questions)} distinct question(s). It measures one behaviour "
             f"however many rows it has."
         )
+
+
+class TestPublishedNumbersDeclareWhatTheyMeasured:
+    """A metric in the README is a claim about a moment, not a standing fact.
+
+    The eval table was measured on a 29-item gold set, most recently 2026-07-20.
+    The set has held 36 items since 2026-08-23 and 46 since 2026-09-06. The numbers
+    were never wrong; they simply stopped describing the current set, and nothing
+    on the page said so for six weeks.
+
+    This does not force a re-run — re-running is a decision with a cost, and the
+    figures are legitimately citable as long as they say what they measured. It
+    forces the README to keep *saying* it.
+    """
+
+    def test_the_eval_table_carries_a_provenance_note(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        assert "Candidate recall — right entity offered" in readme, (
+            "The eval table moved or was renamed; this test no longer guards it."
+        )
+        table_at = readme.index("Candidate recall — right entity offered")
+        window = readme[table_at : table_at + 1600]
+        assert "Provenance" in window, (
+            "The eval table has no provenance note within 1600 characters of it. "
+            "Every figure there is a claim about one run on one gold set; without a "
+            "note saying which, a reader reasonably assumes it describes the set as "
+            "it stands today. Restore the note or re-run and update both."
+        )
+        assert "results-v2.csv" in window, (
+            "The provenance note does not name the results file the figures come "
+            "from, so a reader cannot check them."
+        )
+
+    def test_provenance_note_states_a_gold_set_size(self):
+        """A date alone is not enough — the size is what makes the denominators
+        interpretable, and the size is what changed."""
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        table_at = readme.index("Candidate recall — right entity offered")
+        window = readme[table_at : table_at + 1600]
+        assert re.search(r"\*\*\d+-item\*\*|\b\d+-item\b", window), (
+            "The provenance note gives no gold-set size. '81% (17/21)' means "
+            "something different on a 29-item set than on a 46-item one."
+        )

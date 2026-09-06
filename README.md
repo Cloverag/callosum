@@ -70,6 +70,17 @@ where intuition said:
 | Traversal — given correct grounding | **100%** |
 | Grounding precision — abstain when there is no referent | **50%** (1/2) |
 
+> **Provenance.** These figures come from the runs recorded in `eval/results-v2.csv`,
+> the most recent dated **2026-07-20**, measured on a **29-item** gold set. `eval/gold.jsonl`
+> has held **36 items since 2026-08-23** and 46 since 2026-09-06, so seven questions
+> present in the set today — `E4 L4 C3 T5 E5 N3 D3` — have never been measured, and
+> neither have the clearance items added in #204/#205.
+>
+> The numbers are correct for what they measured. They are **not** current, and the
+> denominators are the honest reason to be careful with the last row: grounding precision
+> is one item out of two. The gold set now carries four abstention negatives, so that
+> row's denominator doubles the moment it is re-run. See `eval/gap-analysis.md` and #203.
+
 **All the loss is in one stage.** The right entity was offered every single time, and
 traversal never failed once seeded — so the bottleneck is *named entity linking*, not the
 graph. That measurement is why a planned abstention algorithm was never built: the
@@ -319,7 +330,9 @@ Stated because a limitation a reader finds is worth less than one they are told.
   corpus could not exercise the bug.**
 - **Accessibility is designed, not audited.** Built to WCAG 2.2 AA as a hard floor; the
   verification checkpoint was deferred.
-- **Grounding precision is 50%** on abstention negatives — the linker does not reliably
+- **Grounding precision is 50%** on abstention negatives — one item out of two, on the
+  2026-07-20 run; the set now holds four such negatives and this has not been re-measured
+  — the linker does not reliably
   refuse a question with no referent in the graph. The weakest measured number here.
 - **CI runs the gated suite, and it is younger than most of this document.**
   `.github/workflows/ci.yml` builds Postgres and Neo4j as services, applies
