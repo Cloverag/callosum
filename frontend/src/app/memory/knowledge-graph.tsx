@@ -18,6 +18,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { useForceLayout } from "./force-layout";
 import { hierarchyLayout } from "./hierarchy-layout";
+import { DURATION } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -186,7 +187,11 @@ export function KnowledgeGraph({
   const [hovered, setHovered] = useState<string | null>(null);
 
   const refit = useCallback(() => {
-    rf.current?.fitView({ padding: 0.16, duration: 600 });
+    // The viewport glide is a state change, so it takes the `state` token like
+    // every other one. React Flow counts in milliseconds and the token is in
+    // seconds — the conversion belongs here rather than as a second literal, which
+    // is exactly what `__tests__/motion-contract.test.ts` exists to prevent.
+    rf.current?.fitView({ padding: 0.16, duration: DURATION.state * 1000 });
   }, []);
 
   const layout = useForceLayout(view.nodes, view.edges, refit, mode === "force");
