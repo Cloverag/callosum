@@ -5,6 +5,7 @@ import {
   ReactFlow,
   Background,
   Controls,
+  MarkerType,
   Panel,
   useNodesState,
   Handle,
@@ -174,6 +175,15 @@ export function KnowledgeGraph({
   // force-layout.ts for why the frozen layout had to go.
   const rf = useRef<ReactFlowInstance<Node<NodePayload>, Edge> | null>(null);
   const [mode, setMode] = useState<LayoutMode>("force");
+  /**
+   * The edge under the cursor.
+   *
+   * Edges used to render nothing at all until a node was selected: no direction,
+   * no relation, no evidence — forty identical grey lines. Everything the edge
+   * knows was already in the data (`relation`, and the verbatim `quote` this page
+   * promises in its own subtitle) and none of it reached the screen.
+   */
+  const [hovered, setHovered] = useState<string | null>(null);
 
   const refit = useCallback(() => {
     rf.current?.fitView({ padding: 0.16, duration: 600 });
@@ -267,12 +277,28 @@ export function KnowledgeGraph({
               : matched;
         const onPath =
           selected !== null ? e.source === selected || e.target === selected : matched;
+        const isHovered = hovered === e.id;
+        // Emphasised whenever it is on the selected path OR under the cursor.
+        const hot = onPath || isHovered;
         return {
           id: e.id,
           source: e.source,
           target: e.target,
           type: "straight",
-          label: onPath ? e.relation : undefined,
+          // The invisible hit area. Default 20 makes a 1px line fiddly to hover
+          // on purpose, and the hover is now the only way to read an edge.
+          interactionWidth: 30,
+          // Direction is the semantic content of this graph — Person APPROVED
+          // Decision, Decision MADE_IN Meeting — and an undirected line throws it
+          // away. Every edge gets an arrowhead, sized to stay legible at the ~0.5
+          // zoom the layouts settle at.
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            width: 16,
+            height: 16,
+            color: hot ? "var(--accent)" : "var(--border-strong)",
+          },
+          label: hot ? e.relation : undefined,
           labelShowBg: true,
           labelBgPadding: [4, 2] as [number, number],
           labelBgStyle: { fill: "var(--surface-raised)" },
@@ -282,14 +308,29 @@ export function KnowledgeGraph({
             letterSpacing: "0.04em",
           },
           style: {
-            stroke: onPath ? "var(--accent)" : "var(--border-strong)",
-            strokeWidth: onPath ? 1.75 : 1,
-            opacity: lit ? 1 : 0.15,
+            stroke: hot ? "var(--accent)" : "var(--border-strong)",
+            strokeWidth: hot ? 1.75 : 1,
+            opacity: lit || isHovered ? 1 : 0.15,
           },
         };
       }),
-    [view.edges, neighbours, selected, focus, focusEdges]
+    [view.edges, neighbours, selected, focus, focusEdges, hovered]
   );
+
+  /** The hovered edge, resolved to labels its readout can show. */
+  const hoveredEdge = useMemo(() => {
+    if (!hovered) return null;
+    const e = view.edges.find((x) => x.id === hovered);
+    if (!e) return null;
+    const label = (id: string) => view.nodes.find((n) => n.id === id)?.label ?? id;
+    return {
+      relation: e.relation,
+      quote: e.quote,
+      document: e.document,
+      sourceLabel: label(e.source),
+      targetLabel: label(e.target),
+    };
+  }, [hovered, view.edges, view.nodes]);
 
   const handleNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => onSelect(node.id),
@@ -304,6 +345,9 @@ export function KnowledgeGraph({
         nodeTypes={nodeTypes}
         onNodeClick={handleNodeClick}
         onPaneClick={() => onSelect(null)}
+        onEdgeMouseEnter={(_, edge) => setHovered(edge.id)}
+        onEdgeMouseLeave={() => setHovered(null)}
+
         onNodesChange={onNodesChange}
         onInit={(instance) => {
           rf.current = instance;
@@ -330,6 +374,31 @@ export function KnowledgeGraph({
         edgesFocusable={false}
         className="[&_.react-flow\_\_pane]:cursor-grab"
       >
+        {/*
+          What the hovered edge asserts, and the sentence it came from.
+
+          This page's subtitle is "Every relationship carries the quote it came
+          from. No quote, no edge." That promise was only redeemable by selecting a
+          node and reading the side panel; the edges themselves stated nothing. A
+          hover is the cheapest gesture that can answer "what is this line?".
+        */}
+        {hoveredEdge && (
+          <Panel position="bottom-center" className="!mb-3 max-w-[26rem]">
+            <div className="pointer-events-none rounded-[12px] border border-border bg-surface-raised/95 p-3 shadow-card backdrop-blur-sm">
+              <p className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
+                {hoveredEdge.sourceLabel}
+                <span className="mx-1.5 text-accent">{hoveredEdge.relation}</span>
+                {hoveredEdge.targetLabel}
+              </p>
+              <p className="mt-2 border-l-2 border-accent-border pl-2.5 text-xs italic leading-relaxed text-foreground">
+                &ldquo;{hoveredEdge.quote}&rdquo;
+              </p>
+              <p className="mt-2 text-[11px] text-subtle-foreground">
+                {hoveredEdge.document}
+              </p>
+            </div>
+          </Panel>
+        )}
         <Panel position="top-right" className="!m-2">
           <div
             role="group"
