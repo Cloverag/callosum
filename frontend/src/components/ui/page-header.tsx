@@ -13,7 +13,16 @@ export interface PageHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
 export function PageHeader({ title, description, icon, actions, className, ...props }: PageHeaderProps) {
   return (
     <div
-      className={cn("flex items-start justify-between gap-4 border-b border-border pb-4", className)}
+      className={cn(
+        // Below `lg`: title and actions stack, and the actions row is allowed to
+        // wrap — several pages (calendar especially) carry a view switcher plus
+        // date nav plus a create button that is ~600px of controls and cannot
+        // share a row with the title on a phone or a tablet. At `lg` and up this
+        // is exactly the row it always was.
+        "flex flex-col gap-4 border-b border-border pb-4",
+        "lg:flex-row lg:items-start lg:justify-between",
+        className,
+      )}
       {...props}
     >
       <div className="flex items-start gap-3">
@@ -32,7 +41,9 @@ export function PageHeader({ title, description, icon, actions, className, ...pr
           )}
         </div>
       </div>
-      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+      {actions && (
+        <div className="flex flex-wrap items-center gap-2 lg:shrink-0 lg:flex-nowrap">{actions}</div>
+      )}
     </div>
   );
 }
