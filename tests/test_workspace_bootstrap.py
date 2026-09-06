@@ -377,6 +377,18 @@ class TestGrantAndRevoke:
                 (newcomer, ws),
             )
             assert rows == []
+
+            # 6A: a refusal must leave no COMMITTED audit trail either. Read from a
+            # fresh admin connection after `grant_membership` has already returned
+            # (raised, in this case) — `_admin_fetch` opens its own connection per
+            # call, so this can only see what actually committed, never a row still
+            # sitting inside the transaction `grant_membership` just rolled back.
+            events = _admin_fetch(
+                "SELECT 1 FROM audit_event"
+                " WHERE workspace_id = %s AND aggregate_type = 'membership' AND aggregate_id = %s",
+                (ws, newcomer),
+            )
+            assert events == []
         finally:
             _cleanup(workspace_ids=[ws], principal_ids=[founder, director, newcomer])
 
@@ -426,6 +438,15 @@ class TestGrantAndRevoke:
                 (target, ws_b),
             )
             assert survivors == []
+
+            # 6A: same invariant as F — refused means no committed audit event
+            # either, checked from a fresh admin connection after the raise.
+            events = _admin_fetch(
+                "SELECT 1 FROM audit_event"
+                " WHERE workspace_id = %s AND aggregate_type = 'membership' AND aggregate_id = %s",
+                (ws_b, target),
+            )
+            assert events == []
         finally:
             _cleanup(workspace_ids=[ws_a, ws_b], principal_ids=[founder_a, target])
 
@@ -723,6 +744,19 @@ class TestGrantAndRevoke:
                 (director, ws),
             )[0]
             assert row["active"] is True
+
+            # 6A, third site. The issue names "two existing tests" needing this
+            # addition (F and G, both on the grant side); this revoke-side
+            # escalation refusal is structurally identical — the clearance check
+            # raises before `revoke_membership` ever reaches `record_audit_event`
+            # — so the same invariant applies here too. Adding it rather than
+            # silently matching the stated count of two.
+            events = _admin_fetch(
+                "SELECT 1 FROM audit_event"
+                " WHERE workspace_id = %s AND aggregate_type = 'membership' AND aggregate_id = %s",
+                (ws, director),
+            )
+            assert events == []
         finally:
             _cleanup(workspace_ids=[ws], principal_ids=[founder, advisor, director])
 
