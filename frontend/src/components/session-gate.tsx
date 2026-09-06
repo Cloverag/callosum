@@ -9,6 +9,12 @@ import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/http";
 import { serverMessage } from "@/lib/error-text";
 import { authApi, LOGIN_URL, type AuthContext } from "@/lib/auth";
+import {
+  listDemoIdentities,
+  selectDemoIdentity,
+  type DemoIdentity,
+  type DemoIdentityOption,
+} from "@/lib/demo";
 import { transition } from "@/lib/motion";
 
 /**
@@ -205,7 +211,7 @@ export function SessionGate({ children }: { children: ReactNode }) {
     <div className="grid h-screen place-items-center bg-surface px-6">
       <Panel>
         {state.phase === "signed-out" ? (
-          <SignedOut />
+          <SignedOut onSelected={check} />
         ) : state.phase === "needs-workspace" ? (
           <ChooseWorkspace onSelected={check} stale={state.stale} />
         ) : (
@@ -239,21 +245,94 @@ function Panel({ children }: { children: ReactNode }) {
   );
 }
 
-function SignedOut() {
+/**
+ * The signed-out screen, which has to offer the way in that this deployment
+ * actually has.
+ *
+ * On a deployment with an identity provider that is OIDC, and the Sign in button
+ * below is correct. On the public demo there is no IdP — Keycloak is cut, and
+ * `MERIDIAN_OIDC_ISSUER` is deliberately unset — so `/auth/login` answers
+ *
+ *     503 "Authentication is not configured on this server."
+ *
+ * and the only control on the page led straight to it. The way in was `/demo`, a
+ * route a visitor had no reason to guess. `meridian/api/demo.py` says as much in
+ * its own docstring: the selector REPLACES the identity assertion an IdP would
+ * provide. So it belongs here, on the sign-in screen, not on a page behind it.
+ *
+ * Which one renders is decided by the server, not by a build flag: a deployment
+ * with the selector disabled answers 404 to `/auth/demo/identities` — deliberately
+ * indistinguishable from "no such route", so a real deployment never advertises an
+ * impersonation endpoint — and this falls back to OIDC unchanged.
+ */
+function SignedOut({ onSelected }: { onSelected: () => void }) {
+  const [options, setOptions] = useState<DemoIdentityOption[] | null>(null);
+  const [busy, setBusy] = useState<DemoIdentity | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    listDemoIdentities().then((o) => live && setOptions(o));
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const choose = async (identity: DemoIdentity) => {
+    setBusy(identity);
+    setFailed(false);
+    try {
+      await selectDemoIdentity(identity);
+      onSelected();
+    } catch {
+      setFailed(true);
+      setBusy(null);
+    }
+  };
+
   return (
     <>
       <h1 className="text-lg font-semibold text-foreground">Meridian</h1>
       <p className="mt-1 text-sm text-muted-foreground">
         The governed institutional-memory layer for startup boards.
       </p>
-      <p className="mt-6 text-sm text-foreground">Sign in to continue.</p>
-      {/*
-        A full navigation, not a fetch. The OIDC flow redirects to the identity
-        provider and back, which an XHR cannot follow.
-      */}
-      <Button className="mt-4 w-full" onClick={() => { window.location.href = LOGIN_URL; }}>
-        Sign in
-      </Button>
+
+      {options && options.length > 0 ? (
+        <>
+          <p className="mt-6 text-sm text-foreground">Continue as one of the demo board members.</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            The same request returns different material depending on who you are.
+          </p>
+          <div className="mt-4 flex flex-col gap-2">
+            {options.map((o) => (
+              <Button
+                key={o.symbol}
+                className="w-full"
+                disabled={busy !== null}
+                onClick={() => void choose(o.symbol)}
+              >
+                {busy === o.symbol ? "Signing in…" : o.label}
+              </Button>
+            ))}
+          </div>
+          {failed && (
+            <p className="mt-3 text-xs text-destructive-foreground">
+              That did not work. Try again, or reload the page.
+            </p>
+          )}
+        </>
+      ) : (
+        <>
+          <p className="mt-6 text-sm text-foreground">Sign in to continue.</p>
+          {/*
+            A full navigation, not a fetch. The OIDC flow redirects to the identity
+            provider and back, which an XHR cannot follow.
+          */}
+          <Button className="mt-4 w-full" onClick={() => { window.location.href = LOGIN_URL; }}>
+            Sign in
+          </Button>
+        </>
+      )}
     </>
   );
 }
