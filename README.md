@@ -18,6 +18,38 @@ between them is the whole idea.
 
 ---
 
+## Try it — live demo
+
+**[callosum-demo.vercel.app/demo](https://callosum-demo.vercel.app/demo)**
+
+No sign-up. Pick one of three seeded identities and watch the same request return
+different material:
+
+| You are | Documents in the pack | Withheld |
+|---|---|---|
+| Raj Malhotra — founder, clearance 4 | 3 | 0 |
+| Priya Nair — exec, clearance 3 | 3 | 0 |
+| Marcus Webb — investor, clearance 1 | **2** | **1** |
+
+Founder and exec are deliberately identical — the restricted document is sensitivity 3
+and exec clearance is 3, and the filter is `<=`. The investor is the demo.
+
+Nothing is precomputed and no answer is cached. Every request runs the real
+authorization path: the session resolves a principal through a JOIN on an **active**
+membership, clearance is derived from `membership.role`, tenancy is enforced by
+Postgres row-level security, and the sensitivity filter runs in SQL. The withheld
+**count** is disclosed and the withheld **title** never is — restricted rows are
+filtered before retrieval rather than hidden afterwards.
+
+The API runs on a 2008 Core 2 Duo behind a Cloudflare tunnel; the frontend is on
+Vercel and proxies to it, so the browser only ever talks to one origin.
+
+> The identity selector is an impersonation endpoint, deliberately. It is safe there
+> and only there because that deployment serves fabricated board minutes and nothing
+> else. See `docs/deploy/DEMO_AUTH_SPEC.md`.
+
+---
+
 ## The measured claim
 
 The graph is not decoration on a vector store. Its contribution is isolated by ablation,

@@ -1,17 +1,24 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ReactFlow,
   Background,
   Controls,
+  MarkerType,
+  Panel,
+  useNodesState,
   Handle,
   Position,
   type Edge,
   type Node,
   type NodeProps,
+  type ReactFlowInstance,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { useForceLayout } from "./force-layout";
+import { hierarchyLayout } from "./hierarchy-layout";
+import { DURATION } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -34,6 +41,8 @@ import {
  *
  * SIZE encodes degree, so hubs read before labels are legible.
  */
+
+export type LayoutMode = "force" | "hierarchy";
 
 type NodePayload = { node: GraphNodeData; state: "normal" | "focus" | "dim" } & Record<
   string,
@@ -162,19 +171,104 @@ export function KnowledgeGraph({
     return set;
   }, [selected, focus, focusEdges, view.edges, view.nodes]);
 
-  const nodes: Node<NodePayload>[] = useMemo(
-    () =>
+  // Positions come from a live simulation, not from `n.x` / `n.y`. Those baked
+  // coordinates are still on the type for now but are no longer read here — see
+  // force-layout.ts for why the frozen layout had to go.
+  const rf = useRef<ReactFlowInstance<Node<NodePayload>, Edge> | null>(null);
+  const [mode, setMode] = useState<LayoutMode>("force");
+  /**
+   * The edge under the cursor.
+   *
+   * Edges used to render nothing at all until a node was selected: no direction,
+   * no relation, no evidence — forty identical grey lines. Everything the edge
+   * knows was already in the data (`relation`, and the verbatim `quote` this page
+   * promises in its own subtitle) and none of it reached the screen.
+   */
+  const [hovered, setHovered] = useState<string | null>(null);
+
+  const refit = useCallback(() => {
+    // The viewport glide is a state change, so it takes the `state` token like
+    // every other one. React Flow counts in milliseconds and the token is in
+    // seconds — the conversion belongs here rather than as a second literal, which
+    // is exactly what `__tests__/motion-contract.test.ts` exists to prevent.
+    rf.current?.fitView({ padding: 0.16, duration: DURATION.state * 1000 });
+  }, []);
+
+  const layout = useForceLayout(view.nodes, view.edges, refit, mode === "force");
+
+  // Recomputed only when the graph or the mode changes: dagre is deterministic,
+  // so the layered picture is stable across renders without being baked anywhere.
+  const ranked = useMemo(
+    () => (mode === "hierarchy" ? hierarchyLayout(view.nodes, view.edges) : null),
+    [mode, view.nodes, view.edges]
+  );
+
+  /**
+   * Frame the picture on every mode change.
+   *
+   * Dagre lands in one shot, so the layered view can be fitted immediately. The
+   * simulation cannot — it needs time to expand from its seed ring — and relying
+   * on its `end` event alone is not enough here: switching back to Clusters builds
+   * a fresh simulation whose extent is nothing like dagre's, and until it settles
+   * the viewport keeps the layered zoom and shows a third of the graph. So fit
+   * once now for the layered case, and again after the simulation has had time to
+   * spread for the force case.
+   */
+  useEffect(() => {
+    const timers =
+      mode === "hierarchy"
+        ? [setTimeout(refit, 60)]
+        : [setTimeout(refit, 900), setTimeout(refit, 2200)];
+    return () => timers.forEach(clearTimeout);
+  }, [mode, ranked, refit]);
+
+  /**
+   * React Flow owns the node array; the layouts own only `position`.
+   *
+   * This used to be a plain `useMemo` with `onNodesChange={() => {}}`, on the
+   * reasoning that positions come from the layout so React Flow had nothing to
+   * apply. That was wrong. React Flow v12 reports MEASUREMENT through the same
+   * change stream — dropping it leaves every node flagged uninitialised, which
+   * logs error #015 on drag and, worse, leaves `fitView` computing bounds from
+   * nodes of unknown size. The visible symptom is the whole graph vanishing: the
+   * viewport is parked somewhere the nodes are not.
+   *
+   * So changes are applied normally, and the layouts write positions on top.
+   */
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node<NodePayload>>([]);
+
+  // Structure: only when the node set itself changes (a different clearance view).
+  useEffect(() => {
+    setNodes(
       view.nodes.map((n) => ({
         id: n.id,
         type: "memory",
-        position: { x: n.x, y: n.y },
+        position: { x: 0, y: 0 },
+        data: { node: n, state: "normal" } as NodePayload,
+      }))
+    );
+  }, [view.nodes, setNodes]);
+
+  // Position: every simulation tick, and once per layered recompute. Spreading
+  // the existing node preserves `measured`, which is the whole point above.
+  useEffect(() => {
+    setNodes((current) =>
+      current.map((n) => ({ ...n, position: ranked?.get(n.id) ?? layout.positionOf(n.id) }))
+    );
+  }, [layout.tick, ranked, layout, setNodes]);
+
+  // Emphasis: selection and filtering, independent of both layouts.
+  useEffect(() => {
+    setNodes((current) =>
+      current.map((n) => ({
+        ...n,
         data: {
-          node: n,
+          ...n.data,
           state: !neighbours ? "normal" : neighbours.has(n.id) ? "focus" : "dim",
         } as NodePayload,
-      })),
-    [view.nodes, neighbours]
-  );
+      }))
+    );
+  }, [neighbours, setNodes]);
 
   const edges: Edge[] = useMemo(
     () =>
@@ -188,12 +282,28 @@ export function KnowledgeGraph({
               : matched;
         const onPath =
           selected !== null ? e.source === selected || e.target === selected : matched;
+        const isHovered = hovered === e.id;
+        // Emphasised whenever it is on the selected path OR under the cursor.
+        const hot = onPath || isHovered;
         return {
           id: e.id,
           source: e.source,
           target: e.target,
           type: "straight",
-          label: onPath ? e.relation : undefined,
+          // The invisible hit area. Default 20 makes a 1px line fiddly to hover
+          // on purpose, and the hover is now the only way to read an edge.
+          interactionWidth: 30,
+          // Direction is the semantic content of this graph — Person APPROVED
+          // Decision, Decision MADE_IN Meeting — and an undirected line throws it
+          // away. Every edge gets an arrowhead, sized to stay legible at the ~0.5
+          // zoom the layouts settle at.
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            width: 16,
+            height: 16,
+            color: hot ? "var(--accent)" : "var(--border-strong)",
+          },
+          label: hot ? e.relation : undefined,
           labelShowBg: true,
           labelBgPadding: [4, 2] as [number, number],
           labelBgStyle: { fill: "var(--surface-raised)" },
@@ -203,14 +313,29 @@ export function KnowledgeGraph({
             letterSpacing: "0.04em",
           },
           style: {
-            stroke: onPath ? "var(--accent)" : "var(--border-strong)",
-            strokeWidth: onPath ? 1.75 : 1,
-            opacity: lit ? 1 : 0.15,
+            stroke: hot ? "var(--accent)" : "var(--border-strong)",
+            strokeWidth: hot ? 1.75 : 1,
+            opacity: lit || isHovered ? 1 : 0.15,
           },
         };
       }),
-    [view.edges, neighbours, selected, focus, focusEdges]
+    [view.edges, neighbours, selected, focus, focusEdges, hovered]
   );
+
+  /** The hovered edge, resolved to labels its readout can show. */
+  const hoveredEdge = useMemo(() => {
+    if (!hovered) return null;
+    const e = view.edges.find((x) => x.id === hovered);
+    if (!e) return null;
+    const label = (id: string) => view.nodes.find((n) => n.id === id)?.label ?? id;
+    return {
+      relation: e.relation,
+      quote: e.quote,
+      document: e.document,
+      sourceLabel: label(e.source),
+      targetLabel: label(e.target),
+    };
+  }, [hovered, view.edges, view.nodes]);
 
   const handleNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => onSelect(node.id),
@@ -225,6 +350,26 @@ export function KnowledgeGraph({
         nodeTypes={nodeTypes}
         onNodeClick={handleNodeClick}
         onPaneClick={() => onSelect(null)}
+        onEdgeMouseEnter={(_, edge) => setHovered(edge.id)}
+        onEdgeMouseLeave={() => setHovered(null)}
+
+        onNodesChange={onNodesChange}
+        onInit={(instance) => {
+          rf.current = instance;
+        }}
+        // React Flow pans the canvas to chase a node dragged toward the pane edge.
+        // That default assumes a fixed layout, where the node stays where it is
+        // dropped and following it is correct. Under a simulation the node springs
+        // back to wherever the forces put it, and the camera is left looking at
+        // empty space — the graph appears to vanish permanently after one firm drag.
+        autoPanOnNodeDrag={false}
+        // Dragging is a simulation gesture: it pins a node and re-heats the forces.
+        // Under the layered layout dagre owns every position, so a drag would move
+        // a node that snaps straight back — worse than not offering it.
+        nodesDraggable={mode === "force"}
+        onNodeDragStart={(_, node) => layout.onDragStart(node.id)}
+        onNodeDrag={(_, node) => layout.onDrag(node.id, node.position)}
+        onNodeDragStop={(_, node) => layout.onDragStop(node.id)}
         fitView
         fitViewOptions={{ padding: 0.16 }}
         minZoom={0.3}
@@ -234,6 +379,60 @@ export function KnowledgeGraph({
         edgesFocusable={false}
         className="[&_.react-flow\_\_pane]:cursor-grab"
       >
+        {/*
+          What the hovered edge asserts, and the sentence it came from.
+
+          This page's subtitle is "Every relationship carries the quote it came
+          from. No quote, no edge." That promise was only redeemable by selecting a
+          node and reading the side panel; the edges themselves stated nothing. A
+          hover is the cheapest gesture that can answer "what is this line?".
+        */}
+        {hoveredEdge && (
+          <Panel position="bottom-center" className="!mb-3 max-w-[26rem]">
+            <div className="pointer-events-none rounded-[12px] border border-border bg-surface-raised/95 p-3 shadow-card backdrop-blur-sm">
+              <p className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
+                {hoveredEdge.sourceLabel}
+                <span className="mx-1.5 text-accent">{hoveredEdge.relation}</span>
+                {hoveredEdge.targetLabel}
+              </p>
+              <p className="mt-2 border-l-2 border-accent-border pl-2.5 text-xs italic leading-relaxed text-foreground">
+                &ldquo;{hoveredEdge.quote}&rdquo;
+              </p>
+              <p className="mt-2 text-[11px] text-subtle-foreground">
+                {hoveredEdge.document}
+              </p>
+            </div>
+          </Panel>
+        )}
+        <Panel position="top-right" className="!m-2">
+          <div
+            role="group"
+            aria-label="Graph layout"
+            className="flex overflow-hidden rounded-[10px] border border-border bg-surface-raised text-xs shadow-card"
+          >
+            {(
+              [
+                ["force", "Clusters"],
+                ["hierarchy", "Hierarchy"],
+              ] as [LayoutMode, string][]
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setMode(value)}
+                aria-pressed={mode === value}
+                className={cn(
+                  "px-3 py-1.5 transition-colors",
+                  mode === value
+                    ? "bg-accent-subtle font-medium text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </Panel>
         <Background gap={22} size={1} color="var(--border)" />
         <Controls showInteractive={false} className="!shadow-card" />
       </ReactFlow>

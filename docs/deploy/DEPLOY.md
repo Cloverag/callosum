@@ -8,16 +8,19 @@ Files in this directory go to the repo root, except `entrypoint.sh` -> `docker/e
 
 ---
 
-## 0. Before anything: the auth bypass
+## 0. Before anything: the auth bypass — FIXED, keep the pin anyway
 
-`meridian/api/deps.py:78` reads `ENVIRONMENT` with a **`development` default** and treats
-any non-production value as eligible for the `MERIDIAN_DEV_AUTO_AUTH` bypass, which logs
-the caller in as the first principal — Raj Malhotra, founder, clearance 4.
+**Historical, and resolved.** `meridian/api/deps.py` used to read `ENVIRONMENT` with a
+`development` default and treat any non-production value as eligible for the
+`MERIDIAN_DEV_AUTO_AUTH` bypass, which logged the caller in as the first principal — Raj
+Malhotra, founder, clearance 4. That was issue #191, fixed in #192: the default is now
+fail-closed and auto-auth requires `ENVIRONMENT` to be one of an explicit allowlist
+(`development`, `test`, `local`) *and* the flag to be truthy.
 
-`docker-compose.demo.yml` pins `ENVIRONMENT=production` on the api service. **That line is
-the only thing standing between this deploy and anonymous founder access.** Verify it
-after every compose edit (step 6 has the check). The real fix — inverting the default to
-fail-closed — is a backend change and belongs to Devguru.
+`docker-compose.demo.yml` still pins `ENVIRONMENT=production` on the api service. It is now
+genuine belt-and-braces rather than the only thing holding the line. Keep it — it costs
+nothing and it means the deployment does not depend on the fix staying correct — and keep
+verifying it (check 1 in step 6).
 
 ---
 
@@ -26,24 +29,70 @@ fail-closed — is a backend change and belongs to Devguru.
 A Core 2 Duo compiling `psycopg` and `pydantic-core` wheels takes tens of minutes.
 
     docker build -f Dockerfile.api -t callosum-api:demo .
-    docker save callosum-api:demo | gzip | ssh cloverssd@100.108.100.108 'gunzip | docker load'
+    docker save callosum-api:demo | gzip -1 > callosum-api-demo.tar.gz
+    scp callosum-api-demo.tar.gz cloverssd@100.108.100.108:~/callosum-demo/dumps/
+    ssh cloverssd@100.108.100.108 'gunzip -c ~/callosum-demo/dumps/callosum-api-demo.tar.gz | docker load'
 
-Then in `docker-compose.demo.yml`, swap `build:` for `image: callosum-api:demo` so the
-server never tries to build.
+**No swap needed.** `docker-compose.demo.yml` sets `image: callosum-api:demo` *and*
+`build:`. Compose starts the tag when it exists and builds only when it does not, so the
+server never builds and a dev machine still does — one file, no per-environment editing.
+
+`.dockerignore` matters here. Without it the build context is **1.8 GB** (`.venv` 323 MB,
+`frontend/node_modules` 786 MB, none of it COPYed by `Dockerfile.api`) and the build looks
+hung before it runs an instruction. With it: 14 MB.
 
 ## 2. Precompute the data on your main machine
 
-No AVX on the server: nothing may embed there. Ingest the corpus locally, then ship the
-result.
+The server cannot run the scientific stack **at all** — see "The CPU is x86-64-v1" below.
+It is not merely that it cannot embed. Ingest the corpus locally and ship the result.
 
-    # local
-    callosum init && callosum ingest-doc ...        # whatever the demo corpus is
-    pg_dump "$POSTGRES_DSN" -Fc -f callosum.dump
-    docker exec callosum-neo4j neo4j-admin database dump neo4j --to-path=/data
-    scp callosum.dump  cloverssd@100.108.100.108:~/
-    scp neo4j.dump     cloverssd@100.108.100.108:~/
+Postgres dumps online:
 
-Restore on the server after step 4 brings the volumes up.
+    docker exec callosum-postgres pg_dump -U callosum -d callosum -Fc -f /tmp/callosum.dump
+    docker cp callosum-postgres:/tmp/callosum.dump ./callosum.dump
+
+**Neo4j does not.** `neo4j-admin database dump` on a running instance fails —
+
+    Failed to dump database 'neo4j': The database is in use. Stop database 'neo4j' and try again.
+
+— and Neo4j 5 **community** has no `STOP DATABASE`. Dumping to a host bind-mount fails
+too (`AccessDeniedException: /dump`): the container is uid 7474, your directory is 1000.
+Stop the container, dump from a one-shot container onto the volume, restart, copy out:
+
+    docker stop callosum-neo4j
+    docker run --rm -v callosum_neo4jdata:/data neo4j:5-community \
+      neo4j-admin database dump neo4j --to-path=/data --overwrite-destination=true
+    docker start callosum-neo4j
+    docker run --rm -v callosum_neo4jdata:/data -v "$PWD":/out --user "$(id -u):$(id -g)" \
+      busybox cp /data/neo4j.dump /out/neo4j.dump
+    docker run --rm -v callosum_neo4jdata:/data busybox rm -f /data/neo4j.dump
+
+Ship the dumps **and `schema/`** — `docker-compose.demo.yml` bind-mounts
+`./schema/postgres.sql` as the Postgres init script. A bind mount whose source is missing
+is created by Docker as an empty *directory*, and Postgres then fails to start with an
+error that says nothing about a missing file.
+
+    scp callosum.dump neo4j.dump cloverssd@...:~/callosum-demo/dumps/
+    scp docker-compose.demo.yml .env.demo cloverssd@...:~/callosum-demo/
+    scp -r schema cloverssd@...:~/callosum-demo/
+
+### The CPU is x86-64-v1
+
+The host is an **Intel Core 2 Duo E7500**: `ssse3 sse4_1`, no `sse4_2`, no `popcnt`. NumPy's
+manylinux wheels are built with an **x86-64-v2** baseline and refuse to import:
+
+    RuntimeError: NumPy was built with baseline optimizations:
+    (X86_V2) but your machine doesn't support: (X86_V2).
+
+That is a `RuntimeError`, not an `ImportError`, so the `try/except ImportError` around
+`neo4j._optional_deps`' optional numpy import does not catch it. **Importing the Neo4j
+driver kills the process and the API crash-loops before serving a request.**
+
+`Dockerfile.api` therefore builds numpy from source for a baseline target before installing
+the project. Do not "fix" this by uninstalling numpy — it would work, since nothing in
+`src/callosum` or `meridian` imports it and its only hard dependant is `voyageai` (which
+this deployment never calls), but removing a wheel to dodge an ISA mismatch leaves every
+other extension module's baseline unverified.
 
 ## 3. Secrets
 
@@ -72,6 +121,25 @@ Add one public hostname on that tunnel:
 `http://api:8000` — the container name on the compose network, not `localhost`.
 cloudflared runs inside the stack, so nothing is published to the host and no inbound
 firewall rule is needed anywhere.
+
+**Or skip the dashboard entirely.** The whole tunnel can be created from the CLI:
+
+    cloudflared tunnel login                 # browser, pick cloverag.dpdns.org
+    cloudflared tunnel create callosum-demo
+    cloudflared tunnel route dns callosum-demo api.cloverag.dpdns.org
+    cloudflared tunnel token callosum-demo   # -> CLOUDFLARE_TUNNEL_TOKEN
+
+A tunnel made this way is **locally-managed and has no remote ingress configuration**, so
+a `--token` run has no route: the connector registers cleanly — four QUIC connections, no
+errors — and the edge answers **503 on every path**. It reads as a backend fault and is
+not one. `docker-compose.demo.yml` passes `--url http://api:8000` for exactly this reason,
+which also makes the dashboard public-hostname step optional. Adding one anyway is
+harmless; remote configuration takes precedence over `--url`.
+
+`route dns` creates a **proxied** CNAME, so it flattens at the edge: `dig CNAME` returns
+`NOERROR` with zero answers while `dig A` returns Cloudflare addresses. The record is
+there. A local resolver that already cached the NXDOMAIN will keep failing for its TTL —
+check against the zone's own nameserver before concluding the record is missing.
 
 ## 5. Bring it up
 
@@ -107,6 +175,13 @@ by every seed and must never be hardcoded:
     docker compose -f docker-compose.demo.yml exec postgres \
       psql -U callosum -d callosum -c 'select count(*) from membership where active'   # => 3
 
+    # KNOWN RED: this reports 15, not 3, after the entrypoint runs `callosum init`.
+    # `cli.py:123` inserts a membership for EVERY row in `principal`, not the three it
+    # seeds, so the 12 board members from seed_demo_board.py — deliberately membership-
+    # less — are all granted access. Tracked in #201. Not a live exposure (the selector
+    # answers 422 to anything but the three symbols) and check 6 is unaffected, but do
+    # not edit this expectation to 15 to make it green.
+
     # 4. nothing is listening on the LAN
     ss -tlnp | grep -E '5433|7687|8000'    # => no output
 
@@ -116,6 +191,59 @@ by every seed and must never be hardcoded:
     # 6. the RBAC gate actually differs by principal — ask the same question as
     #    Marcus (investor, clearance 1) and Raj (founder, clearance 4) and confirm
     #    the answers differ. THIS IS THE DEMO. If it does not differ, nothing else matters.
+
+---
+
+## Verified on the deployed stack — 2026-09-06, master `f21e00d`
+
+Postgres, Neo4j and the API running on the home server; tunnel not yet attached, so the
+HTTP checks were made from inside the compose network.
+
+| # | check | result |
+|---|---|---|
+| 1 | bypass unreachable | `ENVIRONMENT=production`, `APP_ENV=production`, `DEV_AUTO_AUTH` vars: **0** |
+| 2 | anonymous refused | `/api/documents` **401**, `/api/packs/<pack>` **401** |
+| 3 | memberships | **15, expected 3 — RED, see #201** |
+| 4 | nothing on the LAN | `ss -tlnp` empty; 0 published ports |
+| 5 | headroom | 3.8 Gi available, full stack warm |
+| 6 | RBAC differs | **reproduces the baseline exactly** |
+
+    founder   visible=3  withheld_items=0  provider=demo-selector
+    exec      visible=3  withheld_items=0  provider=demo-selector
+    investor  visible=2  withheld_items=1  provider=demo-selector
+
+Containment held: `'admin'`, `'raj@callosum.inc'` and `'FOUNDER'` all answered **422**, and
+the select response carried only `['identity', 'provider']` — no role, no clearance.
+
+Restored state matched the dump exactly: pack `66875926-64d0-495d-ba56-ba6d30462d8f`,
+13 documents, alembic `0029_workspace_bootstrap`, `document` RLS `relrowsecurity=true`
+`relforcerowsecurity=true` with 1 policy, Neo4j 263 nodes.
+
+### Two traps that cost time
+
+**`docker compose exec -T` consumes stdin.** Piping a script to `ssh bash -s` means the
+first `exec -T` swallows the rest of it; the script stops silently and looks like it
+succeeded. Put `</dev/null` on every `exec -T` that is not deliberately being fed.
+
+**Testing over loopback HTTP cannot hold the session.** The cookie is `secure`, and clients
+that honour that (Python's `http.cookiejar`, curl) will not send it over `http://`, so every
+authenticated call returns 401 and looks like an authorization failure. Either go through
+the tunnel or clear the flag **client-side** — never by turning off
+`MERIDIAN_SESSION_HTTPS_ONLY`, which changes what the server issues.
+
+### `callosum_app`'s password is a literal
+
+`0004_app_role.py:33` hardcodes `APP_PASSWORD = "callosum_app"`, guarded by
+`IF NOT EXISTS`, so `POSTGRES_APP_PASSWORD` in `.env.demo` has no effect through the normal
+path — and because roles are cluster-level, a per-database dump does not carry the role at
+all, so `pg_restore` fails on its 41 ACL entries if you do not create it first. Create it
+explicitly, with the generated password, before restoring:
+
+    CREATE ROLE callosum_app LOGIN PASSWORD '<POSTGRES_APP_PASSWORD>'
+        NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+
+`NOSUPERUSER` and `NOBYPASSRLS` are the load-bearing attributes: a superuser bypasses
+`FORCE` RLS unconditionally.
 
 ---
 
@@ -132,10 +260,24 @@ Three known traps, all previously hit on this project:
 2. **Lightning CSS drops unprefixed `backdrop-filter`** in production builds, collapsing it
    to `-webkit-` which current Chrome rejects. This is the first prod build of the glass UI.
    Check it in a real browser, not just `next build`.
-3. **CORS.** The API and frontend are now different origins. `meridian/api/main.py` needs
-   `https://cloverag.dpdns.org` in its allowed origins, and `MERIDIAN_SESSION_HTTPS_ONLY=true`
-   (set in compose) means the session cookie also needs `SameSite=None` to survive a
-   cross-site XHR — otherwise login appears to succeed and every subsequent call is 401.
+3. **CORS does not arise, and neither does `SameSite`.** Both earlier versions of this
+   note were wrong, in opposite directions, and the reason is architectural rather than
+   a matter of configuration.
+
+   `next.config.ts` proxies `/api`, `/auth` and `/health` to `MERIDIAN_API_ORIGIN`
+   server-side, and `lib/http.ts` and `lib/auth.ts` both send
+   `credentials: "same-origin"`. **The browser therefore never makes a cross-origin
+   request** — it only ever talks to the Vercel origin, which forwards to the API. So:
+
+   - `meridian/api/main.py`'s hardcoded `allow_origins` needs no new entry.
+   - The cookie is issued `httponly; samesite=lax; secure` and that is correct on
+     every host, including `*.vercel.app` previews. The earlier claim that previews
+     would 401 was reasoning from a direct-to-API architecture this frontend does not
+     use.
+
+   The variable to set on Vercel is **`MERIDIAN_API_ORIGIN`**, not `NEXT_PUBLIC_API_URL`
+   — the latter is referenced nowhere in the frontend, and setting it produces a demo
+   that fails exactly as though the API were down.
 
 ---
 

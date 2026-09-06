@@ -1,6 +1,7 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import { motion, useReducedMotion } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,6 +9,12 @@ import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/http";
 import { serverMessage } from "@/lib/error-text";
 import { authApi, LOGIN_URL, type AuthContext } from "@/lib/auth";
+import {
+  listDemoIdentities,
+  selectDemoIdentity,
+  type DemoIdentity,
+  type DemoIdentityOption,
+} from "@/lib/demo";
 import { transition } from "@/lib/motion";
 
 /**
@@ -79,8 +86,26 @@ export function useSession(): Session | null {
    claim was never true — and `needs-you.tsx`, cited as the house curve, was
    copying the same wrong value. Both now import the one ease from `lib/motion`. */
 
+/**
+ * The one route that must render without a session.
+ *
+ * `/demo` IS the sign-in for a deployment with no identity provider: it lists the
+ * demo identities and calls `POST /auth/demo/select`, which establishes a real
+ * session through the same `session.establish()` the OIDC callback uses. Gating it
+ * behind `SignedOut` makes it unreachable — the only control there is a Sign in
+ * button pointing at `/auth/login`, which answers 503 when `MERIDIAN_OIDC_ISSUER`
+ * is unset, as it deliberately is on the public demo. The selector was reachable by
+ * curl and by nothing else.
+ *
+ * Rendering it outside the provider is safe: `useSession()` is typed
+ * `Session | null` and its consumers (`Header`, `AssistantRail`) already handle the
+ * null case, because that is the context default.
+ */
+const UNGATED_ROUTES = new Set(["/demo"]);
+
 export function SessionGate({ children }: { children: ReactNode }) {
   const [state, setState] = useState<State>({ phase: "checking" });
+  const pathname = usePathname();
 
   const check = useCallback(async () => {
     try {
@@ -107,6 +132,27 @@ export function SessionGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     void check();
   }, [check]);
+
+  /**
+   * Re-check on navigation while not signed in.
+   *
+   * `check()` above runs once, on mount. A session established by an ungated route
+   * is therefore invisible to this component: the demo selector lives inside
+   * `children`, calls `POST /auth/demo/select` itself, and this gate never learns
+   * that the browser now holds a session. The symptom is specific and misleading —
+   * choosing an identity works, the pack renders with the right counts, and the very
+   * next navigation shows "Sign in to continue" while issuing NO network request at
+   * all, because nothing asked. Clicking that button then reaches `/auth/login`,
+   * which is 503 on a deployment with no IdP.
+   *
+   * Guarded on phase so an already-ready session does not re-fetch on every route
+   * change, and so the "Checking your session…" state never flashes mid-navigation.
+   */
+  const phase = useRef(state.phase);
+  phase.current = state.phase;
+  useEffect(() => {
+    if (phase.current !== "ready") void check();
+  }, [pathname, check]);
 
   /**
    * Ends the session and returns to the signed-out screen.
@@ -155,11 +201,17 @@ export function SessionGate({ children }: { children: ReactNode }) {
     );
   }
 
+  // Checked after "ready" on purpose: a visitor who has already selected an identity
+  // gets the full shell on /demo like anywhere else. This only covers the way in.
+  if (UNGATED_ROUTES.has(pathname)) {
+    return <>{children}</>;
+  }
+
   return (
     <div className="grid h-screen place-items-center bg-surface px-6">
       <Panel>
         {state.phase === "signed-out" ? (
-          <SignedOut />
+          <SignedOut onSelected={check} />
         ) : state.phase === "needs-workspace" ? (
           <ChooseWorkspace onSelected={check} stale={state.stale} />
         ) : (
@@ -193,21 +245,94 @@ function Panel({ children }: { children: ReactNode }) {
   );
 }
 
-function SignedOut() {
+/**
+ * The signed-out screen, which has to offer the way in that this deployment
+ * actually has.
+ *
+ * On a deployment with an identity provider that is OIDC, and the Sign in button
+ * below is correct. On the public demo there is no IdP — Keycloak is cut, and
+ * `MERIDIAN_OIDC_ISSUER` is deliberately unset — so `/auth/login` answers
+ *
+ *     503 "Authentication is not configured on this server."
+ *
+ * and the only control on the page led straight to it. The way in was `/demo`, a
+ * route a visitor had no reason to guess. `meridian/api/demo.py` says as much in
+ * its own docstring: the selector REPLACES the identity assertion an IdP would
+ * provide. So it belongs here, on the sign-in screen, not on a page behind it.
+ *
+ * Which one renders is decided by the server, not by a build flag: a deployment
+ * with the selector disabled answers 404 to `/auth/demo/identities` — deliberately
+ * indistinguishable from "no such route", so a real deployment never advertises an
+ * impersonation endpoint — and this falls back to OIDC unchanged.
+ */
+function SignedOut({ onSelected }: { onSelected: () => void }) {
+  const [options, setOptions] = useState<DemoIdentityOption[] | null>(null);
+  const [busy, setBusy] = useState<DemoIdentity | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    listDemoIdentities().then((o) => live && setOptions(o));
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const choose = async (identity: DemoIdentity) => {
+    setBusy(identity);
+    setFailed(false);
+    try {
+      await selectDemoIdentity(identity);
+      onSelected();
+    } catch {
+      setFailed(true);
+      setBusy(null);
+    }
+  };
+
   return (
     <>
       <h1 className="text-lg font-semibold text-foreground">Meridian</h1>
       <p className="mt-1 text-sm text-muted-foreground">
         The governed institutional-memory layer for startup boards.
       </p>
-      <p className="mt-6 text-sm text-foreground">Sign in to continue.</p>
-      {/*
-        A full navigation, not a fetch. The OIDC flow redirects to the identity
-        provider and back, which an XHR cannot follow.
-      */}
-      <Button className="mt-4 w-full" onClick={() => { window.location.href = LOGIN_URL; }}>
-        Sign in
-      </Button>
+
+      {options && options.length > 0 ? (
+        <>
+          <p className="mt-6 text-sm text-foreground">Continue as one of the demo board members.</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            The same request returns different material depending on who you are.
+          </p>
+          <div className="mt-4 flex flex-col gap-2">
+            {options.map((o) => (
+              <Button
+                key={o.symbol}
+                className="w-full"
+                disabled={busy !== null}
+                onClick={() => void choose(o.symbol)}
+              >
+                {busy === o.symbol ? "Signing in…" : o.label}
+              </Button>
+            ))}
+          </div>
+          {failed && (
+            <p className="mt-3 text-xs text-destructive-foreground">
+              That did not work. Try again, or reload the page.
+            </p>
+          )}
+        </>
+      ) : (
+        <>
+          <p className="mt-6 text-sm text-foreground">Sign in to continue.</p>
+          {/*
+            A full navigation, not a fetch. The OIDC flow redirects to the identity
+            provider and back, which an XHR cannot follow.
+          */}
+          <Button className="mt-4 w-full" onClick={() => { window.location.href = LOGIN_URL; }}>
+            Sign in
+          </Button>
+        </>
+      )}
     </>
   );
 }

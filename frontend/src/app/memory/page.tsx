@@ -148,7 +148,11 @@ export default function MemoryPage() {
           viewport, not this container, so the split looked fine at `lg:` and was
           broken in practice. Full width for the graph; evidence below it. */}
       <div className="mt-5 flex flex-col gap-5">
-        <div className="h-[30rem] overflow-hidden rounded-[16px] border border-border bg-surface-raised shadow-card">
+        {/* Grows with the viewport, never below the old fixed 30rem. A force layout of
+            38 labelled boxes has to be framed by fitView, so pane height sets the zoom
+            the graph opens at — at 30rem it settled around 0.45 and the labels were
+            barely legible. */}
+        <div className="h-[max(30rem,calc(100vh-18rem))] overflow-hidden rounded-[16px] border border-border bg-surface-raised shadow-card">
           {view ? (
             <KnowledgeGraph
               view={view}
