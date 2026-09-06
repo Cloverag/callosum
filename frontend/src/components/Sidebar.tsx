@@ -1,7 +1,9 @@
 "use client";
 
 import { usePathname } from "next/navigation";
+import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { LayoutDashboard, CalendarDays, Users, FileText, Gavel, Scale, ClipboardCheck, ClipboardList, Briefcase, ScrollText, Network, GitMerge, Settings } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { NavItem } from "./ui/nav-item";
 
 const nav = [
@@ -48,17 +50,27 @@ function MeridianMark() {
   );
 }
 
-export default function Sidebar() {
+/**
+ * The logo lockup and the nav list — the whole content of the rail, minus the
+ * `<aside>` frame. Shared verbatim between the static desktop rail and the
+ * mobile drawer so the two cannot drift.
+ *
+ * `onNavigate` fires on any click inside the list (a `<Link>` activation, by
+ * mouse or keyboard, bubbles a click). The drawer passes it to close itself —
+ * the route-change effect in `app-shell.tsx` covers navigation to a NEW route,
+ * but tapping the link for the route you are already on changes nothing and
+ * would otherwise leave the drawer sitting open over the page.
+ */
+function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
-
   return (
-    <aside className="flex h-full w-[248px] shrink-0 flex-col border-r border-border bg-surface-elevated">
+    <>
       <div className="flex h-16 items-center gap-2.5 px-4">
         <MeridianMark />
         <span className="text-base font-semibold tracking-tight text-foreground">Meridian</span>
       </div>
 
-      <nav className="flex-1 overflow-y-auto px-3 pb-3">
+      <nav className="flex-1 overflow-y-auto px-3 pb-3" onClick={onNavigate}>
         <div className="px-2.5 pb-1.5 pt-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-subtle-foreground">
           Workspace
         </div>
@@ -89,6 +101,60 @@ export default function Sidebar() {
         Naming the signed-in principal twice invites the two to disagree again the
         moment one of them is changed.
       */}
+    </>
+  );
+}
+
+/**
+ * The static rail. Unchanged at `lg` and up — same `w-[248px]` column, same
+ * border, same surface. Below `lg` it is `hidden` and `MobileNav` takes over;
+ * this is the only breakpoint in the shell and the desktop layout is byte-for-
+ * byte what it was.
+ */
+export default function Sidebar() {
+  return (
+    <aside className="hidden h-full w-[248px] shrink-0 flex-col border-r border-border bg-surface-elevated lg:flex">
+      <SidebarNav />
     </aside>
+  );
+}
+
+/**
+ * The same rail as an off-canvas drawer, below `lg` only. Built on Base UI's
+ * Dialog — the primitive traps focus, sets `role="dialog"` + `aria-modal`,
+ * closes on Escape and on a backdrop click, makes the rest of the page inert,
+ * and restores focus to the trigger (the header hamburger) on close. The only
+ * thing added here is the left-edge slide, via `data-starting-style` /
+ * `data-ending-style` and the motion tokens — same idiom as
+ * `components/ui/dialog.tsx`.
+ */
+export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  return (
+    <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Backdrop
+          className={cn(
+            "fixed inset-0 z-50 bg-black/40 backdrop-blur-sm lg:hidden",
+            "transition-opacity duration-(--duration-state) ease-(--ease-out-quart)",
+            "data-starting-style:opacity-0 data-ending-style:opacity-0",
+          )}
+        />
+        <DialogPrimitive.Popup
+          // Base UI sets `role="dialog"` and makes the rest of the page inert
+          // while open (`modal`, on by default). `aria-modal` is stated on top of
+          // that — redundant with inert, but it is the attribute a reviewer asked
+          // for by name and it costs a hint, not a behaviour.
+          aria-modal="true"
+          className={cn(
+            "fixed inset-y-0 left-0 z-50 flex w-[248px] flex-col border-r border-border bg-surface-elevated outline-none lg:hidden",
+            "transition-transform duration-(--duration-state) ease-(--ease-out-quart)",
+            "data-starting-style:-translate-x-full data-ending-style:-translate-x-full",
+          )}
+        >
+          <DialogPrimitive.Title className="sr-only">Workspace navigation</DialogPrimitive.Title>
+          <SidebarNav onNavigate={() => onOpenChange(false)} />
+        </DialogPrimitive.Popup>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   );
 }
