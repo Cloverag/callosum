@@ -79,7 +79,8 @@ where intuition said:
 > The numbers are correct for what they measured. They are **not** current, and the
 > denominators are the honest reason to be careful with the last row: grounding precision
 > is one item out of two. The gold set now carries four abstention negatives, so that
-> row's denominator doubles the moment it is re-run. See `eval/gap-analysis.md` and #203.
+> row's denominator doubles the moment it is re-run. Tracked in #203, which carries the
+> counts and the full gap analysis.
 
 **All the loss is in one stage.** The right entity was offered every single time, and
 traversal never failed once seeded — so the bottleneck is *named entity linking*, not the
