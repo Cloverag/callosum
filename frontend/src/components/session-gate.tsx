@@ -1,6 +1,7 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import { motion, useReducedMotion } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -79,8 +80,26 @@ export function useSession(): Session | null {
    claim was never true — and `needs-you.tsx`, cited as the house curve, was
    copying the same wrong value. Both now import the one ease from `lib/motion`. */
 
+/**
+ * The one route that must render without a session.
+ *
+ * `/demo` IS the sign-in for a deployment with no identity provider: it lists the
+ * demo identities and calls `POST /auth/demo/select`, which establishes a real
+ * session through the same `session.establish()` the OIDC callback uses. Gating it
+ * behind `SignedOut` makes it unreachable — the only control there is a Sign in
+ * button pointing at `/auth/login`, which answers 503 when `MERIDIAN_OIDC_ISSUER`
+ * is unset, as it deliberately is on the public demo. The selector was reachable by
+ * curl and by nothing else.
+ *
+ * Rendering it outside the provider is safe: `useSession()` is typed
+ * `Session | null` and its consumers (`Header`, `AssistantRail`) already handle the
+ * null case, because that is the context default.
+ */
+const UNGATED_ROUTES = new Set(["/demo"]);
+
 export function SessionGate({ children }: { children: ReactNode }) {
   const [state, setState] = useState<State>({ phase: "checking" });
+  const pathname = usePathname();
 
   const check = useCallback(async () => {
     try {
@@ -107,6 +126,27 @@ export function SessionGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     void check();
   }, [check]);
+
+  /**
+   * Re-check on navigation while not signed in.
+   *
+   * `check()` above runs once, on mount. A session established by an ungated route
+   * is therefore invisible to this component: the demo selector lives inside
+   * `children`, calls `POST /auth/demo/select` itself, and this gate never learns
+   * that the browser now holds a session. The symptom is specific and misleading —
+   * choosing an identity works, the pack renders with the right counts, and the very
+   * next navigation shows "Sign in to continue" while issuing NO network request at
+   * all, because nothing asked. Clicking that button then reaches `/auth/login`,
+   * which is 503 on a deployment with no IdP.
+   *
+   * Guarded on phase so an already-ready session does not re-fetch on every route
+   * change, and so the "Checking your session…" state never flashes mid-navigation.
+   */
+  const phase = useRef(state.phase);
+  phase.current = state.phase;
+  useEffect(() => {
+    if (phase.current !== "ready") void check();
+  }, [pathname, check]);
 
   /**
    * Ends the session and returns to the signed-out screen.
@@ -153,6 +193,12 @@ export function SessionGate({ children }: { children: ReactNode }) {
         {children}
       </SessionContext.Provider>
     );
+  }
+
+  // Checked after "ready" on purpose: a visitor who has already selected an identity
+  // gets the full shell on /demo like anywhere else. This only covers the way in.
+  if (UNGATED_ROUTES.has(pathname)) {
+    return <>{children}</>;
   }
 
   return (
