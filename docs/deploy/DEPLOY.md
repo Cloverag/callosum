@@ -260,15 +260,24 @@ Three known traps, all previously hit on this project:
 2. **Lightning CSS drops unprefixed `backdrop-filter`** in production builds, collapsing it
    to `-webkit-` which current Chrome rejects. This is the first prod build of the glass UI.
    Check it in a real browser, not just `next build`.
-3. **CORS.** The API and frontend are different origins, so `meridian/api/main.py` needs
-   `https://cloverag.dpdns.org` in its allowed origins.
+3. **CORS does not arise, and neither does `SameSite`.** Both earlier versions of this
+   note were wrong, in opposite directions, and the reason is architectural rather than
+   a matter of configuration.
 
-   **`SameSite=None` is not needed** for the production hostnames, contrary to what this
-   doc said before it was checked. The cookie is issued as
-   `httponly; samesite=lax; secure` (verified on the deployed stack), and
-   `cloverag.dpdns.org` and `api.cloverag.dpdns.org` are **same-site** — Lax is sent. It
-   *is* needed if you test from a `*.vercel.app` preview URL, which is cross-site and
-   fails exactly as described: login appears to succeed and every later call is 401.
+   `next.config.ts` proxies `/api`, `/auth` and `/health` to `MERIDIAN_API_ORIGIN`
+   server-side, and `lib/http.ts` and `lib/auth.ts` both send
+   `credentials: "same-origin"`. **The browser therefore never makes a cross-origin
+   request** — it only ever talks to the Vercel origin, which forwards to the API. So:
+
+   - `meridian/api/main.py`'s hardcoded `allow_origins` needs no new entry.
+   - The cookie is issued `httponly; samesite=lax; secure` and that is correct on
+     every host, including `*.vercel.app` previews. The earlier claim that previews
+     would 401 was reasoning from a direct-to-API architecture this frontend does not
+     use.
+
+   The variable to set on Vercel is **`MERIDIAN_API_ORIGIN`**, not `NEXT_PUBLIC_API_URL`
+   — the latter is referenced nowhere in the frontend, and setting it produces a demo
+   that fails exactly as though the API were down.
 
 ---
 
