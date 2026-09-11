@@ -1,5 +1,10 @@
 # Callosum contributor guide
 
+> **Two agents work in this repository (Claude and Codex).** Read
+> [`COORDINATION.md`](COORDINATION.md) first: it says which lane you own, which worktree is
+> yours, and the rules that stop the two of you from overwriting each other. Claim your work
+> in its ledger before you start.
+
 ## Purpose and current state
 
 Callosum is an institutional-memory prototype for startup decisions. It ingests source
