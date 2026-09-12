@@ -116,7 +116,7 @@ export function AssistantRail() {
     setTurns((t) => [...t, { id, question, answer: null }]);
     setInput("");
     setBusy(true);
-    const answer = await assistantApi.ask(question);
+    const answer = await assistantApi.ask(question, false);
     setTurns((t) => t.map((x) => (x.id === id ? { ...x, answer } : x)));
     setBusy(false);
   }

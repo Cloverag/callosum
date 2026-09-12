@@ -20,27 +20,30 @@ the source of truth for scope and the ontology.
 ## Getting it running
 
 ```bash
-docker compose up -d                 # Postgres+pgvector (:5433) + Neo4j (:7474/:7687)
-uv venv && uv pip install -e .       # Python 3.12 env + the callosum CLI
+docker compose up -d                 # Postgres+pgvector (:5433) + Neo4j + Keycloak
+uv venv --python 3.12 && uv pip install -e .
+cp .env.example .env
 .venv/bin/callosum doctor            # checks provider + both stores are reachable
-bash scripts/demo.sh                 # full end-to-end: ingest → approve → two golden queries
+# Do NOT treat `bash scripts/demo.sh` as the first command: it runs
+# `docker compose down -v` (destroys local volumes) and currently cannot
+# `callosum init` against schema/postgres.sql alone — see issue #183.
+# After a fresh volume: `alembic upgrade head` then `callosum init`.
 ```
 
 Provider defaults to **Ollama** (free): `gpt-oss:120b-cloud` for extraction/synthesis and
 local `bge-m3` for embeddings. Neo4j Browser at http://localhost:7474 (neo4j / callosum123)
-is the demo money-shot.
+is the demo money-shot. The public product demo is
+https://callosum-demo.vercel.app/demo.
 
-Run the tests before and after any change:
-
-```bash
-.venv/bin/pytest -q                  # 24 fast deterministic tests (no LLM, no DB)
-```
+Live test counts live in the root `README.md` (pinned to a measured commit). Do not copy
+a number into this file — it will rot. At the last measurement in this tree: ungated
+`pytest` is hundreds of tests, not 24.
 
 ## The one rule: FROZEN core vs OPEN areas
 
 The backend pipeline has been evaluated and is **architecturally frozen**. Do not modify
 the frozen modules without a *measured* shortcoming against the evaluation baseline
-(`callosum eval` → `eval/results.md`). "It felt cleaner" is not a reason; "GER rose from
+(`callosum eval` → append-only `eval/results.csv` / `eval/results-v2.csv`). "It felt cleaner" is not a reason; "GER rose from
 0% to X% and here is the run" is.
 
 **🔒 FROZEN — do not change without an eval result to justify it:**
@@ -58,31 +61,21 @@ found and fixed there. Do not touch it without review.
 
 **🟢 OPEN — this is where you come in:**
 
-1. **Frontend (P6) — the biggest gap, best fit for the mockup work.**
-   Nothing is built yet. Turn the `reference/` HTML mockup into a real UI:
-   - **Founder chat** — ask a question, render the grounded answer + inline citations +
-     the "N sources withheld" notice. Backend is ready: `callosum.retrieve.ask()`.
-   - **Approval queue** — the human-in-the-loop screen: list `proposed_change` rows,
-     approve/reject each. Backend is ready: `callosum pending` / `callosum approve`.
-   - **Graph viewer** — visualize the Neo4j graph (or embed Neo4j Browser).
-   Suggested stack: a thin FastAPI layer over the existing functions + any frontend you
-   like. Keep it a separate `web/` package so it never imports into the frozen core.
+The Next.js app in `frontend/` exists. It is not a greenfield mockup. Open work is
+the GitHub issue list, not "build a UI from `reference/`". Highest-leverage remaining
+gaps:
 
-2. **Evaluation dataset + gold questions — highest-value non-code work.**
-   Everything currently rides on ONE board transcript, which is the biggest risk to the
-   thesis (single-corpus overfitting). Add realistic, varied documents under `data/`:
-   - a **hiring** decision, a **fundraising** discussion, and importantly a
-     **superseding** decision (decision B overrides A — exercises the `SUPERSEDES` edge)
-   - for each, add gold questions to `eval/gold.jsonl`, binned by `stratum`
-     (`lookup` / `relational` / `multi_hop`), and **trace each back to a PRD use-case**
-     (that traceability is worth marks). See the existing entries for the schema.
+1. **P6 surfaces (#100, #110, #211)** — `/memory` and the assistant rail are still a
+   local gold-graph snapshot. `POST /api/ask` exists in this working tree (#213) but
+   is not wired to the rail. Keyboard edge readout is #211.
+2. **Eval honesty (#203 and stacked PRs #204–#208)** — expand RBAC/abstention strata
+   and stop quoting 29-item numbers as if they were the 36-item gold file.
+3. **P4 exit (#166, #168)** — membership audit remaining steps, then the rest of the
+   unaudited mutating routes.
+4. **Operational defects (#183, #195, #201, #196)** — `demo.sh` / `schema/postgres.sql`
+   drift, `callosum init` over-grant, frozen ingest still Default-Workspace-only.
 
-3. **PRD ↔ implementation traceability.** Verify every `EntityType` / `RelationType` in
-   `src/callosum/ontology.py` maps to a requirement in the PRD, and write the
-   requirements→system mapping doc under `docs/`.
-
-4. **Approval-workflow UX.** Design what a founder sees when reviewing proposed edges —
-   a product/design problem, not a backend one.
+Do not add a second frontend package. Do not import product code into the frozen core.
 
 ## House rules for the product domain (`meridian/`)
 

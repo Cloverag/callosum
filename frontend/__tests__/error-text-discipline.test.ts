@@ -97,7 +97,7 @@ describe("a server error string reaches the screen through one function", () => 
   it("has no `.message` access outside the chokepoint and the allowlist", () => {
     const offenders: string[] = [];
     for (const file of files) {
-      const relative = file.slice(SRC.length + 1);
+      const relative = file.slice(SRC.length + 1).replaceAll("\\", "/");
       if (file.endsWith(CHOKEPOINT) || relative in ALLOWED) continue;
       readFileSync(file, "utf8")
         .split("\n")

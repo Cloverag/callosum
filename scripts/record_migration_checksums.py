@@ -41,13 +41,13 @@ _REVISION = re.compile(r'^revision\s*=\s*"([^"]+)"', re.M)
 
 
 def main() -> int:
-    recorded: dict[str, dict[str, str]] = json.loads(MANIFEST.read_text()) if MANIFEST.exists() else {}
+    recorded: dict[str, dict[str, str]] = json.loads(MANIFEST.read_text(encoding="utf-8")) if MANIFEST.exists() else {}
 
     added, corrected, converted, conflicts, uncovered = [], [], [], [], []
     for path in sorted(VERSIONS.glob("*.py")):
         if path.name == "__init__.py":
             continue
-        match = _REVISION.search(path.read_text())
+        match = _REVISION.search(path.read_text(encoding="utf-8"))
         if not match:
             print(f"skipped (no revision declared): {path.name}", file=sys.stderr)
             continue

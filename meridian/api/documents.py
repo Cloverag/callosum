@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, status
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from meridian import documents as domain
 from meridian.api.deps import CurrentPrincipal
@@ -54,9 +54,11 @@ class QuarantineResponse(BaseModel):
 
 
 class IntakeDocumentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     title: str
     doc_type: str
-    raw_text: str
+    raw_text: str = Field(..., min_length=1, max_length=1_000_000)
     #: Required, with no default (#143). It used to default to `0` — *public*, the
     #: widest visibility the system has — so a caller who simply omitted the field
     #: published the document to everyone. That is fail-open by default on the one

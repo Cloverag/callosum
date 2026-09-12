@@ -140,12 +140,10 @@ const delay = (ms = 700) => new Promise((r) => setTimeout(r, ms));
 
 export const assistantApi = {
   /**
-   * `canSeeRestricted` mirrors the caller's clearance. Restricted edges are
-   * dropped BEFORE the answer is assembled and reported as a count — the same
-   * ordering the backend enforces, where filtering after retrieval would mean
-   * the text had already been loaded.
+   * Fail-closed. Restricted edges are dropped before the answer is assembled.
+   * This is a local snapshot, not `retrieve.ask`; POST /api/ask is the engine.
    */
-  async ask(question: string, canSeeRestricted = true): Promise<AssistantAnswer> {
+  async ask(question: string, canSeeRestricted = false): Promise<AssistantAnswer> {
     await delay();
 
     const seeds = ground(question);

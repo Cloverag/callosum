@@ -107,7 +107,10 @@ def approve_conflict(
                 workspace_id=workspace_id,
             )
     except ValueError as exc:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "detail": "Not available to you."},
+        ) from exc
 
     return {"id": str(conflict_id), "status": "approved", "change_id": str(change_id)}
 
@@ -134,6 +137,9 @@ def reject_conflict(
                 workspace_id=workspace_id,
             )
     except ValueError as exc:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "detail": "Not available to you."},
+        ) from exc
 
     return {"id": str(conflict_id), "status": "rejected"}

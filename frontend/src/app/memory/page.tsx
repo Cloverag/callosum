@@ -19,16 +19,16 @@ import { OntologyBars } from "./ontology-bars";
  * graph, and it is the strongest thing the project has to show: 38 entities and
  * 40 relationships, each carrying the verbatim quote it was extracted from.
  *
- * The clearance switch is not a demo toy. It exercises the same rule the backend
- * enforces in SQL and in Cypher: an investor asking about compensation is not
- * shown the node and is *told* something was withheld, as a count and never as a
- * title. Silent withholding would be the failure this project exists to prevent.
+ * The founder/investor switch is a **local preview** of withheld counts on a
+ * static gold-graph snapshot. It does not call the SQL or Cypher clearance
+ * predicates; those live on pack/document API responses and on `POST /api/ask`.
+ * Restricted evidence quotes are not in this bundle.
  */
 export default function MemoryPage() {
   const [view, setView] = useState<GraphView | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [focus, setFocus] = useState<GraphFocus | null>(null);
-  const [asFounder, setAsFounder] = useState(true);
+  const [asFounder, setAsFounder] = useState(false);
 
   useEffect(() => {
     let live = true;

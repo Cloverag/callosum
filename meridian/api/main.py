@@ -10,6 +10,8 @@ Run it (from the repo root, with the venv):
 Then open http://localhost:8000/health  and  http://localhost:8000/health/engine
 """
 
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
@@ -18,6 +20,7 @@ from starlette.middleware.sessions import SessionMiddleware
 import callosum
 from meridian.api import auth, errors
 from meridian.api import agenda as agenda_api
+from meridian.api import ask as ask_api
 from meridian.api import board_members as board_members_api
 from meridian.api import commitments as commitments_api
 from meridian.api import conflicts as conflicts_api
@@ -31,11 +34,29 @@ from meridian.api import prep as prep_api
 from meridian.api import resolutions as resolutions_api
 from meridian.api import workspaces as workspaces_api
 from meridian.api.config import api_settings
+from meridian.api.limits import RateLimitMiddleware
+
+
+def docs_enabled() -> bool:
+    """Interactive docs are off on a production host unless explicitly re-opened.
+
+    `/openapi.json` is a map of every write route. A public tunnel should not serve it.
+    """
+    if os.environ.get("MERIDIAN_EXPOSE_DOCS", "").strip().lower() in {"true", "1", "yes"}:
+        return True
+    env = (os.environ.get("ENVIRONMENT") or os.environ.get("APP_ENV") or "").strip().lower()
+    return env not in {"production", "prod"}
+
+
+_docs = docs_enabled()
 
 app = FastAPI(
     title="Meridian API",
     version="0.0.1",
     summary="Board Operating System over the Callosum verified-memory engine.",
+    docs_url="/docs" if _docs else None,
+    redoc_url="/redoc" if _docs else None,
+    openapi_url="/openapi.json" if _docs else None,
 )
 
 _settings = api_settings()
@@ -48,6 +69,24 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.add_middleware(RateLimitMiddleware)
+
+
+@app.middleware("http")
+async def security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    # Swagger UI needs a looser policy; JSON routes do not.
+    path = request.url.path
+    if path not in {"/docs", "/redoc", "/openapi.json"} and not path.startswith("/docs"):
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+        )
+    return response
 
 # --- Session (ADR-009) -----------------------------------------------------
 #
@@ -91,9 +130,12 @@ app.include_router(documents_api.router)
 app.include_router(conflicts_api.router)
 app.include_router(prep_api.router)
 app.include_router(workspaces_api.router)
+app.include_router(ask_api.router)
 # Mounted unconditionally; the route itself answers 404 unless MERIDIAN_DEMO_SELECTOR
 # is explicitly set, so a disabled impersonation endpoint does not announce itself and
-# the guard stays testable at request time rather than at import.
+# the guard stays testable at request time rather than at import. `include_in_schema`
+# is False on the router so OpenAPI does not list the impersonation surface even
+# when docs are enabled.
 app.include_router(demo_api.router)
 
 # Domain exceptions map to HTTP centrally (P3 §5.3). Registered once here rather than

@@ -114,7 +114,7 @@ def test_writing_a_session_without_a_secret_is_503_not_500(monkeypatch):
     from meridian.api import errors
 
     app = FastAPI()
-    errors.install(app) if hasattr(errors, "install") else None
+    errors.install_exception_handlers(app)
     app.include_router(demo.router)  # no SessionMiddleware, deliberately
 
     response = TestClient(app, raise_server_exceptions=False).post(

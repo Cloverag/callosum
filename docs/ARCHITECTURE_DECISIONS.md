@@ -4,6 +4,11 @@ Short records of *why* major structural choices were made, so the reasoning surv
 past the session that made it. Format per record: Decision · Alternatives · Why · Status.
 Status is **Accepted** (implemented + in `master`) or **Proposed** (design-only, not built).
 
+There are **18 numbered ADRs**; **016 is reserved** (claimed by the dedup-oracle work,
+not missing). Product schema after the frozen `schema/postgres.sql` base is Alembic;
+the linear chain currently heads at **`0029_workspace_bootstrap`**. ADR-007's original
+`0001→0005` wording is the decision at the time, not the live head.
+
 ---
 
 ## ADR-001 — Two stores bridged by a shared chunk UUID
@@ -82,8 +87,9 @@ projects to Neo4j; add a `rebuild-graph` command that replays approved changes �
 already rebuilds deterministically, so this mostly *formalizes* an existing property and makes
 graph inconsistency self-healing — **without** a message queue (which would add failure modes
 for little V1 gain).
-**Status:** Proposed — design-only, tracked in issue #10. Not built. Do not implement before P2
-planning and only after evidence justifies it.
+**Status:** Proposed — design-only, tracked in issue #10. Not built. Do not implement
+without a freeze exception; `store.approve()` still dual-writes Neo4j-first then marks
+Postgres approved.
 
 ## ADR-009 — Authentication is OIDC; the session is an httpOnly signed cookie
 **Decision:** authenticate via an external OIDC provider. The result is a server-side
@@ -97,7 +103,8 @@ The cookie follows from the deployment shape: the frontend is same-origin Next.j
 cookie is simpler *and* keeps the session out of JavaScript's reach. A bearer token earns
 its keep only with a non-browser client, and none exists — adding one now would be paying
 for a consumer we do not have.
-**Status:** Accepted (P3, owner-approved 2026-07-29). Not yet built — CP-A.
+**Status:** Accepted (P3, owner-approved 2026-07-29). Built — Keycloak OIDC and the
+httpOnly session cookie are what the public demo uses.
 
 ## ADR-010 — OIDC subject → principal via a separate `principal_identity` table
 **Decision:** a new table keying `(provider, subject)` UNIQUE → `principal_id`. **Not** a
@@ -113,7 +120,8 @@ the frozen `schema/postgres.sql` — is not reshaped. It is deliberately **not**
 and needs no RLS: identity is global, `membership` is what scopes. It must not be listable
 by the runtime role beyond what login requires, because a table mapping people to external
 identities is a directory leak if it can be enumerated.
-**Status:** Accepted (P3, owner-approved 2026-07-29). Not yet built — CP-A, one migration.
+**Status:** Accepted (P3, owner-approved 2026-07-29). Built — `principal_identity` via
+`0017_principal_identity` / later identity migrations.
 
 ## ADR-011 — An unknown OIDC subject is rejected, never auto-provisioned
 **Decision:** a successfully-authenticated subject with no `principal_identity` row is
@@ -127,7 +135,8 @@ worse than it looks: it accumulates ghost principals that appear in no directory
 in the table, and `principal_identity` rows for people who were never invited. Membership is
 what grants clearance in this system; an identity with no membership is not a lesser user,
 it is a record nobody asked for. Provisioning is an administrative act and stays one.
-**Status:** Accepted (P3, owner-approved 2026-07-29). Not yet built — CP-A.
+**Status:** Accepted (P3, owner-approved 2026-07-29). Built — unknown subjects are
+refused; the demo IdP user `stranger` exists specifically to prove that.
 
 ## ADR-012 — Workspace is selected explicitly and re-validated on every request
 **Decision:** where a principal holds more than one membership, an explicit selection step
@@ -141,7 +150,8 @@ which is precisely when it must stop. Re-validating per request costs one indexe
 means access ends when the membership does. Inferring a default is a smaller wrong: a
 founder who belongs to two boards should never be *guessed* into one of them. Accepting it
 from the request is ADR-013's whole subject.
-**Status:** Accepted (P3, owner-approved 2026-07-29). Not yet built — CP-A.
+**Status:** Accepted (P3, owner-approved 2026-07-29). Built — session workspace is
+re-checked against an active membership on every request.
 
 ## ADR-013 — `workspace_id` and `clearance` are session-derived, enforced by a schema test
 **Decision:** neither value may appear as an endpoint input — no path segment, query
@@ -162,8 +172,8 @@ rule mechanical — the same reasoning that made composite `(id, workspace_id)` 
 standing rule after p1.0.5, and the reason `meridian/tenancy.py` raises rather than
 defaulting. Three layers now hold the same line: the guard rejects a missing workspace, the
 session is the only source of a present one, and the test proves no endpoint offers a third.
-**Status:** Accepted (P3, owner-approved 2026-07-29). Guard built (#67); test not yet built
-— CP-A.
+**Status:** Accepted (P3, owner-approved 2026-07-29). Built — OpenAPI walk is
+`tests/test_openapi_input_guard.py`.
 
 ## ADR-014 — API endpoints mirror the domain functions 1:1 for P3
 **Decision:** each public function in `meridian/*.py` gets one endpoint, shaped as the

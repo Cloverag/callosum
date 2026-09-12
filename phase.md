@@ -4,6 +4,28 @@ Where the project is, at a glance. Detail lives in [ROADMAP.md](./ROADMAP.md), t
 
 Legend: ✅ done/frozen · 🟩 in progress · ⬜ not started
 
+## Current snapshot — 2026-09-12
+
+The dated tables later in this file are **records of the date they name**. They are not
+live counts. GitHub `master` is `7c260cd` (#202). Uncommitted local work for #213 is not
+on origin.
+
+| | |
+|---|---|
+| Product track | **3 / 13** accepted. P3 frozen, exit unclaimed. P4 items shipped, **exit gate not attempted**. |
+| Public demo | [callosum-demo.vercel.app/demo](https://callosum-demo.vercel.app/demo) |
+| Backend (this working tree) | gated **948 passed** / 5 llm-deselected; ungated **385 passed**, 43 skipped |
+| Frontend (this working tree) | **295** tests, 22 suites, Next **16.3.5** |
+| API (this working tree) | **79 operations** / 61 paths / 14 tags (`POST /api/ask` in; `/auth/demo/*` out of schema) |
+| Migrations | 29, head `0029_workspace_bootstrap` |
+| ADRs | 18 numbered (016 reserved) |
+| Commits on `7c260cd` | **526** (`git rev-list --count 7c260cd`) |
+| Gold set | `eval/gold.jsonl` is **36** items; README ablation table is still the **29-item** 2026-07-20 run (#203) |
+
+`/entity-conflicts` is no longer mock-backed. `graph` and `assistant` remain local gold-graph
+snapshots deferred to P6 (#100); #213 stripped restricted quotes from that snapshot and
+defaults the memory page fail-closed, but it is still not `retrieve.ask`.
+
 ## Research track — ✅ CLOSED & FROZEN
 
 - R0–R13 accepted (14/14). Baseline frozen at tag **`eval-baseline-v3`** (code + M12–M16 corpus + gold + eval CSVs), immutable.
@@ -53,7 +75,10 @@ Measure-first, one aggregate root per checkpoint (own migration → domain modul
 - **Data honesty is the standing constraint.** Two rounds of fabricated figures were found and removed — repository metadata shown as memory coverage, an invented health %, a contradictory growth series, invented assistant citations, and unwired review-queue counts. Numbers on screen trace to a source or are labelled "not measured". Chart rules live in `frontend/DESIGN.md`.
 - **Settled 2026-07-28 — the product frontend is Next.js `frontend/`.** The Vite glassmorphism prototype at `frontendglass/meridian-glass/` is a visual reference only: it does not get wired to the P3 API and no further work goes into it. It stays in the tree for now; removing it is a separate deliberate commit. See [memory.md](./memory.md).
 - **Both open items from this list are closed:** `/commitments` shipped against CP7, and `decision_stance` now resolves to the board directory (the stale `board_member_id` "coming in CP5" note is gone). The responsive/mobile AI rail is **not** done — it is deferred with the rest of P3, not pending.
-- **Still mock-backed:** `/entity-conflicts` reads `lib/api.ts`. It sits off the demo path and has no backend module, so it was left alone at the freeze rather than swapped.
+- **Still a local snapshot, not a mock in the usual sense:** `/memory` and the assistant
+  rail read `lib/graph.ts` / `lib/assistant.ts` generated from `GOLD_GROUPS` (#100). #213
+  (uncommitted) defaults the filter fail-closed and drops restricted evidence quotes from
+  the bundle. Wire-up to `POST /api/ask` / Neo4j is still P6.
 
 ## Product P3 — Authenticated API — ⏸️ FROZEN (feature-complete, exit gate NOT claimed)
 
@@ -132,7 +157,7 @@ record, not an embarrassment to tidy away. What follows describes that column.
   `evaluate.py` seeds the gold graph positionally, so the changed `workspace_id` parameter fell
   through to its old behaviour. The gate was structurally unable to reach either change.
 
-## Product P4 — Board workspace, members, and source intake — 🟩 IN PROGRESS
+## Product P4 — Board workspace, members, and source intake — items shipped, gate unclaimed
 
 **Not accepted, and the 3/13 count does not move.** `rules.md` §4's 2026-08-13 amendment
 makes phase order advisory — a phase may begin before the previous one's exit gate is
@@ -143,11 +168,12 @@ is unclaimed and P4's has not been attempted, so the product track stays at **3 
 |---|---|
 | Members | ✅ shipped early, as P2 CP5a / CP5b |
 | Document intake / import | ✅ merged (PR #128) |
-| Metadata / sensitivity | ✅ merged (#128) — clearance ladder 0–3 |
+| Metadata / sensitivity | ✅ merged (#128) — clearance ladder 0–3; founder-only (4) is eval PR #204, not on `master` |
 | Duplicates | ✅ merged (#128) — SHA-256, tenant-scoped by `0022_doc_content_hash_uq` |
 | Processing / quarantine state | ✅ merged (#128) — `GET /api/documents/quarantine` |
 | Versions | ✅ built (`0024_document_version`, ADR-017) — **not** an exit gate |
 | Workspace / meeting assignment | ✅ built (`0025_meeting_document`, ADR-018) — **not** an exit gate |
+| Membership grant / revoke | ✅ shipped (#186); remaining audit steps are #166 |
 | P4 exit gate | ⬜ not attempted |
 
 **Exit criteria, and where they stand.** The phase exits when "membership is

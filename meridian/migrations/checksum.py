@@ -37,8 +37,20 @@ SEGMENTS = ("header", "upgrade", "downgrade")
 CORRECTABLE = frozenset({"downgrade"})
 
 
+def _read(path: pathlib.Path) -> str:
+    """UTF-8, newlines folded, before any AST slice.
+
+    Windows checkouts are CRLF. `ast` reports offsets into the raw string, so a
+    span that ends on a line boundary can split a `\r\n` pair and leave a lone
+    `\r` in the neighbouring segment. Hashing after that split disagrees with a
+    Linux LF tree even when the files are the same commit. Normalising first
+    makes the three segments identical on every platform.
+    """
+    return path.read_text(encoding="utf-8").replace("\r\n", "\n").replace("\r", "\n")
+
+
 def _normalise(text: str) -> bytes:
-    return text.replace("\r\n", "\n").encode()
+    return text.replace("\r\n", "\n").replace("\r", "\n").encode()
 
 
 def _spans(source: str) -> dict[str, tuple[int, int]]:
@@ -68,7 +80,7 @@ def segments(path: pathlib.Path) -> dict[str, str]:
     A migration missing `upgrade()` or `downgrade()` yields an empty string for it,
     which still hashes to a stable value — absence is a fact worth pinning too.
     """
-    source = path.read_text()
+    source = _read(path)
     spans = _spans(source)
 
     out = {name: source[a:b] for name, (a, b) in spans.items()}
@@ -97,9 +109,11 @@ def verify_covers_whole_file(path: pathlib.Path) -> bool:
     and the guard would silently stop covering part of the file.
     """
     parts = segments(path)
-    return sum(len(parts[name]) for name in SEGMENTS) == len(path.read_text())
+    return sum(len(parts[name]) for name in SEGMENTS) == len(_read(path))
 
 
 def whole_file_digest(path: pathlib.Path) -> str:
     """The pre-split hash. Kept so the format migration can be proved, not asserted."""
-    return hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+    return hashlib.sha256(
+        path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    ).hexdigest()

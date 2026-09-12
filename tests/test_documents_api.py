@@ -448,6 +448,24 @@ class TestIntakeLifecycle:
         finally:
             _cleanup([pid], [ws])
 
+    def test_extra_fields_on_intake_are_refused(self, restore_client):
+        """Mass-assignment is a 422, not a silently dropped field."""
+        client, pid, ws = _signed_in("extra", "director")
+        try:
+            res = client.post(
+                "/api/documents/intake",
+                json={
+                    "title": "Extra",
+                    "doc_type": "memo",
+                    "raw_text": "Body.",
+                    "sensitivity": 1,
+                    "created_by": "00000000-0000-0000-0000-000000000099",
+                },
+            )
+            assert res.status_code == 422
+        finally:
+            _cleanup([pid], [ws])
+
     def test_embedding_failure_fails_intake_without_zero_vectors(self, restore_client):
         client, pid, ws = _signed_in("fail_user", "director")
         try:
