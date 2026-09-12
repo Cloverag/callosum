@@ -40,7 +40,7 @@ from pathlib import Path
 import psycopg
 from neo4j import Driver
 
-from callosum import store
+from callosum import identity, store
 from callosum.ontology import EntityType, RelationType
 from callosum.retrieve import (
     Answer, Principal, ask, candidate_entities, graph_search, ground, plan, vector_search,
@@ -404,13 +404,57 @@ def load_gold(path: Path) -> list[GoldItem]:
 
 
 def _resolve_principal(conn: psycopg.Connection, name: str) -> Principal | None:
-    row = conn.execute(
-        "SELECT id, name, role, clearance FROM principal WHERE name ILIKE %s",
-        (f"%{name}%",),
-    ).fetchone()
-    if not row:
+    """Resolves an eval principal the way the product resolves a caller (#187).
+
+    This used to build a `Principal` directly off `principal.role` and
+    `principal.clearance`:
+
+        SELECT id, name, role, clearance FROM principal WHERE name ILIKE %s
+
+    That was a SECOND construction of the authorization object, parallel to
+    `callosum.identity`'s, and it drifted from it in three ways once #166 landed.
+    It read the two columns #166 demoted — `principal.clearance` carries a database
+    COMMENT saying in as many words "do not read this column to make an access
+    decision". It had no `membership` JOIN, so the fail-closed property
+    `test_no_membership_means_no_access_not_fallback_clearance` pins did not hold
+    here: a principal with no membership anywhere, or a revoked one, still
+    resolved. And it took `Principal.workspace_id`'s default silently, landing in
+    the Default Workspace without ever naming it.
+
+    The consequence was not a leak — this is the eval harness, no API caller
+    reaches it. It was a MEASUREMENT defect: the RBAC scoring, including the X1
+    negative case where a secret must never appear in an answer, graded
+    `retrieve.py`'s frozen clearance gate against an authorization model the
+    product had stopped using.
+
+    **The change is measurement-neutral, and that is checked rather than assumed.**
+    Every principal the eval resolves comes from `cli.DEMO_PRINCIPALS`, and for all
+    three the stored clearance and the mapped clearance agree:
+
+        Raj Malhotra   founder   principal.clearance=4  ROLE_TO_CLEARANCE=4
+        Priya Nair     exec      principal.clearance=3  ROLE_TO_CLEARANCE=3
+        Marcus Webb    investor  principal.clearance=1  ROLE_TO_CLEARANCE=1
+
+    So `eval-baseline-v3` measures the same thing before and after. That agreement
+    is pinned by `test_the_eval_resolves_the_same_clearances_as_the_stored_column`
+    — if a future demo principal is seeded with a role and clearance that disagree,
+    the eval's numbers would shift and that test says so first, rather than the
+    shift being discovered as an unexplained baseline change.
+
+    `workspace_id` is passed explicitly even though it is the default, because
+    inheriting it silently is one of the three defects listed above.
+
+    Returns `None` rather than raising, so both call sites keep their existing
+    "Run: callosum init" error, which is the right instruction for the eval.
+    """
+    try:
+        return identity.resolve_principal(
+            conn, name, workspace_id=store.DEFAULT_WORKSPACE_ID
+        )
+    except identity.PrincipalNotFound:
+        # Covers `IdentityNotProvisioned` too — it is a subclass. Both mean the same
+        # thing here: the eval database has not been seeded.
         return None
-    return Principal(id=row["id"], name=row["name"], role=row["role"], clearance=row["clearance"])
 
 
 def _answer_correct(answer: Answer, item: GoldItem) -> bool:
