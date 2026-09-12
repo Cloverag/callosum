@@ -143,5 +143,10 @@
     "downgrade": "85e00736311357dcb6d5aa292e67852ae1ab6b9957ffba5636f952b7d15b4643",
     "header": "c3bfd5f6392a3c85d8c2e39255d354e7ee14edf02717157363faa87fdb5a150b",
     "upgrade": "343f18e9aa31e2ca41687651cd13f94405402d36313c77e0b5d57c68dd8580de"
+  },
+  "0030_document_principal_role": {
+    "downgrade": "bca5077c94ec850c72a21d1922bee5d9f85d86ef86c025a11db004e9a4e02574",
+    "header": "9ccb5b183fbf60fcc2dd2f70064bbe41fa6c4e11c15393a65c6aa9367c8f5be3",
+    "upgrade": "4a8050f94c99fddd0be0430835dd6c63aa1f5700af4d5103476a023d5cdf9eb0"
   }
 }
