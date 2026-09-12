@@ -9,6 +9,27 @@ from fastapi.testclient import TestClient
 client = TestClient(main.app)
 
 
+def _wipe_workspace(ws: str) -> None:
+    """#184: this file used to leave a workspace + meeting/decision tree behind."""
+    with psycopg.connect(store.settings().postgres_dsn) as conn:
+        for sql in (
+            "DELETE FROM audit_event WHERE workspace_id = %s",
+            "DELETE FROM commitment_update WHERE workspace_id = %s",
+            "DELETE FROM commitment WHERE workspace_id = %s",
+            "DELETE FROM resolution_vote WHERE workspace_id = %s",
+            "UPDATE resolution SET superseded_by_id = NULL WHERE workspace_id = %s",
+            "DELETE FROM resolution WHERE workspace_id = %s",
+            "DELETE FROM decision_stance WHERE workspace_id = %s",
+            "DELETE FROM decision WHERE workspace_id = %s",
+            "DELETE FROM board_member WHERE workspace_id = %s",
+            "DELETE FROM meeting WHERE workspace_id = %s",
+            "DELETE FROM membership WHERE workspace_id = %s",
+            "DELETE FROM workspace WHERE id = %s",
+        ):
+            conn.execute(sql, (ws,))
+        conn.commit()
+
+
 def test_evaluate_resolution_policy_simple_majority():
     """Verify simple majority and supermajority policy evaluation."""
     res_id = str(uuid.uuid4())
@@ -54,18 +75,20 @@ def test_bridge_adopted_resolution_to_commitment():
     m_id = str(uuid.uuid4())
     d_id = str(uuid.uuid4())
     member_id = str(uuid.uuid4())
+    try:
+        with psycopg.connect(store.settings().postgres_dsn, row_factory=store.dict_row) as conn:
+            conn.execute("INSERT INTO workspace (id, name) VALUES (%s, 'W')", (w_id,))
+            conn.execute("INSERT INTO board_member (id, workspace_id, full_name, role) VALUES (%s, %s, 'Director', 'director')", (member_id, w_id))
+            conn.execute("INSERT INTO meeting (id, workspace_id, title, scheduled_start) VALUES (%s, %s, 'M', now())", (m_id, w_id))
+            conn.execute("INSERT INTO decision (id, workspace_id, meeting_id, title) VALUES (%s, %s, %s, 'D')", (d_id, w_id, m_id))
 
-    with psycopg.connect(store.settings().postgres_dsn, row_factory=store.dict_row) as conn:
-        conn.execute("INSERT INTO workspace (id, name) VALUES (%s, 'W')", (w_id,))
-        conn.execute("INSERT INTO board_member (id, workspace_id, full_name, role) VALUES (%s, %s, 'Director', 'director')", (member_id, w_id))
-        conn.execute("INSERT INTO meeting (id, workspace_id, title, scheduled_start) VALUES (%s, %s, 'M', now())", (m_id, w_id))
-        conn.execute("INSERT INTO decision (id, workspace_id, meeting_id, title) VALUES (%s, %s, %s, 'D')", (d_id, w_id, m_id))
+        res = resolutions.create_resolution(d_id, "Adopted Resolution", "Body text", workspace_id=w_id)
+        adopted_res = resolutions.transition_resolution(res.id, resolutions.ADOPTED, expected_version=res.version, workspace_id=w_id)
 
-    res = resolutions.create_resolution(d_id, "Adopted Resolution", "Body text", workspace_id=w_id)
-    adopted_res = resolutions.transition_resolution(res.id, resolutions.ADOPTED, expected_version=res.version, workspace_id=w_id)
-
-    # Convert to commitment
-    comm = resolutions.bridge_resolution_to_commitment(adopted_res.id, owner_board_member_id=member_id, workspace_id=w_id)
-    assert comm.title == "Adopted Resolution"
-    assert comm.decision_id == d_id
-    assert comm.owner_board_member_id == member_id
+        # Convert to commitment
+        comm = resolutions.bridge_resolution_to_commitment(adopted_res.id, owner_board_member_id=member_id, workspace_id=w_id)
+        assert comm.title == "Adopted Resolution"
+        assert comm.decision_id == d_id
+        assert comm.owner_board_member_id == member_id
+    finally:
+        _wipe_workspace(w_id)

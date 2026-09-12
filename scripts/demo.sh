@@ -9,6 +9,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 CLI=".venv/bin/callosum"
+ALEMBIC=".venv/bin/alembic"
 BOARD="data/demo/board_meeting_12_transcript.txt"
 COMP="data/demo/compensation_review_CONFIDENTIAL.txt"
 
@@ -17,6 +18,22 @@ hr() { printf '\n\033[1;36m━━━ %s ━━━\033[0m\n' "$1"; }
 hr "Resetting Postgres + Neo4j (fresh volumes)"
 docker compose down -v
 docker compose up -d
+
+# Fresh volumes only apply schema/postgres.sql — no membership table, no
+# workspace_id. callosum init needs both (#183). Probe TCP until Postgres has
+# finished initdb and bounced; connecting earlier gets a closed connection.
+hr "Waiting for Postgres to accept TCP connections (post-initdb)"
+for i in $(seq 1 60); do
+    if .venv/bin/python -c "import psycopg; from callosum.config import settings; psycopg.connect(settings().postgres_dsn, connect_timeout=2).close()" 2>/dev/null; then
+        echo "postgres ready after ${i}s"
+        break
+    fi
+    if [ "$i" -eq 60 ]; then echo "ERROR: postgres never became ready" >&2; exit 1; fi
+    sleep 1
+done
+
+hr "Applying product migrations (membership, RLS, callosum_app) — BEFORE init"
+$ALEMBIC upgrade head
 
 hr "Init (waits for Neo4j to accept connections)"
 $CLI init

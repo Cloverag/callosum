@@ -24,10 +24,14 @@ import type { Document } from "@/lib/documents";
  *    exists and can count the holes, which is the same disclosure as a
  *    placeholder, only quieter.
  *
- *    The consequence for the UI is absolute: **there is no withheld count to
- *    render, and none may be derived.** No gaps, no placeholders, no "N items
- *    hidden", no subtracting a visible length from a total. The pack read model
- *    carries no total, and that absence is deliberate — do not add one.
+ *    The consequence for the UI is: **do not derive a withheld count.** No gaps,
+ *    no placeholders, no "N items hidden", no subtracting a visible length from
+ *    a total. The pack read model carries no total, and that absence is
+ *    deliberate — do not add one.
+ *
+ *    The server *does* send `withheld_items` (ADR-018). **Render that field.**
+ *    It is a count and nothing else — never a title, id, date, or position.
+ *    Forbidding a derived count is not forbidding the field.
  *
  * 2. **`position` is a display ordinal, not an identifier.** It is renumbered
  *    per caller, so two readers of the same pack see different numbers on the

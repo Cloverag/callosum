@@ -1,6 +1,8 @@
 /**
  * @jest-environment node
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   PACK_LOCKED_MEETING_STATUSES,
   isEditable,
@@ -203,5 +205,19 @@ describe("supersession and errors", () => {
 
     stub({ error: { code: "forbidden", detail: "Not available to you." } }, 403);
     await expect(packsApi.get("pack-q3")).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+describe("the packs.ts header agrees with ADR-018 (#198)", () => {
+  const src = readFileSync(join(__dirname, "../src/lib/packs.ts"), "utf8");
+
+  it("does not forbid rendering the server withheld count", () => {
+    expect(src).not.toMatch(/there is no withheld count to render/);
+  });
+
+  it("tells the UI to render withheld_items and not derive a count", () => {
+    expect(src).toMatch(/do not derive a withheld count/);
+    expect(src).toMatch(/Render that field/);
+    expect(src).toContain("withheld_items");
   });
 });

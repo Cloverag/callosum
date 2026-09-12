@@ -185,24 +185,21 @@ intake has shipped without one.
 
 | | |
 |---|---|
-| Backend tests | **786** passing, gated suite |
-| Frontend tests | **290** passing, 20 suites |
-| API | **75 operations** across 57 paths, 12 routers |
-| Migrations | 25, head `0025_meeting_document`, forward and reverse tested |
+| Backend tests | **956** collected, gated suite |
+| Frontend tests | **298** collected, 22 suites |
+| API | **80 operations** across 62 paths, 14 tags |
+| Migrations | 30, head `0030_document_principal_role`, forward and reverse tested |
 | Architecture decisions | 18 ADRs |
-| Commits | 495 (`git rev-list --count 8dd2d3d`) |
+| Commits | 536 (`git rev-list --count 6e79e22`) |
 
-Measured on `8dd2d3d` (2026-08-24), not carried forward. Both test figures are a **real
-run** on that commit — the gated suite against local Postgres 16 and Neo4j, and Jest with
-`tsc --noEmit` clean. The API, migration, ADR and commit figures all derive at `8dd2d3d`,
-and the parenthetical names the pin rather than a moving ref, so the command printed beside
-the figure reproduces it (see #159).
-
-The backend delta is **+55 on master's 731**: 20 in `tests/test_document_versions.py`, 4 in
-`tests/test_p4_leak_sweep.py`, 15 in `tests/test_withheld_discipline.py`, 14 in
-`tests/test_meeting_material.py`, and two parametrized cases —
-`test_an_applied_migration_is_unchanged` runs once per migration file, so `0024` and `0025`
-add one each. Reconciled by **collecting each file**, not by arithmetic.
+Measured on `6e79e22` (2026-09-12 `origin/master`). Commits, migrations, and ADRs
+derive at that SHA — the parenthetical names the pin, not a moving ref (#159).
+Backend **956** is `pytest --collect-only` on this branch (961 total, 5 llm-deselected);
+it is not a gated pass of all 956. Frontend **298 / 22** is `npx jest` on this tree
+(Linux CI is the pass/fail authority; one Windows path-separator failure in
+`error-text-discipline` is pre-existing). API counts are from
+`meridian.api.main:app.openapi()`. This PR adds **7** pytest cases (#159, #182,
+#183/#184/#195) and **4** Jest cases (#198, #211).
 
 **P3 is frozen, not accepted** — of its three exit criteria one is met, one is partial and
 one is not met, because the accessibility and error-state checkpoints were deliberately
@@ -308,8 +305,8 @@ routes. Set `MERIDIAN_API_ORIGIN` if the API is not on `:8000`.
 ```bash
 docker compose up -d && docker compose ps               # all three healthy FIRST
 .venv/bin/callosum eval-mechanism                        # deterministic gate, no LLM
-CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 786 tests, real stores
-cd frontend && npx jest && npm run build                 # 290 tests, 20 suites
+CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 956 collected on this tree
+cd frontend && npx jest && npm run build                 # 298 tests, 22 suites
 ```
 
 `CALLOSUM_RUN_INTEGRATION=1` runs against real Postgres and Neo4j, so the compose stack
