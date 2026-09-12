@@ -24,11 +24,11 @@ this on 2026-08-15.
 
 CI is `.github/workflows/ci.yml`: a backend job running pytest with
 `CALLOSUM_RUN_INTEGRATION=1` against Postgres and Neo4j service containers (DSN vars are
-`POSTGRES_DSN` / `NEO4J_*`, no `CALLOSUM_` prefix), and a frontend job on **Node 22**
-running Jest, `npm audit --omit=dev --audit-level=critical`, and a Next build. The
-`llm`-marked tests stay excluded through `addopts` in `pyproject.toml`, so their exclusion
-is not visible in the workflow file. The mechanism gate is not in CI and remains a local
-run.
+`POSTGRES_DSN` / `NEO4J_*`, no `CALLOSUM_` prefix), `pip-audit` on the installed graph,
+and a frontend job on **Node 22** running Jest, `npm audit --omit=dev --audit-level=critical`,
+and a Next build. CodeQL is `.github/workflows/codeql.yml`. The `llm`-marked tests stay
+excluded through `addopts` in `pyproject.toml`, so their exclusion is not visible in the
+workflow file. The mechanism gate is not in CI and remains a local run.
 
 ## Meridian product context
 

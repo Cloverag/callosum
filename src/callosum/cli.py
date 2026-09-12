@@ -117,18 +117,21 @@ def init() -> None:
         # runtime: `callosum.identity` resolves it from here, never from
         # `principal.clearance`, which is now a bootstrap seed value only.
         #
-        # Sourced by SELECT rather than from DEMO_PRINCIPALS so that re-running
-        # `init` after a manual principal insert still grants that person a
-        # membership, instead of silently leaving them unable to ask anything.
+        # Restricted to DEMO_PRINCIPALS emails (#201). `FROM principal` with no
+        # WHERE granted membership to every row — restored dumps, leftover
+        # people, anyone inserted by hand. Re-run still upserts the three seeds
+        # above; extra principals stay without a Default Workspace grant.
+        emails = [email for _name, email, _role, _clr, _org in DEMO_PRINCIPALS]
         seeded = conn.execute(
             """
             INSERT INTO membership (principal_id, workspace_id, role, clearance)
             SELECT p.id, %s, p.role, p.clearance
               FROM principal p
-             ON CONFLICT (principal_id, workspace_id) DO NOTHING
+             WHERE p.email = ANY(%s)
+            ON CONFLICT (principal_id, workspace_id) DO NOTHING
             RETURNING principal_id
             """,
-            (store.DEFAULT_WORKSPACE_ID,),
+            (store.DEFAULT_WORKSPACE_ID, emails),
         ).fetchall()
         conn.commit()
 

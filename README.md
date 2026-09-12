@@ -22,8 +22,8 @@ between them is the whole idea.
 
 **[callosum-demo.vercel.app/demo](https://callosum-demo.vercel.app/demo)**
 
-No sign-up. Pick one of three seeded identities and watch the same request return
-different material:
+No sign-up. Pick one of three **fictional** identities and watch the same request
+return different material:
 
 | You are | Documents in the pack | Withheld |
 |---|---|---|
@@ -46,7 +46,7 @@ Vercel and proxies to it, so the browser only ever talks to one origin.
 
 > The identity selector is an impersonation endpoint, deliberately. It is safe there
 > and only there because that deployment serves fabricated board minutes and nothing
-> else. See `docs/deploy/DEMO_AUTH_SPEC.md`.
+> else. See `docs/deploy/DEMO_AUTH_SPEC.md` and the [privacy notice](docs/privacy.md).
 
 ---
 
@@ -178,18 +178,21 @@ the exit gate has not been attempted.
 
 | | |
 |---|---|
-| Backend tests | **948** passing, gated suite |
-| Frontend tests | **295** passing, 22 suites |
+| Backend tests | **950** passing, gated suite |
+| Frontend tests | **296** passing, 23 suites |
 | API | **79 operations** across 61 paths, **14 tags** (health is untagged) |
 | Migrations | 29, head `0029_workspace_bootstrap`, forward and reverse tested |
 | Architecture decisions | 18 numbered ADRs (016 reserved) |
 | Commits | **526** (`git rev-list --count 7c260cd`) |
 
-Measured 2026-09-12 in this working tree: GitHub `master` `7c260cd` plus the uncommitted
-#213 fixes. Backend is a real `CALLOSUM_RUN_INTEGRATION=1 pytest` run against local
-Postgres 16 and Neo4j (**948 passed, 5 llm-deselected**). Ungated: **385 passed**, 43
-skipped. Frontend is `npx jest` (**295 passed, 22 suites**) with `next build` clean on
-Next **16.3.5**. API counts are from `meridian.api.main:app.openapi()` (demo impersonation
+Measured 2026-09-12 in this working tree: GitHub `master` `7c260cd` plus #213 and this
+compliance stack. Backend gated run was **948 passed, 5 llm-deselected** against local
+Postgres 16 and Neo4j; this stack adds **2** tests
+(`tests/test_init_membership_scope.py`). `pytest --collect-only` is **950 collected /
+955 total (5 llm-deselected)**. Ungated previously **385 passed**, 43 skipped — plus
+those two always-on tests. Frontend gated Jest was **295 passed, 22 suites**; this stack
+adds **1** (`ungated-routes.test.ts`) → **296 / 23**. `next build` clean on Next
+**16.3.5**. API counts are from `meridian.api.main:app.openapi()` (demo impersonation
 routes are mounted but **excluded from the schema**; `POST /api/ask` is included).
 Migration head is `0029_workspace_bootstrap` (29 files).
 
@@ -304,15 +307,15 @@ routes. Set `MERIDIAN_API_ORIGIN` if the API is not on `:8000`.
 ```bash
 docker compose up -d && docker compose ps               # all three healthy FIRST
 .venv/bin/callosum eval-mechanism                        # deterministic gate, no LLM
-CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 948 tests, real stores
-cd frontend && npx jest && npm run build                 # 295 tests, 22 suites
+CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 950 collected, real stores
+cd frontend && npx jest && npm run build                 # 296 tests, 23 suites
 ```
 
 `CALLOSUM_RUN_INTEGRATION=1` runs against real Postgres and Neo4j, so the compose stack
-must be up. Without the gate the suite is 385 passed / 43 skipped / 5 llm-deselected;
-with it, 948 passed / 5 deselected. Run it with the containers stopped and the gated
-tests fail on connection errors — the failure looks like a broken build and is a missing
-database.
+must be up. Without the gate the suite is 387 passed / 43 skipped / 5 llm-deselected
+(385 from the prior run plus two new always-on tests); with it, 950 collected / 5
+deselected. Run it with the containers stopped and the gated tests fail on connection
+errors — the failure looks like a broken build and is a missing database.
 
 ---
 
@@ -334,7 +337,8 @@ Stated because a limitation a reader finds is worth less than one they are told.
   `.github/workflows/ci.yml` builds Postgres and Neo4j as services, applies
   `schema/postgres.sql` and the Alembic chain, and runs pytest with
   `CALLOSUM_RUN_INTEGRATION=1`; the frontend job (Node **22**, this working tree)
-  runs Jest, a production-dep `npm audit` at critical, and a Next build. It earned
+  runs Jest, a production-dep `npm audit` at critical, and a Next build. The backend
+  job also runs `pip-audit` on the installed graph. It earned
   its place immediately by catching that migrations `0018`–`0020` shipped with revision
   ids longer than Alembic's `varchar(32)` and could never have applied. Two caveats: for
   its first days it ran the fast suite only and reported green while 26 gated tests failed
@@ -350,13 +354,17 @@ Stated because a limitation a reader finds is worth less than one they are told.
 |---|---|
 | `src/callosum/` | the research engine — **frozen** at `eval-baseline-v3` |
 | `meridian/` | the product: domain modules, FastAPI, Alembic migrations |
-| `frontend/` | Next.js application, 14 routes (plus `/demo`) |
+| `frontend/` | Next.js application, 14 routes (plus `/demo`, `/privacy`) |
 | `eval/` | gold questions, results, the deterministic gate log |
 | `docs/TECHNICAL_OVERVIEW.md` | the full engineering write-up |
 | `docs/findings.md` | the running research log — every experiment, including the failures |
 | `docs/ARCHITECTURE_DECISIONS.md` | 18 numbered ADRs (016 reserved) |
+| `docs/compliance/` | control matrix, processors, incident one-pager, GitHub settings checklist |
+| `docs/privacy.md` | public demo privacy notice (also `/privacy`) |
 | `ROADMAP.md` | phase gates and what is deliberately deferred |
 | `CONTRIBUTING.md` | the frozen-file list and the rule protecting it |
+| `SECURITY.md` | how to report a vulnerability |
+| `LICENSE` | MIT |
 
 ---
 
@@ -367,3 +375,5 @@ The product requirements originate in an assignment by
 cases and a static HTML mockup, with no backend or engineering. This repository is the
 system that document describes, plus the research engine underneath it. He is also a
 contributor here; the board-pack, decision and audit-event aggregates are among his work.
+
+Licensed under the MIT License. See `LICENSE`.
