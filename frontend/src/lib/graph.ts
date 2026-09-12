@@ -9,7 +9,8 @@
 // layout, seed 7) whenever the gold graph changes. Positions are baked so the
 // picture is stable across loads and needs no layout library.
 //
-// Swaps to a real endpoint at P3 behind this same shape.
+// Deferred to P6 (#100): this file is a gold-graph snapshot for the canvas, not
+// a live graph API. Restricted evidence quotes are withheld from the bundle.
 
 export type GraphNodeType =
   | "Person" | "Decision" | "Meeting" | "Topic"
@@ -138,7 +139,7 @@ export const GRAPH_EDGES: GraphEdgeData[] = [
   { id: "e36", source: "International expansion motion", target: "Board Meeting 16", relation: "MADE_IN", quote: "The international expansion motion stays deferred.", document: "board_meeting_16_transcript", restricted: false },
   { id: "e37", source: "Priya Nair", target: "Vendor security questionnaire", relation: "OWNS", quote: "Priya owns the vendor-security questionnaire", document: "messy_board_followup_email", restricted: false },
   { id: "e38", source: "Nisha Shah", target: "SOC 2 evidence request", relation: "OWNS", quote: "Nisha owns the SOC 2 evidence request", document: "messy_audit_followup_email", restricted: false },
-  { id: "e39", source: "Priya Nair", target: "Meridian Inc", relation: "WORKS_AT", quote: "Priya Nair, CFO, is at $185K base", document: "compensation_review_CONFIDENTIAL", restricted: true },
+  { id: "e39", source: "Priya Nair", target: "Meridian Inc", relation: "WORKS_AT", quote: "", document: "compensation_review_CONFIDENTIAL", restricted: true },
 ];
 
 const delay = (ms = 400) => new Promise((r) => setTimeout(r, ms));
@@ -155,11 +156,12 @@ export type GraphView = {
 
 export const graphApi = {
   /**
-   * `canSeeRestricted` stands in for the clearance check the backend already
-   * enforces in SQL and Cypher. Filtering here is presentation only — the real
-   * guarantee is that a low-clearance caller is never sent the rows at all.
+   * Presentation filter over a **local gold-graph snapshot**. This is not the
+   * SQL/Cypher clearance gate. Restricted evidence quotes are not shipped in this
+   * bundle; default is fail-closed so a visitor does not see restricted nodes
+   * until they opt into the founder preview.
    */
-  async get(canSeeRestricted = true): Promise<GraphView> {
+  async get(canSeeRestricted = false): Promise<GraphView> {
     await delay();
     if (canSeeRestricted) {
       return { nodes: GRAPH_NODES, edges: GRAPH_EDGES, withheldNodes: 0, withheldEdges: 0 };

@@ -40,6 +40,7 @@ from meridian import (
     meetings,
     minutes,
     packs,
+    prep,
     resolutions,
     workspaces,
 )
@@ -132,6 +133,10 @@ _EXPLICIT: tuple[tuple[type[BaseException], int, str, str | None], ...] = (
     # Named to avoid `errors.py`'s own "NotFound" name-suffix pass, deliberately —
     # see the class docstring in workspaces.py.
     (workspaces.LastActiveMembershipError, HTTPStatus.CONFLICT, CONFLICT, None),
+    # Prep used to map any exception to 400/404 with `str(exc)`. The domain error
+    # for "nothing to publish" is `MeetingPrepError`; 400 keeps the authorized-but-
+    # empty contract without swallowing unexpected failures as client errors.
+    (prep.MeetingPrepError, HTTPStatus.BAD_REQUEST, INVALID, None),
     # Infrastructure, not domain. A provider being down or a graph write failing is not
     # the caller's mistake, so 503 rather than a 4xx — see `test_api_errors.py`, which
     # asserts no *domain* exception falls through to a 500. These two are exempt by
@@ -166,6 +171,7 @@ COVERED_MODULES = (
     meetings,
     minutes,
     packs,
+    prep,
     resolutions,
     workspaces,
 )
@@ -270,6 +276,7 @@ def install_exception_handlers(app) -> None:
         meetings.MeetingError,
         minutes.MinutesError,
         packs.BoardPackError,
+        prep.MeetingPrepError,
         resolutions.ResolutionError,
         workspaces.WorkspaceError,
         PrincipalNotFound,

@@ -13,9 +13,9 @@
 #   * NOTHING IS PUBLISHED TO THE HOST. cloudflared joins this network and reaches
 #     `api:8000` directly, so there is no listening port on the LAN and no
 #     inbound firewall rule anywhere.
-#   * ENVIRONMENT=production is pinned on the api service. This is load-bearing:
-#     meridian/api/deps.py defaults it to "development", which is the permissive
-#     side of the MERIDIAN_DEV_AUTO_AUTH bypass. Do not remove this line.
+#   * ENVIRONMENT=production is pinned on the api service. Auto-auth is fail-closed
+#     unless ENVIRONMENT is an explicit allowlisted value (#192); the pin is
+#     belt-and-braces, not the only guard.
 
 services:
   postgres:
@@ -43,7 +43,7 @@ services:
       retries: 20
 
   neo4j:
-    image: neo4j:5-community
+    image: neo4j:5.26-community
     container_name: callosum-demo-neo4j
     restart: unless-stopped
     mem_limit: 1500m
@@ -112,7 +112,7 @@ services:
         condition: service_healthy
 
   cloudflared:
-    image: cloudflare/cloudflared:latest
+    image: cloudflare/cloudflared:2025.8.1
     container_name: callosum-demo-tunnel
     restart: unless-stopped
     mem_limit: 128m

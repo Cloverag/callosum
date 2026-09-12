@@ -1,7 +1,11 @@
 # Callosum / Meridian — Technical Overview
 
-**Status:** research track closed and frozen (`eval-baseline-v3`); product track frozen
-at P3 (`f0f1504`, 2026-08-01).
+**Status:** research track closed and frozen (`eval-baseline-v3`); product track **3 of 13
+accepted**, P3 frozen with exit unclaimed, P4 work items shipped with exit unclaimed.
+GitHub `master` as of 2026-09-12 is `7c260cd` (public demo live). Live counts live in
+the root `README.md`. Figures in later sections of *this* file are records of the date
+they were written (P3 freeze at `f0f1504`, 2026-08-01) and must not be mixed with the
+README pin.
 **Scope of this document:** what the system is, why it is built this way, what was
 measured, and what is not true of it.
 
@@ -197,9 +201,9 @@ boundary is real: the product never edits the engine.
 | Layer | Contents |
 |---|---|
 | `meridian/*.py` | 10 domain modules — meetings, agenda, decisions, packs, minutes, resolutions, commitments, board members, audit, documents |
-| `meridian/api/` | 10 routers (9 domain + `auth`), **61 operations** across 44 paths |
-| `meridian/migrations/` | **17** Alembic migrations, `0001`–`0017` |
-| `frontend/` | Next.js 16 + React 19 + Tailwind v4, **12 pages** (the build reports 14 routes, counting `/_not-found` and `/icon.svg`; `/` is a config redirect, not a page) |
+| `meridian/api/` | 14 named tags; live operation/path counts are in the root README (OpenAPI). Demo impersonation routes exist and are excluded from the schema. |
+| `meridian/migrations/` | Live head is in the root README (`0029_workspace_bootstrap` as of 2026-09-12). Do not copy a count into this table. |
+| `frontend/` | Next.js 16 + React 19 + Tailwind v4. Live route count is in the root README (14 feature routes plus `/demo`). |
 
 Aggregates were delivered one per checkpoint, each with its own migration, domain module
 and tests. Every mutable aggregate carries a `version` column and optimistic concurrency.

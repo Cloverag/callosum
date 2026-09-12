@@ -38,8 +38,8 @@ green.
 
 **Counts as of this commit — post-change, and they moved in it:**
 
-    ungated (no CALLOSUM_RUN_INTEGRATION)   296 passed, 41 skipped, 5 deselected
-    gated   (CALLOSUM_RUN_INTEGRATION=1)    826 passed, 5 deselected
+    ungated (no CALLOSUM_RUN_INTEGRATION)   385 passed, 43 skipped, 5 deselected
+    gated   (CALLOSUM_RUN_INTEGRATION=1)    948 passed, 5 deselected
 
 Stated as post-change because this commit moved both, and a stale pin here is worse
 than no pin at all: the previous draft of this docstring pinned the *pre*-change 298 /
@@ -49,6 +49,7 @@ gate — un-gating the four tests the gate exists for. **A pinned figure inside 
 instruction points the reader somewhere; it must point at the state the reader is in.**
 """
 
+import os
 import subprocess
 import sys
 
@@ -63,11 +64,13 @@ def _run_ungated(*args: str) -> str:
     per-test lines the name assertion needs never appear — the caller passes whichever
     verbosity it actually needs.
     """
+    env = os.environ.copy()
+    env.pop("CALLOSUM_RUN_INTEGRATION", None)
     return subprocess.run(
         [sys.executable, "-m", "pytest", _MIXED, "--no-header", *args],
         capture_output=True,
         text=True,
-        env={"PATH": "/usr/bin:/bin", "HOME": "/tmp"},
+        env=env,
     ).stdout
 
 

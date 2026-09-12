@@ -16,18 +16,26 @@ security cases), updated docs/status, runnable verification commands, and a revi
 No checkpoint may weaken evidence verification, human approval, RBAC, provenance, or audit
 requirements.
 
-## Current progress — 2026-08-22
+## Current progress — 2026-09-12
 
 | Track | Completed | Active | Remaining |
 |---|---:|---|---:|
-| Research engine | **14 / 14** accepted (`R0`–`R13`) | — research track CLOSED 2026-07-18, baseline frozen at `6ed5ed5` | 0 |
-| Meridian product | **3 / 13** accepted (`P0`, `P1`, `P2`) | **P3 FROZEN**, exit gate not claimed (CP-F/G/H deferred, #93) · **P4 IN PROGRESS** — source intake merged; versions and meeting assignment built, exit gate not attempted | **10** (`P3`–`P12`) |
+| Research engine | **14 / 14** accepted (`R0`–`R13`) | — research track CLOSED 2026-07-18, baseline frozen at `eval-baseline-v3` | 0 |
+| Meridian product | **3 / 13** accepted (`P0`, `P1`, `P2`) | **P3 FROZEN**, exit gate not claimed (CP-F/G/H deferred, #93) · **P4 work items shipped** (intake, versions, meeting assignment, membership grant/revoke); **exit gate not attempted** — audit coverage still open (#166) | **10** (`P3`–`P12`) |
 
 The counts must not be combined into one percentage: the research track validates the
 memory engine; the product track makes it a deployable board operating system. P3 gave the
 product an authenticated API and an OIDC identity. CI has run the gated suite against real
-Postgres and Neo4j on every pull request since #120, but the mechanism gate is not part of
-it, and there is still no public deployment, no integration layer, and no pilot.
+Postgres and Neo4j on every pull request since #120. The mechanism gate is still not part
+of CI.
+
+**There is a public demo:** [callosum-demo.vercel.app/demo](https://callosum-demo.vercel.app/demo)
+(PR #202, `7c260cd`). There is still no integration layer and no pilot. Founder and exec
+see the same pack on that demo because the corpus has no sensitivity-4 document on
+`master` — that is #203 / PR #204, not a product bug.
+
+*(Previous "current progress" pin: 2026-08-22, which still said there was no public
+deployment. That sentence is false as of #202.)*
 
 ### P2 checkpoint status
 
@@ -385,11 +393,13 @@ observability.
 **Exit:** users access only authorized workspaces; UI distinguishes draft/approved/withheld/
 failed states; primary flows pass keyboard and accessibility smoke checks.
 
-## P4 — Board workspace, members, and source intake — 🟩 IN PROGRESS
+## P4 — Board workspace, members, and source intake — items shipped, gate unclaimed
 
-Source intake merged 2026-08-22 (PR #128); versions built 2026-08-23. **Not accepted:** the
-exit gate has not been attempted, and `rules.md` §4 is explicit that only an exit gate advances the accepted count,
-so the product track stays at 3 of 13. Checkpoint detail in [phase.md](./phase.md#product-p4--board-workspace-members-and-source-intake--in-progress).
+Source intake merged 2026-08-22 (PR #128); versions built 2026-08-23; membership
+grant/revoke shipped 2026-08-28 (#186). **Not accepted:** the exit gate has not been
+attempted, and `rules.md` §4 is explicit that only an exit gate advances the accepted
+count, so the product track stays at 3 of 13. Checkpoint detail in
+[phase.md](./phase.md#product-p4--board-workspace-members-and-source-intake--in-progress).
 
 | Work item | State |
 |---|---|
@@ -397,6 +407,7 @@ so the product track stays at 3 of 13. Checkpoint detail in [phase.md](./phase.m
 | Document intake / import · metadata / sensitivity · duplicates · quarantine state | ✅ merged (#128) |
 | Versions | ✅ built 2026-08-23 (`0024_document_version`, ADR-017) |
 | Workspace / meeting assignment | ✅ built 2026-08-24 (`0025_meeting_document`, ADR-018) |
+| Membership grant / revoke (audited) | ✅ shipped (#186); remaining P4 audit steps are #166 |
 | Exit gate | ⬜ not attempted |
 
 **Recorded gap — CLOSED.** Intake applied no sensitivity ceiling: a clearance-1 principal
