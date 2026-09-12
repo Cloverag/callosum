@@ -1,0 +1,14 @@
+# Code owners
+
+GitHub cannot tell two agents apart when they share the `Cloverag` credential,
+and that account cannot approve its own pull requests. CODEOWNERS is the
+**intended** review map, not a substitute for a second human login. Enable
+"Require review from Code Owners" only after a second reviewer account exists
+(see `docs/compliance/GITHUB.md`).
+
+* @Cloverag @Devguru-codes
+
+/src/callosum/ @Cloverag
+/schema/ @Cloverag
+/meridian/api/ @Cloverag
+/.github/ @Cloverag

@@ -97,11 +97,14 @@ export function useSession(): Session | null {
  * is unset, as it deliberately is on the public demo. The selector was reachable by
  * curl and by nothing else.
  *
- * Rendering it outside the provider is safe: `useSession()` is typed
+ * `/privacy` is the public notice for that same unsigned visitor. Gating it
+ * would send them to Sign in, which is the opposite of a privacy page.
+ *
+ * Rendering these outside the provider is safe: `useSession()` is typed
  * `Session | null` and its consumers (`Header`, `AssistantRail`) already handle the
  * null case, because that is the context default.
  */
-const UNGATED_ROUTES = new Set(["/demo"]);
+const UNGATED_ROUTES = new Set(["/demo", "/privacy"]);
 
 export function SessionGate({ children }: { children: ReactNode }) {
   const [state, setState] = useState<State>({ phase: "checking" });
@@ -320,6 +323,12 @@ function SignedOut({ onSelected }: { onSelected: () => void }) {
               That did not work. Try again, or reload the page.
             </p>
           )}
+          <p className="mt-6 text-xs text-muted-foreground">
+            Fictional board.{" "}
+            <a className="text-accent-emphasis underline" href="/privacy">
+              Privacy
+            </a>
+          </p>
         </>
       ) : (
         <>
@@ -331,6 +340,11 @@ function SignedOut({ onSelected }: { onSelected: () => void }) {
           <Button className="mt-4 w-full" onClick={() => { window.location.href = LOGIN_URL; }}>
             Sign in
           </Button>
+          <p className="mt-6 text-xs text-muted-foreground">
+            <a className="text-accent-emphasis underline" href="/privacy">
+              Privacy
+            </a>
+          </p>
         </>
       )}
     </>

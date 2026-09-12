@@ -99,6 +99,11 @@ export default function DemoPage() {
         <p className="mt-2 text-sm opacity-70">
           This build does not have the demo selector enabled.
         </p>
+        <p className="mt-6 text-xs opacity-70">
+          <a className="underline" href="/privacy">
+            Privacy
+          </a>
+        </p>
       </main>
     );
   }
@@ -109,6 +114,11 @@ export default function DemoPage() {
         <h1 className="text-2xl font-semibold">Demo pack not configured</h1>
         <p className="mt-2 text-sm opacity-70">
           Set <code>NEXT_PUBLIC_DEMO_PACK_ID</code> to the seeded Board Meeting 14 pack.
+        </p>
+        <p className="mt-6 text-xs opacity-70">
+          <a className="underline" href="/privacy">
+            Privacy
+          </a>
         </p>
       </main>
     );
@@ -180,6 +190,13 @@ export default function DemoPage() {
           </ul>
         </section>
       )}
+
+      <p className="mt-10 text-xs text-muted-foreground">
+        Fictional identities and fabricated minutes. The selector is impersonation.{" "}
+        <a className="text-accent-emphasis underline" href="/privacy">
+          Privacy
+        </a>
+      </p>
     </main>
   );
 }
