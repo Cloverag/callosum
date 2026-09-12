@@ -25,9 +25,9 @@ function Row({ m }: { m: Meeting }) {
 
   return (
     <div className="px-5 py-3">
-      <div className="flex items-center gap-4">
-        <div className="w-44 shrink-0">
-          <div className="text-sm font-medium text-foreground">{m.scheduled_start ? formatDayFull(new Date(m.scheduled_start)) : "Not scheduled"}</div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 sm:flex-nowrap">
+        <div className="w-40 shrink-0 sm:w-44">
+          <div className="truncate text-sm font-medium text-foreground">{m.scheduled_start ? formatDayFull(new Date(m.scheduled_start)) : "Not scheduled"}</div>
           <div className="text-xs tabular-nums text-muted-foreground">
             {m.scheduled_start && m.scheduled_end
               ? `${formatTime(m.scheduled_start)} – ${formatTime(m.scheduled_end)}`
