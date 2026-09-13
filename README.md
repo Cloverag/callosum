@@ -185,24 +185,25 @@ intake has shipped without one.
 
 | | |
 |---|---|
-| Backend tests | **786** passing, gated suite |
-| Frontend tests | **290** passing, 20 suites |
-| API | **75 operations** across 57 paths, 12 routers |
-| Migrations | 25, head `0025_meeting_document`, forward and reverse tested |
+| Backend tests | **971** collected gated (`971/976`, 5 `llm` deselected) |
+| Frontend tests | **308** tests, 23 suites |
+| API | **80 operations** across 62 paths, 14 tags |
+| Migrations | 30, head `0030_document_principal_role`, forward and reverse tested |
 | Architecture decisions | 18 ADRs |
-| Commits | 495 (`git rev-list --count 8dd2d3d`) |
+| Commits | 540 (`git rev-list --count HEAD` after this change) |
 
-Measured on `8dd2d3d` (2026-08-24), not carried forward. Both test figures are a **real
-run** on that commit — the gated suite against local Postgres 16 and Neo4j, and Jest with
-`tsc --noEmit` clean. The API, migration, ADR and commit figures all derive at `8dd2d3d`,
-and the parenthetical names the pin rather than a moving ref, so the command printed beside
-the figure reproduces it (see #159).
+Backend figure is **`CALLOSUM_RUN_INTEGRATION=1 pytest --collect-only -q`** on this
+change (parent `bff0c0d` plus the prompt-boundary tests). Not a gated pass/fail run —
+Windows still reds migration header hashes and `conftest_gate` (CRLF / Unix PATH);
+Linux CI is the pass oracle. Ungated collect-only on the same tree is **404/409**
+(5 `llm` deselected). Frontend is unchanged here; **308 / 23** is `npx jest --ci` as
+run on master after #210. API from `app.openapi()`: 80 operations, 62 paths, 14 tags
+(`health` untagged). Migration head and ADR count from the tree. Commits counted at
+this commit.
 
-The backend delta is **+55 on master's 731**: 20 in `tests/test_document_versions.py`, 4 in
-`tests/test_p4_leak_sweep.py`, 15 in `tests/test_withheld_discipline.py`, 14 in
-`tests/test_meeting_material.py`, and two parametrized cases —
-`test_an_applied_migration_is_unchanged` runs once per migration file, so `0024` and `0025`
-add one each. Reconciled by **collecting each file**, not by arithmetic.
+This PR adds **12** tests in `tests/test_prompt_boundary.py` (fences, abstention,
+question cap, extraction user-turn wrap). Reconciled by collect-only, not arithmetic
+on the stale `8dd2d3d` pin.
 
 **P3 is frozen, not accepted** — of its three exit criteria one is met, one is partial and
 one is not met, because the accessibility and error-state checkpoints were deliberately
@@ -308,14 +309,14 @@ routes. Set `MERIDIAN_API_ORIGIN` if the API is not on `:8000`.
 ```bash
 docker compose up -d && docker compose ps               # all three healthy FIRST
 .venv/bin/callosum eval-mechanism                        # deterministic gate, no LLM
-CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 786 tests, real stores
-cd frontend && npx jest && npm run build                 # 290 tests, 20 suites
+CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 971 collected gated; 5 llm deselected
+cd frontend && npx jest && npm run build                 # 308 tests, 23 suites
 ```
 
 `CALLOSUM_RUN_INTEGRATION=1` runs against real Postgres and Neo4j, so the compose stack
-must be up. Without the gate the suite selects 253 tests; with it, 750. Run it with the
-containers stopped and the 497 gated tests fail on connection errors — the failure looks
-like a broken build and is a missing database.
+must be up. Without the gate the suite collects 404 tests (5 llm deselected of 409);
+with it, 971 (of 976). Run it with the containers stopped and the gated tests fail on
+connection errors — the failure looks like a broken build and is a missing database.
 
 ---
 
