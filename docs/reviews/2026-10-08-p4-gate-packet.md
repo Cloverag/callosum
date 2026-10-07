@@ -1,4 +1,4 @@
-# P4 exit gate — evidence packet (second attempt)
+# P4 exit gate — evidence packet (second attempt) — ACCEPTED 2026-10-08
 
 | | |
 |---|---|
@@ -6,7 +6,7 @@
 | **Pinned master SHA** | `7f8a84ba57820981af4eb968cdfd1b1c2c3873d5` (merge of #223) — every figure below is measured at this commit |
 | **Assembled by** | Claude Code session, 2026-10-08. This session wrote #223, which this packet cites as evidence for criterion 3 — so it may assemble, not sign (`rules.md` §4) |
 | **Previous attempt** | [2026-08-24 packet](./2026-08-24-p4-gate-packet.md) — **REFUSED** 2026-08-25: *"#166 is still unresolved, and criterion 1 explicitly requires membership to be both authorized and audited."* |
-| **Signed by** | _blank until signed — see §5_ |
+| **Signed by** | Maintainer, 2026-10-08 — see §5 |
 
 ## 1. Criteria and evidence
 
@@ -61,6 +61,11 @@ The `migration-chain` job in the same CI run (fresh Postgres container): `alembi
 
 Filled in by the signer only. The author of the work may not sign.
 
-- **Verdict:** ACCEPTED / REFUSED
-- **Gaps from §4 accepted as known:** …
-- **Signed:** <name>, <date>
+- **Verdict: ACCEPTED.** P4 is accepted at `7f8a84b`. The product track moves from 3 / 13 to **4 / 13** (P0, P1, P2, P4; P3 stays frozen and unaccepted).
+- **The maintainer's words (chat, 2026-10-08):** *"pass, investors adding investors is fine but also need permisoon drom another person like manger of this workspace"*
+- **What that means, clarified with the maintainer in the same session:**
+  - The §4 point on who may grant is **accepted**: a non-admin member may grant at or below their own clearance.
+  - **New requirement, not a condition of this gate:** such a grant must also be approved by an active **founder or admin** of the workspace. Founders and admins grant directly. Not built at the pin; tracked in **#225**.
+  - The maintainer chose "pass now, build it later" over "fail until built".
+- **Gaps from §4 accepted as known:** all of them as listed. None is a known leak.
+- **Signed:** maintainer (Raghav, `Cloverag`), 2026-10-08, given in chat and recorded here by the assembling session. Per `rules.md` §5 a recorded comment is not proof of who decided: the maintainer's merge of this PR is the act of signing.
