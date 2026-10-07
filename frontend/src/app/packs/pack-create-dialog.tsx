@@ -121,7 +121,7 @@ export function PackCreateDialog({
           <Input id="pack-title" value={title} onChange={(e) => setTitle(e.target.value)} />
         </div>
         {error && (
-          <p role="alert" className="text-sm text-danger">
+          <p role="alert" className="text-sm text-danger-emphasis">
             {serverMessage(error)}
           </p>
         )}

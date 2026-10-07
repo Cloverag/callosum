@@ -86,6 +86,8 @@ export function PackBuilder({
   const [focus, setFocus] = useState<FocusRequest | null>(null);
 
   const listRef = useRef<HTMLOListElement>(null);
+  // Where focus goes when the list has emptied: removing the last item unmounts the <ol>.
+  const emptyRef = useRef<HTMLParagraphElement>(null);
   const publishRef = useRef<HTMLButtonElement>(null);
   const backRef = useRef<HTMLButtonElement>(null);
   const moveRefs = useRef(new Map<string, HTMLButtonElement | null>());
@@ -111,7 +113,7 @@ export function PackBuilder({
     if (!focus) return;
     const target =
       focus.target === "list"
-        ? listRef.current
+        ? (listRef.current ?? emptyRef.current)
         : focus.target === "publish"
           ? publishRef.current
           : focus.target === "back"
@@ -277,7 +279,7 @@ export function PackBuilder({
           <p>Publishing here does not send anything. Distribution is not part of this step.</p>
           {hasWithheld && <WithheldNote count={pack.withheld_items} />}
           {problem && (
-            <p role="alert" className="text-danger">
+            <p role="alert" className="text-danger-emphasis">
               {problem}
             </p>
           )}
@@ -286,7 +288,7 @@ export function PackBuilder({
       ) : (
         <div className="flex flex-col gap-5">
           {problem && (
-            <p role="alert" className="text-sm text-danger">
+            <p role="alert" className="text-sm text-danger-emphasis">
               {problem}
             </p>
           )}
@@ -301,7 +303,9 @@ export function PackBuilder({
               In this pack
             </h3>
             {rows.length === 0 ? (
-              <p className="mt-2 text-sm text-muted-foreground">No documents to show in this pack.</p>
+              <p ref={emptyRef} tabIndex={-1} className="mt-2 text-sm text-muted-foreground focus-visible:outline-none">
+                No documents to show in this pack.
+              </p>
             ) : (
               <ol
                 ref={listRef}

@@ -187,6 +187,17 @@ describe("focus and announcements", () => {
     expect(screen.getByText("CFO memo added to the pack.")).toBeInTheDocument();
   });
 
+  it("keeps focus in the dialog when the last item is removed", async () => {
+    packs.removeItem.mockResolvedValue(undefined);
+    packs.get.mockResolvedValue(pack({ version: 2 }));
+    setup(pack({}, ["d-1"]));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Remove Board deck" }));
+    // The list unmounted; focus must land on the empty-state text, not the page.
+    await waitFor(() => expect(screen.getByText("No documents to show in this pack.")).toHaveFocus());
+    expect(screen.getByText("Board deck removed from the pack.")).toBeInTheDocument();
+  });
+
   it("keeps focus on the pressed move button, or its opposite when the row reaches an end", async () => {
     packs.reorder.mockResolvedValue(pack());
     // After moving Board deck down it is last, so "down" is disabled: focus should land on "up".
