@@ -73,7 +73,11 @@ def test_publishing_twice_records_one_event_and_keeps_the_first_timestamp(world)
 
     first = prep.publish_preread(m.id, workspace_id=ws, actor_id=actor)
     with psycopg.connect(settings().postgres_dsn) as conn:
-        stamp = conn.execute("SELECT published_at FROM board_pack WHERE id = %s", (pack_id,)).fetchone()[0]
+        stamp, version = conn.execute(
+            "SELECT published_at, version FROM board_pack WHERE id = %s", (pack_id,)
+        ).fetchone()
+    # Like `packs.publish_pack`: a concurrent editor holding version 1 must be refused.
+    assert version == 2
 
     second = prep.publish_preread(m.id, workspace_id=ws, actor_id=actor)
 
@@ -83,6 +87,9 @@ def test_publishing_twice_records_one_event_and_keeps_the_first_timestamp(world)
     with psycopg.connect(settings().postgres_dsn) as conn:
         again = conn.execute("SELECT published_at FROM board_pack WHERE id = %s", (pack_id,)).fetchone()[0]
     assert again == stamp
+    with psycopg.connect(settings().postgres_dsn) as conn:
+        # The no-op must not bump the version a second time.
+        assert conn.execute("SELECT version FROM board_pack WHERE id = %s", (pack_id,)).fetchone()[0] == 2
 
 
 def test_publishing_with_no_pack_still_refuses_and_records_nothing(world):

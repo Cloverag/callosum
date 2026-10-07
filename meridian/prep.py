@@ -212,7 +212,8 @@ def publish_preread(
         conn.execute(
             """
             UPDATE board_pack
-               SET status = 'published', published_at = NOW()
+               SET status = 'published', published_at = NOW(),
+                   version = version + 1, updated_at = NOW()
              WHERE id = %s
             """,
             (pack_id,),
