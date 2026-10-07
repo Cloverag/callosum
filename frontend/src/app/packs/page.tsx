@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Briefcase } from "lucide-react";
+import { Briefcase, Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 import { LoadFailed, asApiError } from "@/components/ui/load-failed";
 import type { ApiError } from "@/lib/http";
@@ -18,6 +19,8 @@ import {
 import { documentsApi, type Document } from "@/lib/documents";
 import { meetingsApi, type Meeting } from "@/lib/meetings";
 import { PackCard } from "./pack-card";
+import { PackBuilder } from "./pack-builder";
+import { PackCreateDialog } from "./pack-create-dialog";
 
 /**
  * Packs hang off a meeting, so this surface names one. A meeting picker is CP-F's
@@ -50,6 +53,20 @@ export default function PacksPage() {
   const [error, setError] = useState<ApiError | null>(null);
   const [meetings, setMeetings] = useState<Meeting[] | null>(null);
   const [active, setActive] = useState<Set<PackStatus>>(new Set());
+  // Which dialog is open. The builder holds its own copy of the pack and reports every
+  // server response back through `upsert`, so the cards behind it stay current.
+  const [creating, setCreating] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [versioning, setVersioning] = useState<BoardPack | null>(null);
+
+  function upsert(...incoming: BoardPack[]) {
+    setData((prev) => {
+      const base = prev ?? { packs: [], documents: [] };
+      const byId = new Map(base.packs.map((p) => [p.id, p]));
+      for (const p of incoming) byId.set(p.id, p);
+      return { ...base, packs: [...byId.values()] };
+    });
+  }
 
   useEffect(() => {
     let stale = false;
@@ -86,6 +103,9 @@ export default function PacksPage() {
     meetingsApi.list().then(setMeetings).catch(() => setMeetings([]));
   }, []);
 
+  const meetingById = useMemo(() => new Map((meetings ?? []).map((m) => [m.id, m])), [meetings]);
+  const editing = packs?.find((p) => p.id === editingId) ?? null;
+
   const meetingTitle = useMemo(() => {
     const byId = new Map((meetings ?? []).map((m) => [m.id, m.title]));
     return (id: string) => byId.get(id);
@@ -121,6 +141,11 @@ export default function PacksPage() {
         title="Board packs"
         description="The pre-read circulated before each meeting, and which version stood."
         icon={<Briefcase />}
+        actions={
+          <Button onClick={() => setCreating(true)} disabled={meetings === null}>
+            <Plus /> New pack
+          </Button>
+        }
       />
 
       <div className="mt-6 flex flex-wrap items-center justify-between gap-4">
@@ -188,11 +213,48 @@ export default function PacksPage() {
                 all={packs ?? []}
                 documents={documents}
                 meetingTitle={meetingTitle(p.meeting_id)}
+                meetingStatus={meetingById.get(p.meeting_id)?.status}
+                onEdit={() => setEditingId(p.id)}
+                onNewVersion={() => setVersioning(p)}
               />
             </div>
           ))
         )}
       </div>
+
+      {creating && (
+        <PackCreateDialog
+          meetings={meetings ?? []}
+          onClose={() => setCreating(false)}
+          onCreated={(created) => {
+            upsert(created);
+            setCreating(false);
+            setEditingId(created.id);
+          }}
+        />
+      )}
+      {versioning && (
+        <PackCreateDialog
+          meetings={meetings ?? []}
+          supersedes={versioning}
+          onClose={() => setVersioning(null)}
+          onCreated={(replacement, superseded) => {
+            upsert(...(superseded ? [superseded, replacement] : [replacement]));
+            setVersioning(null);
+            setEditingId(replacement.id);
+          }}
+        />
+      )}
+      {editing && (
+        <PackBuilder
+          key={editing.id}
+          pack={editing}
+          meeting={meetingById.get(editing.meeting_id)}
+          documents={documents}
+          onChanged={(p) => upsert(p)}
+          onClose={() => setEditingId(null)}
+        />
+      )}
     </div>
   );
 }

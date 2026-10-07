@@ -1,5 +1,5 @@
 import type { BadgeTone } from "@/components/ui/badge";
-import { apiGet, apiGetOrNull } from "@/lib/http";
+import { apiDeleteReturning, apiGet, apiGetOrNull, apiPatch, apiPost } from "@/lib/http";
 import type { Document } from "@/lib/documents";
 
 /**
@@ -153,6 +153,18 @@ export function supersededBy(pack: BoardPack, all: BoardPack[]): BoardPack | nul
 }
 
 /**
+ * Every version of a meeting's pack, oldest first.
+ *
+ * Built from the packs the caller was sent — `list_packs` already returns them for the
+ * meeting — so a version the caller cannot see is simply absent, not a gap to report.
+ */
+export function versionTrail(pack: BoardPack, all: BoardPack[]): BoardPack[] {
+  return all
+    .filter((p) => p.meeting_id === pack.meeting_id)
+    .sort((a, b) => a.version_no - b.version_no);
+}
+
+/**
  * Pairs each readable item with its document.
  *
  * A `null` document means the row could not be resolved — the reference is
@@ -196,5 +208,62 @@ export const packsApi = {
 
   async get(id: string): Promise<BoardPack | null> {
     return apiGetOrNull<BoardPack>(`/packs/${encodeURIComponent(id)}`);
+  },
+
+  // --- Writes (P5 CP5B) -------------------------------------------------------
+  // Every one of these exists on the server already (`meridian/api/packs.py`); this
+  // block is the client for them and invents nothing. None takes a workspace or a
+  // clearance — both come from the session (ADR-013).
+
+  /** An empty `draft`, version 1, against a meeting that has not started. */
+  async create(body: { meeting_id: string; title: string }): Promise<BoardPack> {
+    return apiPost<BoardPack>("/packs", body);
+  },
+
+  /** Renames a draft. `expected_version` is the pack's `version`, not `version_no`. */
+  async rename(id: string, body: { expected_version: number; title: string }): Promise<BoardPack> {
+    return apiPatch<BoardPack>(`/packs/${encodeURIComponent(id)}`, body);
+  },
+
+  /**
+   * Adds a document to a draft. **Bumps the pack's `version`**, so the `version` on any
+   * pack read before this call is stale — re-`get` before publishing (see the module
+   * docstring of `meridian/api/packs.py`).
+   */
+  async addItem(
+    packId: string,
+    body: { document_id: string; agenda_item_id?: string | null; note?: string | null },
+  ): Promise<BoardPackItem> {
+    return apiPost<BoardPackItem>(`/packs/${encodeURIComponent(packId)}/items`, body);
+  },
+
+  /** Addressed by the item's own id; the server closes the gap. Also bumps `version`. */
+  async removeItem(itemId: string): Promise<void> {
+    await apiDeleteReturning<void>(`/packs/items/${encodeURIComponent(itemId)}`);
+  },
+
+  /**
+   * Sets the order. The server requires EVERY item id, so a caller who cannot read
+   * every item is refused rather than silently dropping the ones they cannot see.
+   */
+  async reorder(packId: string, orderedItemIds: string[]): Promise<BoardPack> {
+    return apiPost<BoardPack>(`/packs/${encodeURIComponent(packId)}/reorder`, {
+      ordered_item_ids: orderedItemIds,
+    });
+  },
+
+  /** Freezes a draft. Irreversible: a published pack is amended only by `supersede`. */
+  async publish(id: string, expectedVersion: number): Promise<BoardPack> {
+    return apiPost<BoardPack>(`/packs/${encodeURIComponent(id)}/publish`, {
+      expected_version: expectedVersion,
+    });
+  },
+
+  /** Issues the next version as a new draft with the items copied forward. */
+  async supersede(
+    id: string,
+    body: { new_title: string; expected_version: number },
+  ): Promise<{ superseded: BoardPack; replacement: BoardPack }> {
+    return apiPost(`/packs/${encodeURIComponent(id)}/supersede`, body);
   },
 };

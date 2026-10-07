@@ -2,13 +2,17 @@
 
 import { ArrowRight, FileText, Lock, StickyNote } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import {
   PACK_STATUS_LABEL,
   PACK_STATUS_TONE,
+  isEditable,
+  PACK_LOCKED_MEETING_STATUSES,
   resolveItems,
   supersededBy,
+  versionTrail,
   type BoardPack,
 } from "@/lib/packs";
 import { DOC_TYPE_LABEL, SENSITIVITY_LABEL, type Document } from "@/lib/documents";
@@ -54,13 +58,28 @@ export function PackCard({
   all,
   documents,
   meetingTitle,
+  meetingStatus,
+  onEdit,
+  onNewVersion,
 }: {
   pack: BoardPack;
   all: BoardPack[];
   documents: Document[];
   meetingTitle?: string;
+  /** Hints which controls to offer; the server enforces the same rule regardless. */
+  meetingStatus?: string;
+  onEdit?: () => void;
+  onNewVersion?: () => void;
 }) {
   const replacement = supersededBy(pack, all);
+  const trail = versionTrail(pack, all);
+  const canEdit = onEdit && isEditable(pack, meetingStatus);
+  const canIssueNew =
+    onNewVersion &&
+    pack.status === "published" &&
+    !pack.superseded_by_id &&
+    meetingStatus !== undefined &&
+    !PACK_LOCKED_MEETING_STATUSES.has(meetingStatus);
   const rows = resolveItems(pack.items, documents);
 
   return (
@@ -90,6 +109,46 @@ export function PackCard({
       {/* Supersession is the version trail: which pre-read actually stood at the
           meeting. version_no is the published lineage, not the concurrency
           counter — see CONTRIBUTING.md on version vs version_no. */}
+      {trail.length > 1 && (
+        <nav aria-label="Versions of this pack" className="mt-3 flex flex-wrap items-center gap-1.5 text-xs">
+          <span className="text-subtle-foreground">Versions</span>
+          {trail.map((v) =>
+            v.id === pack.id ? (
+              <span
+                key={v.id}
+                aria-current="true"
+                className="rounded-[6px] bg-surface-sunken px-2 py-0.5 text-foreground"
+              >
+                {v.version_no} · {PACK_STATUS_LABEL[v.status]}
+              </span>
+            ) : (
+              <a
+                key={v.id}
+                href={`#${v.id}`}
+                className="rounded-[6px] px-2 py-0.5 text-accent-emphasis hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+              >
+                {v.version_no} · {PACK_STATUS_LABEL[v.status]}
+              </a>
+            ),
+          )}
+        </nav>
+      )}
+
+      {(canEdit || canIssueNew) && (
+        <div className="mt-4 flex gap-2">
+          {canEdit && (
+            <Button variant="secondary" size="sm" onClick={onEdit}>
+              Edit pack
+            </Button>
+          )}
+          {canIssueNew && (
+            <Button variant="secondary" size="sm" onClick={onNewVersion}>
+              New version
+            </Button>
+          )}
+        </div>
+      )}
+
       {replacement && (
         <a
           href={`#${replacement.id}`}
