@@ -170,7 +170,10 @@ def publish_preread(
     workspace_id: str = DEFAULT_WORKSPACE_ID,
     actor_id: str | None = None,
 ) -> dict[str, Any]:
-    """Publishes the latest board pack for pre-read distribution and logs an audit event."""
+    """Publishes the latest board pack for pre-read distribution and logs an audit event.
+
+    Publishing an already-published pack is a no-op that records nothing.
+    """
     m_uuid = uuid.UUID(str(meeting_id))
     meeting = meetings.get_meeting(str(m_uuid), workspace_id=workspace_id)
 
@@ -182,6 +185,7 @@ def publish_preread(
              WHERE meeting_id = %s AND status != 'archived'
              ORDER BY version_no DESC
              LIMIT 1
+             FOR UPDATE
             """,
             (m_uuid,),
         ).fetchone()
@@ -190,16 +194,29 @@ def publish_preread(
             raise MeetingPrepError(f"No board pack exists for meeting {meeting_id}")
 
         pack_id = pack_row["id"]
-        # Update pack status to published if draft
-        if pack_row["status"] == "draft":
-            conn.execute(
-                """
-                UPDATE board_pack
-                   SET status = 'published', published_at = NOW()
-                 WHERE id = %s
-                """,
-                (pack_id,),
-            )
+
+        # Already published: nothing happens, so nothing is recorded (`rules.md` §2, the
+        # trail records only events that happened). This is a no-op rather than a refusal
+        # because the response is true as it stands — the pack IS published at this
+        # version — and a client retrying after a dropped response should get that
+        # answer, not an error for an operation that had already succeeded. The row lock
+        # above makes two concurrent calls serialise, so exactly one sees `draft`.
+        if pack_row["status"] != "draft":
+            return {
+                "meeting_id": str(m_uuid),
+                "pack_id": str(pack_id),
+                "version_no": pack_row["version_no"],
+                "status": pack_row["status"],
+            }
+
+        conn.execute(
+            """
+            UPDATE board_pack
+               SET status = 'published', published_at = NOW()
+             WHERE id = %s
+            """,
+            (pack_id,),
+        )
 
         # Record audit event
         audit.record_audit_event(
