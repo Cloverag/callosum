@@ -37,6 +37,13 @@ export function AgendaEditor({
   // A fresh, sequenced object per request, so asking twice still re-focuses.
   const [focus, setFocus] = useState<FocusRequest | null>(null);
   const listRef = useRef<HTMLOListElement>(null);
+  const emptyRef = useRef<HTMLParagraphElement>(null);
+  // After a removal: focus whichever of the list or the empty state rendered, so it
+  // runs after the render that may have unmounted the list (last item removed).
+  const [focusList, setFocusList] = useState(0);
+  useEffect(() => {
+    if (focusList > 0) (listRef.current ?? emptyRef.current)?.focus();
+  }, [focusList]);
 
   /** Resolves true when the write landed, so an edit form stays open (and keeps what
    *  was typed) when it did not. */
@@ -88,14 +95,20 @@ export function AgendaEditor({
   const remove = (item: AgendaItem) =>
     run(
       async () => {
-        await agendaApi.remove(item.id, item.version);
+        try {
+          await agendaApi.remove(item.id, item.version);
+        } catch (e) {
+          // Already removed (another tab, another person): the outcome the reader asked
+          // for holds, so drop the row rather than leave one the server no longer has.
+          if (!(e instanceof ApiError && e.status === 404)) throw e;
+        }
         return items
           .filter((i) => i.id !== item.id)
           .map((i) => (i.position > item.position ? { ...i, position: i.position - 1 } : i));
       },
       () => {
         setAnnouncement(`"${item.title}" removed from the agenda.`);
-        listRef.current?.focus();
+        setFocusList((n) => n + 1);
       },
     );
 
@@ -107,7 +120,9 @@ export function AgendaEditor({
         {announcement}
       </p>
       {items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Nothing is on the agenda yet.</p>
+        <p ref={emptyRef} tabIndex={-1} className="text-sm text-muted-foreground focus-visible:outline-none">
+          Nothing is on the agenda yet.
+        </p>
       ) : (
         <>
           <ol

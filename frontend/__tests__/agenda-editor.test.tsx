@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { AgendaEditor } from "../src/app/prepare/agenda-editor";
 import { agendaApi, type AgendaItem } from "../src/lib/agenda";
@@ -56,7 +57,7 @@ it("an edit sends the item's version and only what changed; an empty minutes fie
 });
 
 it("a refused edit keeps the form open with what was typed, and says why", async () => {
-  api.update.mockRejectedValue(new ApiError(409, "locked", "meeting in progress"));
+  api.update.mockRejectedValue(new ApiError(409, "conflict", "meeting in progress"));
   render(<AgendaEditor meetingId="m-1" items={[A]} onChange={jest.fn()} />);
 
   fireEvent.click(screen.getByLabelText('Edit "Pricing"'));
@@ -124,7 +125,8 @@ it("a move is announced and keeps focus on the moved item", async () => {
 
 it.each([
   [new ApiError(409, "stale_resource", "x"), /Someone else changed the agenda/],
-  [new ApiError(409, "locked", "x"), /in progress, completed or cancelled/],
+  // "conflict" is the real code for a locked parent (meridian/api/errors.py CONFLICT).
+  [new ApiError(409, "conflict", "x"), /in progress, completed or cancelled/],
   [new TypeError("fetch failed"), /Could not reach the server/],
 ])("explains a refused write: %s", async (error, copy) => {
   api.reorder.mockRejectedValue(error);
@@ -132,4 +134,30 @@ it.each([
   fireEvent.click(screen.getByLabelText('Move "Pricing" down'));
 
   expect((await screen.findByRole("alert")).textContent).toMatch(copy);
+});
+
+it("removing the last item moves focus to the empty state, not the page top", async () => {
+  function Host() {
+    const [items, setItems] = useState([A]);
+    return <AgendaEditor meetingId="m-1" items={items} onChange={setItems} />;
+  }
+  api.remove.mockResolvedValue(undefined);
+  render(<Host />);
+
+  fireEvent.click(screen.getByLabelText('Remove "Pricing"'));
+  fireEvent.click(screen.getByText("Remove"));
+
+  await waitFor(() => expect(document.activeElement?.textContent).toBe("Nothing is on the agenda yet."));
+});
+
+it("a remove answered 404 drops the row: the item is already gone", async () => {
+  const onChange = jest.fn();
+  api.remove.mockRejectedValue(new ApiError(404, "not_found", "gone"));
+  render(<AgendaEditor meetingId="m-1" items={[A, B]} onChange={onChange} />);
+
+  fireEvent.click(screen.getByLabelText('Remove "Pricing"'));
+  fireEvent.click(screen.getByText("Remove"));
+
+  await waitFor(() => expect(onChange).toHaveBeenCalledWith([{ ...B, position: 1 }]));
+  expect(screen.queryByRole("alert")).toBeNull();
 });
