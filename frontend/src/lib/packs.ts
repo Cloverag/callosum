@@ -16,18 +16,25 @@ import type { Document } from "@/lib/documents";
  * TWO CONTRACT PROPERTIES THIS SURFACE MUST NOT BREAK
  * ---------------------------------------------------------------------------
  *
- * 1. **Items are clearance-filtered and renumbered by the server.**
- *    `_fetch_items_for_packs` (`meridian/packs.py:153-190`) pushes the clearance
- *    predicate into the WHERE clause and then renumbers the surviving rows from
- *    1, so what the caller receives is always contiguous. The reason is in that
- *    docstring: an investor shown items at positions [2, 3] learns a position 1
- *    exists and can count the holes, which is the same disclosure as a
- *    placeholder, only quieter.
+ * 1. **Items are clearance-filtered and renumbered by the server, and the number
+ *    withheld is disclosed as a COUNT (ADR-018, #198).**
+ *    `_fetch_items_for_packs` (`meridian/packs.py`) pushes the clearance predicate
+ *    into the WHERE clause and then renumbers the surviving rows from 1, so what the
+ *    caller receives is always contiguous. The reason is that an investor shown items
+ *    at positions [2, 3] learns a position 1 exists and can count the holes, which is
+ *    the same disclosure as a placeholder, only quieter.
  *
- *    The consequence for the UI is absolute: **there is no withheld count to
- *    render, and none may be derived.** No gaps, no placeholders, no "N items
- *    hidden", no subtracting a visible length from a total. The pack read model
- *    carries no total, and that absence is deliberate — do not add one.
+ *    The count is the deliberate replacement for that covert channel: a pack claims to
+ *    be *the material for a meeting*, so a director who prepares from one that
+ *    silently dropped items walks in believing they are prepared. `withheld_items`
+ *    says HOW MANY and nothing else: no gaps, no placeholder rows, no title, id, date
+ *    or position. Render it with the shared "N withheld" wording (`FieldValue`); a
+ *    non-zero value is not an error state.
+ *
+ *    What stays forbidden is *deriving* anything else: no subtracting a visible length
+ *    from an assumed total, and no "N items" figure that mixes visible and withheld.
+ *    This header used to forbid rendering the count at all (#198); the API has
+ *    returned it since CP-C and the ban was the bug.
  *
  * 2. **`position` is a display ordinal, not an identifier.** It is renumbered
  *    per caller, so two readers of the same pack see different numbers on the

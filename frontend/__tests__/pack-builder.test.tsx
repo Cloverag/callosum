@@ -156,6 +156,61 @@ describe("reordering", () => {
   });
 });
 
+describe("when the re-read fails", () => {
+  it("says the pack may be stale instead of leaving it looking current", async () => {
+    packs.addItem.mockResolvedValue({});
+    packs.get.mockRejectedValue(new ApiError(0, "network", "Could not reach the server."));
+    setup(pack({}, ["d-1"]));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Add CFO memo" }));
+    expect(await screen.findByText(/saved, but the pack could not be reloaded/i)).toBeInTheDocument();
+  });
+
+  it("does not leave an unhandled rejection when a failed change is followed by a failed re-read", async () => {
+    packs.removeItem.mockRejectedValue(new ApiError(409, "conflict", "locked"));
+    packs.get.mockRejectedValue(new ApiError(0, "network", "Could not reach the server."));
+    setup(pack({}, ["d-1"]));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Remove Board deck" }));
+    expect(await screen.findByText(/could not be reloaded/i)).toBeInTheDocument();
+  });
+});
+
+describe("focus and announcements", () => {
+  it("returns focus to the pack list after an add and announces it", async () => {
+    packs.addItem.mockResolvedValue({});
+    packs.get.mockResolvedValue(pack({ version: 2 }, ["d-1", "d-2"]));
+    setup(pack({}, ["d-1"]));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Add CFO memo" }));
+    await waitFor(() => expect(screen.getByRole("list", { name: "In this pack" })).toHaveFocus());
+    expect(screen.getByText("CFO memo added to the pack.")).toBeInTheDocument();
+  });
+
+  it("keeps focus on the pressed move button, or its opposite when the row reaches an end", async () => {
+    packs.reorder.mockResolvedValue(pack());
+    // After moving Board deck down it is last, so "down" is disabled: focus should land on "up".
+    const swapped = pack({}, ["d-2", "d-1"]);
+    swapped.items[0].id = "i-2"; // items keep their ids when they move
+    swapped.items[1].id = "i-1";
+    packs.get.mockResolvedValue(swapped);
+    setup(pack({}, ["d-1", "d-2"]));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Move Board deck down" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Move Board deck up" })).toHaveFocus());
+    expect(screen.getByText("Board deck moved to position 2 of 2.")).toBeInTheDocument();
+  });
+
+  it("moves focus into the confirmation and back out again", async () => {
+    setup(pack({}, ["d-1"]));
+    fireEvent.click(await screen.findByRole("button", { name: /Publish…/ }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Back" })).toHaveFocus());
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: /Publish…/ })).toHaveFocus());
+  });
+});
+
 describe("publishing", () => {
   it("asks first, states the version, and does not publish until confirmed", async () => {
     setup(pack({ version_no: 3 }, ["d-1"]));
@@ -219,10 +274,30 @@ describe("what cannot be edited", () => {
     expect(screen.queryByRole("button", { name: /Publish…/ })).not.toBeInTheDocument();
   });
 
-  it("never totals or hints at items the reader cannot see", async () => {
+  it("discloses how many items are withheld, as a count and nothing else (ADR-018)", async () => {
     setup(pack({ withheld_items: 4 }, ["d-1"]));
     await screen.findByText("Board deck");
-    expect(screen.queryByText(/withheld|hidden|\bof \d+\b|\d+ items?/i)).not.toBeInTheDocument();
+    // The shared wording, so every surface says the same thing about the same fact.
+    expect(screen.getByText("4 withheld")).toBeInTheDocument();
+    expect(screen.getByText(/not everything the board holds/i)).toBeInTheDocument();
+    // No derived total, no placeholder rows.
+    expect(screen.queryByText(/\bof \d+\b.*items|\d+ items?\b/i)).not.toBeInTheDocument();
+    expect(screen.getAllByRole("listitem").length).toBe(1 + 1); // pack row + the one addable doc
+  });
+
+  it("says nothing about withheld items when there are none", async () => {
+    setup(pack({ withheld_items: 0 }, ["d-1"]));
+    await screen.findByText("Board deck");
+    expect(screen.queryByText(/withheld/i)).not.toBeInTheDocument();
+  });
+
+  it("switches reordering off when anything is withheld, and says why", async () => {
+    setup(pack({ withheld_items: 1 }, ["d-1", "d-2"]));
+    expect(await screen.findByRole("button", { name: "Move Board deck down" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Move CFO memo up" })).toBeDisabled();
+    expect(screen.getByText(/Reordering is unavailable/)).toBeInTheDocument();
+    // Removing is still possible: it needs one id, not all of them.
+    expect(screen.getByRole("button", { name: "Remove Board deck" })).toBeEnabled();
   });
 
   it("shows — for a meeting it cannot name, not an invented one", async () => {

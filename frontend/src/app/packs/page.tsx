@@ -40,11 +40,9 @@ import { PackCreateDialog } from "./pack-create-dialog";
  * browser: `_fetch_items_for_packs` drops items above the caller's level before the
  * pack is serialised, then renumbers what survives.
  *
- * Note how this differs from `/memory`, deliberately. The graph surface tells you
- * *how many* nodes were withheld, because `graph_search` returns that count. This one
- * never does, because `list_packs` does not — and could not without undoing its own
- * renumbering. No gap appears in the numbering, no total changes, nothing announces
- * itself. That silence is the contract working, not a missing feature.
+ * Items the caller may not read are dropped by `_fetch_items_for_packs` and the rest
+ * renumbered, so no gap appears; `withheld_items` carries how many were dropped and the
+ * card renders that as a count (ADR-018, #198), which is the only trace.
  */
 type Loaded = { packs: BoardPack[]; documents: Document[] };
 

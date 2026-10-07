@@ -3,6 +3,8 @@
 import { ArrowRight, FileText, Lock, StickyNote } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { FieldValue } from "@/components/ui/field-value";
+import { withheld as withheldState } from "@/lib/field-state";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import {
@@ -33,25 +35,16 @@ function formatDate(iso: string): string {
  * One board pack and the documents in it.
  *
  * ---------------------------------------------------------------------------
- * WHY THE ACCESS NOTICE IS UNCONDITIONAL
+ * WHY THE WITHHELD COUNT IS SHOWN (ADR-018, #198)
  * ---------------------------------------------------------------------------
- * The obvious design is to show "some content is unavailable" only when
- * something was actually withheld. That design cannot be built here, and should
- * not be.
- *
- * It cannot be built because the server renumbers items from 1 before sending
- * them (`meridian/packs.py:153-190`) and returns no total, so a withheld item
- * leaves no trace in the response. There is nothing to condition on.
- *
- * It should not be built because a conditional notice *is* a disclosure. Showing
- * it only when something is hidden tells the reader that this pack contains
- * material they are excluded from — one bit, but the bit that matters. For a
- * board pack that is a live signal: it says the board is reviewing something
- * about you, or without you. A count of zero and a count of one must be
- * indistinguishable, which means the notice must read the same in both cases.
- *
- * So it is a standing property of the surface, phrased in the present tense
- * about the view rather than about this pack's contents.
+ * This card used to carry an unconditional "some content may be unavailable" line, on
+ * the reasoning that a conditional notice would itself disclose that something was
+ * hidden. That reasoning predates ADR-018, which decided the opposite for views that
+ * claim completeness: a pack claims to be the material for a meeting, so a director
+ * must be told when it is not all of it. The API returns `withheld_items`; this card
+ * renders it, as a count and nothing else, with the shared "N withheld" wording. Zero
+ * renders nothing. The renumbering (no gap, no position) is unchanged: the count
+ * replaces the covert channel rather than adding to it.
  */
 export function PackCard({
   pack,
@@ -206,14 +199,22 @@ export function PackCard({
         // it is above this caller's clearance. Those two states must not be
         // distinguishable.
         <p className="mt-4 border-t border-border pt-4 text-sm text-muted-foreground">
-          No documents to show in this pack at your access level.
+          No documents to show in this pack.
         </p>
       )}
 
-      <p className="mt-4 flex items-center gap-1.5 text-xs text-subtle-foreground">
-        <Lock className="size-3 shrink-0" aria-hidden />
-        Pack contents are filtered to your access level. Some content may be unavailable.
-      </p>
+      {pack.withheld_items > 0 && (
+        // ADR-018: a pack claims to be the material for the meeting, so when the server
+        // withheld some, say how many and that this is not everything. A COUNT only.
+        <p className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
+          <Lock className="size-3 shrink-0" aria-hidden />
+          <FieldValue state={withheldState<number>(pack.withheld_items)} />
+          <span>
+            {pack.withheld_items === 1 ? "document is" : "documents are"} above your clearance.
+            This pack is not everything the board holds for this meeting.
+          </span>
+        </p>
+      )}
     </Card>
   );
 }
