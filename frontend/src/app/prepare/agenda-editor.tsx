@@ -13,8 +13,9 @@ import { agendaApi, totalMinutes, type AgendaItem } from "@/lib/agenda";
  *
  * Every write goes to the server and the list is replaced with what the server
  * returns: an edit returns the item, a reorder returns the whole agenda, and a removal
- * is followed by a re-list because the server renumbers the items after the gap (and
- * bumps their versions, so a locally renumbered copy would 409 on its next edit).
+ * is followed by a re-list because the server renumbers the items after the gap.
+ * (It does not bump their versions, so renumbering locally would also work; the
+ * re-list is chosen so the page never shows an order the server did not report.)
  *
  * Reordering is "move up / move down" buttons rather than drag, so the keyboard path is
  * the same path as the pointer path (WCAG 2.2 AA, `rules.md` §6).
