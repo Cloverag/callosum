@@ -148,5 +148,10 @@
     "downgrade": "bca5077c94ec850c72a21d1922bee5d9f85d86ef86c025a11db004e9a4e02574",
     "header": "9ccb5b183fbf60fcc2dd2f70064bbe41fa6c4e11c15393a65c6aa9367c8f5be3",
     "upgrade": "4a8050f94c99fddd0be0430835dd6c63aa1f5700af4d5103476a023d5cdf9eb0"
+  },
+  "0031_membership_request": {
+    "downgrade": "adfe269cc059c20f547b8bc2a806008d91b11168fe7c754c81f6629cbbceabe7",
+    "header": "67361ff62ec92d7daa5c7c6e3fd242dccefd7666c1654d50a68f56e3cbbd043e",
+    "upgrade": "28c9c140c77a1f95b39a5895c85f480a0deb8de98241305b9fdf2d06053a8de4"
   }
 }
