@@ -70,16 +70,24 @@ where intuition said:
 | Traversal — given correct grounding | **100%** |
 | Grounding precision — abstain when there is no referent | **50%** (1/2) |
 
+> **Provenance.** These figures come from the runs recorded in `eval/results-v2.csv`,
+> the most recent dated **2026-07-20**, measured on a **29-item** gold set. `eval/gold.jsonl`
+> has held **36 items since 2026-08-23** and 46 since 2026-09-06, so seven questions
+> present in the set today — `E4 L4 C3 T5 E5 N3 D3` — have never been measured, and
+> neither have the clearance items added in #204/#205.
+>
+> The numbers are correct for what they measured. They are **not** current, and the
+> denominators are the honest reason to be careful with the last row: grounding precision
+> is one item out of two. The gold set now carries four abstention negatives, so that
+> row's denominator doubles the moment it is re-run. Tracked in #203, which carries the
+> counts and the full gap analysis.
+
 **All the loss is in one stage.** The right entity was offered every single time, and
 traversal never failed once seeded — so the bottleneck is *named entity linking*, not the
 graph. That measurement is why a planned abstention algorithm was never built: the
 instrumentation removed the reason for it.
 
-Source: [`eval/results-v2.csv`](eval/results-v2.csv) · run **2026-07-20** · **29-item** gold set
-at that date. `eval/gold.jsonl` is **36 items** on current `master` and has **not** been
-re-measured into this table — do not read 17/21 or 1/2 as if they described the 36-item
-file. That mismatch is issue #203 / PR #206. Do not invent a new percentage without a new
-run.
+Source: [`eval/results.md`](eval/results.md) · run 2026-07-20.
 
 ---
 
@@ -156,8 +164,8 @@ A chunk row in Postgres and its `(:Chunk)` node in Neo4j share one UUID, so a **
 hit can traverse into the graph** and a **graph hit can pull back the passage that proves
 it**.
 
-**Stack** — Postgres 16 + pgvector · Neo4j **5.26** · Python 3.12 + FastAPI · Next.js **16.3.5** +
-React 19 + Tailwind v4 · Keycloak 26 (OIDC). The LLM provider is pluggable and defaults to a
+**Stack** — Postgres 16 + pgvector · Neo4j **5.26** · Python 3.12 + FastAPI · Next.js
+**16.3.8** + React 19 + Tailwind v4 · Keycloak 26 (OIDC). The LLM provider is pluggable and defaults to a
 free tier (Ollama Cloud / `gpt-oss:120b-cloud`, bge-m3 embeddings), because *extraction quality is
 graph quality* — which model does the extracting is a research variable, not an
 implementation detail. Documentation that still names Claude or Kimi as the default is stale.
@@ -167,37 +175,42 @@ implementation detail. Documentation that still names Claude or Kimi as the defa
 ## What is built
 
 Two tracks. The research engine is closed and frozen. The product has three phases
-accepted; P3 is frozen feature-complete with its exit gate unclaimed; P4 work items
-have shipped (intake, versions, meeting assignment, membership grant/revoke) and
-the exit gate has not been attempted.
+accepted; P3 is frozen feature-complete with its exit gate unclaimed, and P4 source
+intake has shipped without one.
 
 | Track | State |
 |---|---|
 | **Research engine** (`src/callosum/`) | **14 / 14 checkpoints accepted**, frozen at `eval-baseline-v3` |
-| **Product** (`meridian/`, `frontend/`) | **3 / 13 phases accepted**; P3 frozen, exit gate not claimed · P4 work items complete (intake, versions, meeting assignment, membership grant/revoke), exit gate not attempted |
+| **Product** (`meridian/`, `frontend/`) | **4 / 13 phases accepted** (P0, P1, P2, P4 — [P4 accepted 2026-10-08](./docs/reviews/2026-10-08-p4-gate-packet.md)); P3 frozen, exit gate not claimed |
 
 | | |
 |---|---|
-| Backend tests | **950** passing, gated suite |
-| Frontend tests | **296** passing, 23 suites |
-| API | **79 operations** across 61 paths, **14 tags** (health is untagged) |
-| Migrations | 29, head `0029_workspace_bootstrap`, forward and reverse tested |
-| Architecture decisions | 18 numbered ADRs (016 reserved) |
-| Commits | **526** (`git rev-list --count 7c260cd`) |
+| Backend tests | **985** passing, gated suite |
+| Frontend tests | **354** passing, 27 suites |
+| API | **79 operations** across 61 paths, 14 tags (health is untagged) |
+| Migrations | 30, head `0030_document_principal_role`, forward and reverse tested |
+| Architecture decisions | 18 ADRs |
+| Commits | 562 (`git rev-list --count ee4c171`) |
 
-Measured 2026-09-12 in this working tree: GitHub `master` `7c260cd` plus #213 and this
-compliance stack. Backend gated run was **948 passed, 5 llm-deselected** against local
-Postgres 16 and Neo4j; this stack adds **2** tests
-(`tests/test_init_membership_scope.py`). `pytest --collect-only` is **950 collected /
-955 total (5 llm-deselected)**. Ungated previously **385 passed**, 43 skipped — plus
-those two always-on tests. Frontend gated Jest was **295 passed, 22 suites**; this stack
-adds **1** (`ungated-routes.test.ts`) → **296 / 23**. `next build` clean on Next
-**16.3.5**. API counts are from `meridian.api.main:app.openapi()` (demo impersonation
-routes are mounted but **excluded from the schema**; `POST /api/ask` is included).
-Migration head is `0029_workspace_bootstrap` (29 files).
+Measured on `ee4c171` (2026-10-08), not carried forward — this branch, which is `master`
+`f5bcf24` plus the #213 fixes. The backend figure is CI run
+[37816516227](https://github.com/Cloverag/callosum/actions/runs/37816516227), the gated tier
+against Postgres 16 and Neo4j service containers; the frontend figure is a local
+`npx jest` with `npm run build` clean on Next 16.3.8. The API, migration, ADR and commit
+figures all derive at `ee4c171`, and the parenthetical names the pin rather than a moving
+ref, so the command printed beside the figure reproduces it (see #159).
 
-Those figures are not yet on `origin/master`. Origin README still advertised 786 / 290 /
-75 ops / head `0025` at a pin of `8dd2d3d`. Do not mix the two.
+**The API row counts tags, not routers.** The previous wording said "12 routers" and the
+number was taken from `app.openapi()`, which reports tags — `/health` carries no tag, so
+router count and tag count are not the same figure. Renamed rather than re-derived,
+because the honest fix for a mislabelled number is the label.
+
+**This block had been stale since 2026-08-24.** It advertised 786 / 290 / 75 ops / head
+`0025` at a pin of `8dd2d3d` while five weeks of merged work went by — versions, meeting
+assignment, the leak sweep, the demo deployment, the eval strata, #166's audit coverage, the
+P4 gate, and P5's agenda and pack work. None of those re-pinned it. Replaced rather than
+appended to: two pinned figures in one table is how a reader loses the ability to tell a
+stale number from a regression.
 
 **P3 is frozen, not accepted** — of its three exit criteria one is met, one is partial and
 one is not met, because the accessibility and error-state checkpoints were deliberately
@@ -254,10 +267,6 @@ ollama signin                            # once, for the free cloud model
 ollama pull bge-m3                       # local embeddings
 
 callosum doctor                          # check provider + both stores
-# Fresh Postgres volumes only apply schema/postgres.sql. Product tables live
-# in Alembic. After `docker compose up` on an empty volume:
-#   alembic upgrade head
-# then:
 callosum init
 callosum ingest-doc data/demo/board_meeting_12_transcript.txt --type transcript --sensitivity 1
 callosum ingest-doc data/demo/compensation_review_CONFIDENTIAL.txt --type transcript --sensitivity 3
@@ -307,15 +316,14 @@ routes. Set `MERIDIAN_API_ORIGIN` if the API is not on `:8000`.
 ```bash
 docker compose up -d && docker compose ps               # all three healthy FIRST
 .venv/bin/callosum eval-mechanism                        # deterministic gate, no LLM
-CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 950 collected, real stores
-cd frontend && npx jest && npm run build                 # 296 tests, 23 suites
+CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 985 tests, real stores
+cd frontend && npx jest && npm run build                 # 354 tests, 27 suites
 ```
 
 `CALLOSUM_RUN_INTEGRATION=1` runs against real Postgres and Neo4j, so the compose stack
-must be up. Without the gate the suite is 387 passed / 43 skipped / 5 llm-deselected
-(385 from the prior run plus two new always-on tests); with it, 950 collected / 5
-deselected. Run it with the containers stopped and the gated tests fail on connection
-errors — the failure looks like a broken build and is a missing database.
+must be up. Without the gate the suite is **399 passed, 47 skipped**; with it,
+**985 passed**. Run it with the containers stopped and the gated tests fail on
+connection errors — the failure looks like a broken build and is a missing database.
 
 ---
 
@@ -331,7 +339,9 @@ Stated because a limitation a reader finds is worth less than one they are told.
   corpus could not exercise the bug.**
 - **Accessibility is designed, not audited.** Built to WCAG 2.2 AA as a hard floor; the
   verification checkpoint was deferred.
-- **Grounding precision is 50%** on abstention negatives — the linker does not reliably
+- **Grounding precision is 50%** on abstention negatives — one item out of two, on the
+  2026-07-20 run; the set now holds four such negatives and this has not been re-measured
+  — the linker does not reliably
   refuse a question with no referent in the graph. The weakest measured number here.
 - **CI runs the gated suite, and it is younger than most of this document.**
   `.github/workflows/ci.yml` builds Postgres and Neo4j as services, applies
@@ -354,11 +364,11 @@ Stated because a limitation a reader finds is worth less than one they are told.
 |---|---|
 | `src/callosum/` | the research engine — **frozen** at `eval-baseline-v3` |
 | `meridian/` | the product: domain modules, FastAPI, Alembic migrations |
-| `frontend/` | Next.js application, 14 routes (plus `/demo`, `/privacy`) |
+| `frontend/` | Next.js application, 15 routes including `/demo` and `/privacy` |
 | `eval/` | gold questions, results, the deterministic gate log |
 | `docs/TECHNICAL_OVERVIEW.md` | the full engineering write-up |
 | `docs/findings.md` | the running research log — every experiment, including the failures |
-| `docs/ARCHITECTURE_DECISIONS.md` | 18 numbered ADRs (016 reserved) |
+| `docs/ARCHITECTURE_DECISIONS.md` | 18 ADRs, 001–018, no gaps |
 | `docs/compliance/` | control matrix, processors, incident one-pager, GitHub settings checklist |
 | `docs/privacy.md` | public demo privacy notice (also `/privacy`) |
 | `ROADMAP.md` | phase gates and what is deliberately deferred |

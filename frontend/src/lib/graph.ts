@@ -9,8 +9,11 @@
 // layout, seed 7) whenever the gold graph changes. Positions are baked so the
 // picture is stable across loads and needs no layout library.
 //
-// Deferred to P6 (#100): this file is a gold-graph snapshot for the canvas, not
-// a live graph API. Restricted evidence quotes are withheld from the bundle.
+// PUBLIC PORTION ONLY. This file ships in the JavaScript bundle to every visitor,
+// so it has no clearance context and may hold nothing a low-clearance reader must
+// not see. The gold graph's restricted node and edge (compensation_review_CONFIDENTIAL)
+// are omitted, not filtered at runtime: a filter cannot un-ship a row (#213 C2).
+// A clearance-filtered graph needs a real endpoint — deferred to P6 (#100).
 
 export type GraphNodeType =
   | "Person" | "Decision" | "Meeting" | "Topic"
@@ -96,7 +99,6 @@ export const GRAPH_NODES: GraphNodeData[] = [
   { id: "Vendor security questionnaire", label: "Vendor security questionnaire", type: "ActionItem", role: "", detail: "", document: "messy_board_followup_email", restricted: false, degree: 1, x: 1180.0, y: 259.8 },
   { id: "Nisha Shah", label: "Nisha Shah", type: "Person", role: "security operations", detail: "", document: "messy_audit_followup_email", restricted: false, degree: 1, x: 1180.0, y: -37.1 },
   { id: "SOC 2 evidence request", label: "SOC 2 evidence request", type: "ActionItem", role: "", detail: "", document: "messy_audit_followup_email", restricted: false, degree: 1, x: 1181.7, y: 66.9 },
-  { id: "Meridian Inc", label: "Meridian Inc", type: "Organization", role: "", detail: "", document: "compensation_review_CONFIDENTIAL", restricted: true, degree: 1, x: 1180.0, y: 311.8 },
 ];
 
 export const GRAPH_EDGES: GraphEdgeData[] = [
@@ -139,7 +141,6 @@ export const GRAPH_EDGES: GraphEdgeData[] = [
   { id: "e36", source: "International expansion motion", target: "Board Meeting 16", relation: "MADE_IN", quote: "The international expansion motion stays deferred.", document: "board_meeting_16_transcript", restricted: false },
   { id: "e37", source: "Priya Nair", target: "Vendor security questionnaire", relation: "OWNS", quote: "Priya owns the vendor-security questionnaire", document: "messy_board_followup_email", restricted: false },
   { id: "e38", source: "Nisha Shah", target: "SOC 2 evidence request", relation: "OWNS", quote: "Nisha owns the SOC 2 evidence request", document: "messy_audit_followup_email", restricted: false },
-  { id: "e39", source: "Priya Nair", target: "Meridian Inc", relation: "WORKS_AT", quote: "", document: "compensation_review_CONFIDENTIAL", restricted: true },
 ];
 
 const delay = (ms = 400) => new Promise((r) => setTimeout(r, ms));
@@ -156,12 +157,11 @@ export type GraphView = {
 
 export const graphApi = {
   /**
-   * Presentation filter over a **local gold-graph snapshot**. This is not the
-   * SQL/Cypher clearance gate. Restricted evidence quotes are not shipped in this
-   * bundle; default is fail-closed so a visitor does not see restricted nodes
-   * until they opt into the founder preview.
+   * Presentation filter over a local snapshot, NOT the SQL/Cypher clearance gate.
+   * The snapshot holds no restricted rows (see the file header), so it withholds
+   * nothing today; the shape stays for the P6 endpoint.
    */
-  async get(canSeeRestricted = false): Promise<GraphView> {
+  async get(canSeeRestricted = true): Promise<GraphView> {
     await delay();
     if (canSeeRestricted) {
       return { nodes: GRAPH_NODES, edges: GRAPH_EDGES, withheldNodes: 0, withheldEdges: 0 };

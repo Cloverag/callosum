@@ -38,8 +38,8 @@ green.
 
 **Counts as of this commit — post-change, and they moved in it:**
 
-    ungated (no CALLOSUM_RUN_INTEGRATION)   385 passed, 43 skipped, 5 deselected
-    gated   (CALLOSUM_RUN_INTEGRATION=1)    948 passed, 5 deselected
+    ungated (no CALLOSUM_RUN_INTEGRATION)   399 passed, 47 skipped, 5 deselected
+    gated   (CALLOSUM_RUN_INTEGRATION=1)    985 passed, 5 deselected
 
 Stated as post-change because this commit moved both, and a stale pin here is worse
 than no pin at all: the previous draft of this docstring pinned the *pre*-change 298 /

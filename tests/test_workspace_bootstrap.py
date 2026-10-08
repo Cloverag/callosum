@@ -191,10 +191,11 @@ class TestBootstrap:
         """
         founder = _principal()
         target = _principal()
+        other_founder = _principal()  # captured, not inlined — see the note in test G
         mine = theirs = None
         try:
             mine = workspaces.create_workspace("Mine", None, founder)
-            theirs = workspaces.create_workspace("Theirs", None, _principal())
+            theirs = workspaces.create_workspace("Theirs", None, other_founder)
 
             with store.pg(mine) as conn:
                 with pytest.raises(psycopg.errors.InsufficientPrivilege) as exc_info:
@@ -205,7 +206,7 @@ class TestBootstrap:
                     )
                 assert "row-level security" in str(exc_info.value).lower()
         finally:
-            _cleanup(workspace_ids=[mine, theirs], principal_ids=[founder, target])
+            _cleanup(workspace_ids=[mine, theirs], principal_ids=[founder, target, other_founder])
 
     def test_the_app_connection_cannot_update_a_membership_outside_the_selected_workspace(self):
         """D's UPDATE-side twin, and not a formality — it fails a DIFFERENT way.
@@ -377,6 +378,18 @@ class TestGrantAndRevoke:
                 (newcomer, ws),
             )
             assert rows == []
+
+            # 6A: a refusal must leave no COMMITTED audit trail either. Read from a
+            # fresh admin connection after `grant_membership` has already returned
+            # (raised, in this case) — `_admin_fetch` opens its own connection per
+            # call, so this can only see what actually committed, never a row still
+            # sitting inside the transaction `grant_membership` just rolled back.
+            events = _admin_fetch(
+                "SELECT 1 FROM audit_event"
+                " WHERE workspace_id = %s AND aggregate_type = 'membership' AND aggregate_id = %s",
+                (ws, newcomer),
+            )
+            assert events == []
         finally:
             _cleanup(workspace_ids=[ws], principal_ids=[founder, director, newcomer])
 
@@ -410,10 +423,17 @@ class TestGrantAndRevoke:
         """
         founder_a = _principal()
         target = _principal()
+        # Captured, not inlined: an earlier version passed `_principal()` directly
+        # as this argument, which creates the row but discards the only reference
+        # to its id — `_cleanup()` below could never be given it, so every run of
+        # this test leaked one `principal` row into the shared database. Found by
+        # bisecting an unrelated row-count anomaly across a full-file test run,
+        # not by inspection — it had been leaking silently before this fix.
+        founder_b = _principal()
         ws_a = ws_b = None
         try:
             ws_a = workspaces.create_workspace("Cross A", None, founder_a)
-            ws_b = workspaces.create_workspace("Cross B", None, _principal())
+            ws_b = workspaces.create_workspace("Cross B", None, founder_b)
 
             with pytest.raises(identity.PrincipalNotFound):
                 workspaces.grant_membership(
@@ -426,8 +446,17 @@ class TestGrantAndRevoke:
                 (target, ws_b),
             )
             assert survivors == []
+
+            # 6A: same invariant as F — refused means no committed audit event
+            # either, checked from a fresh admin connection after the raise.
+            events = _admin_fetch(
+                "SELECT 1 FROM audit_event"
+                " WHERE workspace_id = %s AND aggregate_type = 'membership' AND aggregate_id = %s",
+                (ws_b, target),
+            )
+            assert events == []
         finally:
-            _cleanup(workspace_ids=[ws_a, ws_b], principal_ids=[founder_a, target])
+            _cleanup(workspace_ids=[ws_a, ws_b], principal_ids=[founder_a, founder_b, target])
 
     def test_revoking_sets_active_false_not_a_delete(self):
         founder = _principal()
@@ -723,6 +752,19 @@ class TestGrantAndRevoke:
                 (director, ws),
             )[0]
             assert row["active"] is True
+
+            # 6A, third site. The issue names "two existing tests" needing this
+            # addition (F and G, both on the grant side); this revoke-side
+            # escalation refusal is structurally identical — the clearance check
+            # raises before `revoke_membership` ever reaches `record_audit_event`
+            # — so the same invariant applies here too. Adding it rather than
+            # silently matching the stated count of two.
+            events = _admin_fetch(
+                "SELECT 1 FROM audit_event"
+                " WHERE workspace_id = %s AND aggregate_type = 'membership' AND aggregate_id = %s",
+                (ws, director),
+            )
+            assert events == []
         finally:
             _cleanup(workspace_ids=[ws], principal_ids=[founder, advisor, director])
 
@@ -776,4 +818,187 @@ class TestGrantAndRevoke:
             assert [e["action"] for e in events] == ["created", "updated", "status_changed"]
             assert all(str(e["actor_principal_id"]) == founder for e in events)
         finally:
+            _cleanup(workspace_ids=[ws], principal_ids=[founder, member])
+
+    def test_a_cross_workspace_revoke_is_denied(self):
+        """Domain-level symmetric extension of G for revoke. Every existing
+        `revoke_membership` call in this suite is same-workspace; nothing before
+        this pinned that the actor-resolution guard also covers revoke's cross-
+        workspace shape, only grant's.
+
+        Same mechanism as G: `identity.resolve_principal_by_id(conn, actor_id,
+        workspace_id=ws_b)` raises `PrincipalNotFound` because `founder_a` holds
+        no active membership in `ws_b`, before `revoke_membership` ever reads a
+        `membership` row to revoke.
+        """
+        founder_a = _principal()
+        member_b = _principal()
+        ws_a = ws_b = None
+        try:
+            ws_a = workspaces.create_workspace("Cross Revoke A", None, founder_a)
+            founder_b = _principal()
+            ws_b = workspaces.create_workspace("Cross Revoke B", None, founder_b)
+            workspaces.grant_membership(
+                member_b, "advisor", workspace_id=ws_b, actor_principal_id=founder_b,
+            )
+
+            with pytest.raises(identity.PrincipalNotFound):
+                workspaces.revoke_membership(
+                    member_b, workspace_id=ws_b, actor_principal_id=founder_a,
+                )
+
+            row = _admin_fetch(
+                "SELECT active FROM membership WHERE principal_id = %s AND workspace_id = %s",
+                (member_b, ws_b),
+            )[0]
+            assert row["active"] is True
+        finally:
+            _cleanup(workspace_ids=[ws_a, ws_b], principal_ids=[founder_a, founder_b, member_b])
+
+    # -------------------------------------------------------------------
+    # 6B — audit failure => rollback, proved by causing a genuine Postgres
+    # rejection inside record_audit_event's own INSERT, not a monkeypatch
+    # that raises before any SQL runs.
+    # -------------------------------------------------------------------
+
+    def test_6b_grant_rolls_back_when_the_audit_insert_genuinely_fails(self):
+        """GRANT is the meaningful half of 6B. `record_audit_event` runs AFTER
+        the membership INSERT inside `grant_membership`, so proving rollback
+        here proves an ALREADY-APPLIED write gets undone — not merely that a
+        later statement is skipped, which is all the revoke test below can show.
+
+        `grant_membership` always sends a hardcoded action ('created' or
+        'updated') — nothing a caller passes in reaches it — so there is no way
+        to make ITS OWN call feed Postgres a bad value. The only way to make
+        that INSERT genuinely fail at the database is to narrow what the
+        database itself will accept: drop `audit_event_action_check` and
+        replace it with one that rejects every real action, for the width of
+        this test only, restoring the exact captured definition immediately
+        after — not a reconstructed guess, so a drift in `audit.ACTIONS` can
+        never leave the restore silently wrong.
+        """
+        founder = _principal()
+        newcomer = _principal()
+        ws = None
+        narrowed = False
+        original_check = None
+        try:
+            ws = workspaces.create_workspace("Audit Insert Fails Grant", None, founder)
+
+            original_check = _admin_fetch(
+                "SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint"
+                " WHERE conrelid = 'audit_event'::regclass"
+                "   AND conname = 'audit_event_action_check'"
+            )[0]["def"]
+            _admin("ALTER TABLE audit_event DROP CONSTRAINT audit_event_action_check")
+            # Setting the flag immediately after the DROP, not after the ADD below
+            # — a real failure caught here (see this test's own history: the ADD
+            # below raised CheckViolation against the table's 15 EXISTING rows the
+            # first time this ran, `NOT VALID` not yet present) must still trigger
+            # the finally block's restore. Gating the flag on the ADD's success
+            # left the DROP committed and unrestored when the ADD itself failed.
+            narrowed = True
+            _admin(
+                "ALTER TABLE audit_event ADD CONSTRAINT audit_event_action_check"
+                " CHECK (action = 'no_real_caller_ever_sends_this__test_6b') NOT VALID"
+            )
+
+            with pytest.raises(psycopg.errors.CheckViolation):
+                workspaces.grant_membership(
+                    newcomer, "advisor", workspace_id=ws, actor_principal_id=founder,
+                )
+
+            # Restore immediately — the narrower a shared table's CHECK stays
+            # visible to every other connection, the better, and every
+            # assertion below uses a fresh connection of its own anyway.
+            _admin("ALTER TABLE audit_event DROP CONSTRAINT audit_event_action_check")
+            _admin(f"ALTER TABLE audit_event ADD CONSTRAINT audit_event_action_check {original_check}")
+            narrowed = False
+
+            # The point of this test: the membership INSERT ran and would have
+            # committed on its own. Proving it did NOT survive is what "rollback"
+            # means here, not merely that an exception was raised.
+            rows = _admin_fetch(
+                "SELECT 1 FROM membership WHERE principal_id = %s AND workspace_id = %s",
+                (newcomer, ws),
+            )
+            assert rows == [], "the membership INSERT must roll back with the failed audit write"
+
+            events = _admin_fetch(
+                "SELECT 1 FROM audit_event WHERE workspace_id = %s AND aggregate_id = %s",
+                (ws, newcomer),
+            )
+            assert events == []
+        finally:
+            if narrowed and original_check is not None:
+                # Only reached if the immediate restore above never ran (an
+                # unexpected failure between narrowing and restoring) — defence
+                # in depth so a broken test never leaves the SHARED database's
+                # CHECK constraint narrowed for every other connection.
+                _admin("ALTER TABLE audit_event DROP CONSTRAINT audit_event_action_check")
+                _admin(f"ALTER TABLE audit_event ADD CONSTRAINT audit_event_action_check {original_check}")
+            _cleanup(workspace_ids=[ws], principal_ids=[founder, newcomer])
+
+    def test_6b_revoke_audit_insert_failure_is_the_weaker_case_by_construction(self):
+        """REVOKE is the weaker half of 6B, and deliberately not described as
+        equivalent to the grant test above. `revoke_membership` writes its audit
+        event BEFORE the `UPDATE` — reversed from every other mutation in this
+        module, and required by #185's self-revocation fix (see
+        `revoke_membership`'s own docstring). So when the audit INSERT fails
+        here, the `UPDATE` is never even attempted: this proves the membership
+        row survives an audit failure that never reached it, not that an
+        already-applied write gets undone. Both statements still share one
+        transaction, and that is a real guarantee — but it is evidence of a
+        different, weaker property than the grant case, and claiming otherwise
+        would overstate what this test shows.
+        """
+        founder = _principal()
+        member = _principal(role="observer")
+        ws = None
+        narrowed = False
+        original_check = None
+        try:
+            ws = workspaces.create_workspace("Audit Insert Fails Revoke", None, founder)
+            workspaces.grant_membership(
+                member, "advisor", workspace_id=ws, actor_principal_id=founder,
+            )
+
+            original_check = _admin_fetch(
+                "SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint"
+                " WHERE conrelid = 'audit_event'::regclass"
+                "   AND conname = 'audit_event_action_check'"
+            )[0]["def"]
+            _admin("ALTER TABLE audit_event DROP CONSTRAINT audit_event_action_check")
+            narrowed = True  # see the grant test above for why this is set here, not after the ADD
+            _admin(
+                "ALTER TABLE audit_event ADD CONSTRAINT audit_event_action_check"
+                " CHECK (action = 'no_real_caller_ever_sends_this__test_6b') NOT VALID"
+            )
+
+            with pytest.raises(psycopg.errors.CheckViolation):
+                workspaces.revoke_membership(
+                    member, workspace_id=ws, actor_principal_id=founder,
+                )
+
+            _admin("ALTER TABLE audit_event DROP CONSTRAINT audit_event_action_check")
+            _admin(f"ALTER TABLE audit_event ADD CONSTRAINT audit_event_action_check {original_check}")
+            narrowed = False
+
+            row = _admin_fetch(
+                "SELECT active FROM membership WHERE principal_id = %s AND workspace_id = %s",
+                (member, ws),
+            )[0]
+            assert row["active"] is True, "the UPDATE must never have been attempted"
+
+            events = _admin_fetch(
+                "SELECT action FROM audit_event WHERE workspace_id = %s AND aggregate_id = %s",
+                (ws, member),
+            )
+            # Only the earlier successful grant's 'created' event — no
+            # 'status_changed' from this failed revoke attempt.
+            assert [e["action"] for e in events] == ["created"]
+        finally:
+            if narrowed and original_check is not None:
+                _admin("ALTER TABLE audit_event DROP CONSTRAINT audit_event_action_check")
+                _admin(f"ALTER TABLE audit_event ADD CONSTRAINT audit_event_action_check {original_check}")
             _cleanup(workspace_ids=[ws], principal_ids=[founder, member])

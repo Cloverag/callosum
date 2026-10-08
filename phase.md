@@ -4,27 +4,33 @@ Where the project is, at a glance. Detail lives in [ROADMAP.md](./ROADMAP.md), t
 
 Legend: ✅ done/frozen · 🟩 in progress · ⬜ not started
 
-## Current snapshot — 2026-09-12
+## Current snapshot — 2026-10-08
 
 The dated tables later in this file are **records of the date they name**. They are not
-live counts. GitHub `master` is `7c260cd` (#202). Uncommitted local work for #213 is not
-on origin.
+live counts. Measured on this branch at `ee4c171` — `master` `f5bcf24` plus the #213
+fixes — so every figure moves again when it merges.
 
 | | |
 |---|---|
-| Product track | **3 / 13** accepted. P3 frozen, exit unclaimed. P4 items shipped, **exit gate not attempted**. |
+| Product track | **4 / 13** accepted (P0, P1, P2, P4). **P4 accepted 2026-10-08** (#224); P3 frozen, exit unclaimed; P5 in flight. |
 | Public demo | [callosum-demo.vercel.app/demo](https://callosum-demo.vercel.app/demo) |
-| Backend (this working tree) | gated **948 passed** / 5 llm-deselected; ungated **385 passed**, 43 skipped |
-| Frontend (this working tree) | **295** tests, 22 suites, Next **16.3.5** |
-| API (this working tree) | **79 operations** / 61 paths / 14 tags (`POST /api/ask` in; `/auth/demo/*` out of schema) |
-| Migrations | 29, head `0029_workspace_bootstrap` |
-| ADRs | 18 numbered (016 reserved) |
-| Commits on `7c260cd` | **526** (`git rev-list --count 7c260cd`) |
-| Gold set | `eval/gold.jsonl` is **36** items; README ablation table is still the **29-item** 2026-07-20 run (#203) |
+| Backend | gated **985 passed** / 5 llm-deselected (CI run 37816516227); ungated **399 passed**, 47 skipped |
+| Frontend | **354** tests, 27 suites, Next **16.3.8** |
+| API | **79 operations** / 61 paths / 14 tags (`POST /api/ask` in; `/auth/demo/*` out of schema) |
+| Migrations | 30, head `0030_document_principal_role` |
+| ADRs | 18 numbered, 001–018, no gaps |
+| Commits on `ee4c171` | **562** (`git rev-list --count ee4c171`) |
+| Gold set | `eval/gold.jsonl` is **52** items; README ablation table is still the **29-item** 2026-07-20 run (#203) |
 
-`/entity-conflicts` is no longer mock-backed. `graph` and `assistant` remain local gold-graph
-snapshots deferred to P6 (#100); #213 stripped restricted quotes from that snapshot and
-defaults the memory page fail-closed, but it is still not `retrieve.ask`.
+`/entity-conflicts` is no longer mock-backed. `graph` and `assistant` remain local
+gold-graph snapshots deferred to P6 (#100).
+
+**The snapshot's restricted row is gone, not blanked.** This branch originally emptied the
+confidential quote and kept the row; #223 merged the stronger fix and removed the node and
+the edge outright, on the argument that a filter cannot un-ship a row — the row's own
+`document` field still named `compensation_review_CONFIDENTIAL`. #223 also removed
+`/memory`'s founder/investor switch, so the page no longer depicts a clearance check it
+cannot perform. It is still not `retrieve.ask`.
 
 ## Research track — ✅ CLOSED & FROZEN
 
@@ -157,12 +163,12 @@ record, not an embarrassment to tidy away. What follows describes that column.
   `evaluate.py` seeds the gold graph positionally, so the changed `workspace_id` parameter fell
   through to its old behaviour. The gate was structurally unable to reach either change.
 
-## Product P4 — Board workspace, members, and source intake — items shipped, gate unclaimed
+## Product P4 — Board workspace, members, and source intake — ✅ ACCEPTED (2026-10-08)
 
-**Not accepted, and the 3/13 count does not move.** `rules.md` §4's 2026-08-13 amendment
-makes phase order advisory — a phase may begin before the previous one's exit gate is
-claimed — but it is explicit that only an exit gate advances the accepted count. P3's gate
-is unclaimed and P4's has not been attempted, so the product track stays at **3 of 13**.
+**Accepted 2026-10-08 at `7f8a84b`; the product track is 4 of 13** — [packet](./docs/reviews/2026-10-08-p4-gate-packet.md). The 2026-08-24
+attempt was refused on #166 (membership not audited); #166's steps landed and #223 closed the
+client-bundle leak (#213 C2) before the second attempt. Follow-up from signing: #225. The history
+below is kept as written.
 
 | P4 work item | State |
 |---|---|
@@ -173,8 +179,8 @@ is unclaimed and P4's has not been attempted, so the product track stays at **3 
 | Processing / quarantine state | ✅ merged (#128) — `GET /api/documents/quarantine` |
 | Versions | ✅ built (`0024_document_version`, ADR-017) — **not** an exit gate |
 | Workspace / meeting assignment | ✅ built (`0025_meeting_document`, ADR-018) — **not** an exit gate |
-| Membership grant / revoke | ✅ shipped (#186); remaining audit steps are #166 |
-| P4 exit gate | ⬜ not attempted |
+| Membership grant / revoke | ✅ shipped (#186); non-admin grants need a founder/admin signature from 2026-10-08 (#225) |
+| P4 exit gate | ✅ accepted 2026-10-08 at `7f8a84b` — [packet](./docs/reviews/2026-10-08-p4-gate-packet.md) |
 
 **Exit criteria, and where they stand.** The phase exits when "membership is
 authorized/audited; document lifecycle is visible; restricted titles, text, quotes, graph
