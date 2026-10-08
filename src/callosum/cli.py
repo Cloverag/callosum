@@ -354,7 +354,11 @@ def query(
         )
 
         with console.status("Planning → searching graph + vectors → filtering → answering..."):
-            answer = ask(conn, driver, question, principal)
+            try:
+                answer = ask(conn, driver, question, principal)
+            except ValueError as exc:
+                console.print(f"[red]{exc}[/]")
+                raise typer.Exit(1)
 
     console.print(Panel(answer.text, title=question, border_style="cyan"))
 
