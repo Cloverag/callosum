@@ -144,7 +144,10 @@ def get_pack(pack_id: uuid.UUID, principal: CurrentPrincipal) -> domain.BoardPac
 def create_pack(payload: PackCreate, principal: CurrentPrincipal) -> domain.BoardPack:
     """Creates an empty `draft` pack against a meeting."""
     return domain.create_pack(
-        str(payload.meeting_id), payload.title, workspace_id=principal.workspace_id
+        str(payload.meeting_id),
+        payload.title,
+        workspace_id=principal.workspace_id,
+        actor_principal_id=str(principal.id) if principal.id else None,
     )
 
 
@@ -163,6 +166,7 @@ def update_pack(
         str(pack_id),
         expected_version=payload.expected_version,
         workspace_id=principal.workspace_id,
+        actor_principal_id=str(principal.id) if principal.id else None,
         clearance=principal.clearance,
         **changes,
     )
@@ -186,6 +190,7 @@ def add_pack_item(
         str(pack_id),
         str(payload.document_id),
         workspace_id=principal.workspace_id,
+        actor_principal_id=str(principal.id) if principal.id else None,
         agenda_item_id=str(payload.agenda_item_id) if payload.agenda_item_id else None,
         position=payload.position,
         note=payload.note,
@@ -200,7 +205,11 @@ def remove_pack_item(pack_item_id: uuid.UUID, principal: CurrentPrincipal) -> No
     domain identifies an item by itself, so a pack id in the path would be a parameter
     nothing verifies — and a caller could reasonably assume it was checked.
     """
-    domain.remove_pack_item(str(pack_item_id), workspace_id=principal.workspace_id)
+    domain.remove_pack_item(
+        str(pack_item_id),
+        workspace_id=principal.workspace_id,
+        actor_principal_id=str(principal.id) if principal.id else None,
+    )
 
 
 @router.post("/{pack_id}/publish")
@@ -216,6 +225,7 @@ def publish_pack(
         str(pack_id),
         expected_version=payload.expected_version,
         workspace_id=principal.workspace_id,
+        actor_principal_id=str(principal.id) if principal.id else None,
         clearance=principal.clearance,
     )
 
@@ -234,6 +244,7 @@ def supersede_pack(
         payload.new_title,
         expected_version=payload.expected_version,
         workspace_id=principal.workspace_id,
+        actor_principal_id=str(principal.id) if principal.id else None,
         clearance=principal.clearance,
     )
     return PackSupersession(superseded=old, replacement=new)
@@ -255,5 +266,6 @@ def reorder_pack_items(
         str(pack_id),
         [str(i) for i in payload.ordered_item_ids],
         workspace_id=principal.workspace_id,
+        actor_principal_id=str(principal.id) if principal.id else None,
         clearance=principal.clearance,
     )
