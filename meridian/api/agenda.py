@@ -95,6 +95,7 @@ def create_agenda_item(body: AgendaItemCreate, principal: CurrentPrincipal) -> d
         str(body.meeting_id),
         body.title,
         workspace_id=principal.workspace_id,
+        actor_principal_id=str(principal.id) if principal.id else None,
         description=body.description,
         duration_minutes=body.duration_minutes,
         presenter=body.presenter,
@@ -118,6 +119,7 @@ def update_agenda_item(
         str(agenda_item_id),
         expected_version=body.expected_version,
         workspace_id=principal.workspace_id,
+        actor_principal_id=str(principal.id) if principal.id else None,
         **changes,
     )
 
@@ -135,6 +137,7 @@ def delete_agenda_item(
         str(agenda_item_id),
         expected_version=expected_version,
         workspace_id=principal.workspace_id,
+        actor_principal_id=str(principal.id) if principal.id else None,
     )
 
 
@@ -152,4 +155,5 @@ def reorder_agenda_items(
         str(body.meeting_id),
         [str(i) for i in body.ordered_item_ids],
         workspace_id=principal.workspace_id,
+        actor_principal_id=str(principal.id) if principal.id else None,
     )

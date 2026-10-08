@@ -181,7 +181,7 @@ intake has shipped without one.
 | Track | State |
 |---|---|
 | **Research engine** (`src/callosum/`) | **14 / 14 checkpoints accepted**, frozen at `eval-baseline-v3` |
-| **Product** (`meridian/`, `frontend/`) | **3 / 13 phases accepted**; P3 frozen, exit gate not claimed · P4 work items complete (intake, versions, meeting assignment), exit gate not attempted |
+| **Product** (`meridian/`, `frontend/`) | **4 / 13 phases accepted** (P0, P1, P2, P4 — [P4 accepted 2026-10-08](./docs/reviews/2026-10-08-p4-gate-packet.md)); P3 frozen, exit gate not claimed |
 
 | | |
 |---|---|

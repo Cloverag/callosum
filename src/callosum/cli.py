@@ -120,6 +120,17 @@ def init() -> None:
         # Sourced by SELECT rather than from DEMO_PRINCIPALS so that re-running
         # `init` after a manual principal insert still grants that person a
         # membership, instead of silently leaving them unable to ask anything.
+        #
+        # RULED OUT of #166's actor-attributed membership-audit requirement
+        # (issue #166, comment 5534092138). This INSERT runs on the superuser
+        # connection during `callosum init` — a bootstrap/seed path with no
+        # authenticated product actor to attribute the action to.
+        # `audit.record_audit_event()` requires an actor holding an ACTIVE
+        # membership in the workspace being written to; inventing one here to
+        # satisfy the requirement would put a name in the trail that never took
+        # the action, which is worse than writing no event at all — an absent
+        # event is visibly absent, a false actor is not. In-scope product paths
+        # remain grant, change, and revoke, all in `meridian/workspaces.py`.
         seeded = conn.execute(
             """
             INSERT INTO membership (principal_id, workspace_id, role, clearance)

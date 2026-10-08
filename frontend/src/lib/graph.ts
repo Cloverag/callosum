@@ -9,7 +9,11 @@
 // layout, seed 7) whenever the gold graph changes. Positions are baked so the
 // picture is stable across loads and needs no layout library.
 //
-// Swaps to a real endpoint at P3 behind this same shape.
+// PUBLIC PORTION ONLY. This file ships in the JavaScript bundle to every visitor,
+// so it has no clearance context and may hold nothing a low-clearance reader must
+// not see. The gold graph's restricted node and edge (compensation_review_CONFIDENTIAL)
+// are omitted, not filtered at runtime: a filter cannot un-ship a row (#213 C2).
+// A clearance-filtered graph needs a real endpoint — deferred to P6 (#100).
 
 export type GraphNodeType =
   | "Person" | "Decision" | "Meeting" | "Topic"
@@ -95,7 +99,6 @@ export const GRAPH_NODES: GraphNodeData[] = [
   { id: "Vendor security questionnaire", label: "Vendor security questionnaire", type: "ActionItem", role: "", detail: "", document: "messy_board_followup_email", restricted: false, degree: 1, x: 1180.0, y: 259.8 },
   { id: "Nisha Shah", label: "Nisha Shah", type: "Person", role: "security operations", detail: "", document: "messy_audit_followup_email", restricted: false, degree: 1, x: 1180.0, y: -37.1 },
   { id: "SOC 2 evidence request", label: "SOC 2 evidence request", type: "ActionItem", role: "", detail: "", document: "messy_audit_followup_email", restricted: false, degree: 1, x: 1181.7, y: 66.9 },
-  { id: "Meridian Inc", label: "Meridian Inc", type: "Organization", role: "", detail: "", document: "compensation_review_CONFIDENTIAL", restricted: true, degree: 1, x: 1180.0, y: 311.8 },
 ];
 
 export const GRAPH_EDGES: GraphEdgeData[] = [
@@ -138,7 +141,6 @@ export const GRAPH_EDGES: GraphEdgeData[] = [
   { id: "e36", source: "International expansion motion", target: "Board Meeting 16", relation: "MADE_IN", quote: "The international expansion motion stays deferred.", document: "board_meeting_16_transcript", restricted: false },
   { id: "e37", source: "Priya Nair", target: "Vendor security questionnaire", relation: "OWNS", quote: "Priya owns the vendor-security questionnaire", document: "messy_board_followup_email", restricted: false },
   { id: "e38", source: "Nisha Shah", target: "SOC 2 evidence request", relation: "OWNS", quote: "Nisha owns the SOC 2 evidence request", document: "messy_audit_followup_email", restricted: false },
-  { id: "e39", source: "Priya Nair", target: "Meridian Inc", relation: "WORKS_AT", quote: "Priya Nair, CFO, is at $185K base", document: "compensation_review_CONFIDENTIAL", restricted: true },
 ];
 
 const delay = (ms = 400) => new Promise((r) => setTimeout(r, ms));
@@ -155,9 +157,9 @@ export type GraphView = {
 
 export const graphApi = {
   /**
-   * `canSeeRestricted` stands in for the clearance check the backend already
-   * enforces in SQL and Cypher. Filtering here is presentation only — the real
-   * guarantee is that a low-clearance caller is never sent the rows at all.
+   * Presentation filter over a local snapshot, NOT the SQL/Cypher clearance gate.
+   * The snapshot holds no restricted rows (see the file header), so it withholds
+   * nothing today; the shape stays for the P6 endpoint.
    */
   async get(canSeeRestricted = true): Promise<GraphView> {
     await delay();

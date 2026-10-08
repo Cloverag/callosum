@@ -1,9 +1,7 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
-import Sidebar from '@/components/Sidebar';
-import Header from '@/components/Header';
-import { AssistantRail } from '@/components/AssistantRail';
+import { AppShell } from '@/components/app-shell';
 import { SessionGate } from '@/components/session-gate';
 import { TooltipProvider } from '@/components/vendor/tooltip';
 import { THEME_SCRIPT } from '@/components/theme';
@@ -48,14 +46,7 @@ export default function RootLayout({
         */}
         <TooltipProvider>
           <SessionGate>
-            <div className="flex h-screen overflow-hidden bg-surface text-foreground">
-              <Sidebar />
-              <div className="flex min-w-0 flex-1 flex-col">
-                <Header />
-                <main className="flex-1 overflow-y-auto">{children}</main>
-              </div>
-              <AssistantRail />
-            </div>
+            <AppShell>{children}</AppShell>
           </SessionGate>
         </TooltipProvider>
       </body>

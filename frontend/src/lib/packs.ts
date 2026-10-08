@@ -1,5 +1,5 @@
 import type { BadgeTone } from "@/components/ui/badge";
-import { apiGet, apiGetOrNull } from "@/lib/http";
+import { apiDeleteReturning, apiGet, apiGetOrNull, apiPatch, apiPost } from "@/lib/http";
 import type { Document } from "@/lib/documents";
 
 /**
@@ -16,22 +16,25 @@ import type { Document } from "@/lib/documents";
  * TWO CONTRACT PROPERTIES THIS SURFACE MUST NOT BREAK
  * ---------------------------------------------------------------------------
  *
- * 1. **Items are clearance-filtered and renumbered by the server.**
- *    `_fetch_items_for_packs` (`meridian/packs.py:153-190`) pushes the clearance
- *    predicate into the WHERE clause and then renumbers the surviving rows from
- *    1, so what the caller receives is always contiguous. The reason is in that
- *    docstring: an investor shown items at positions [2, 3] learns a position 1
- *    exists and can count the holes, which is the same disclosure as a
- *    placeholder, only quieter.
+ * 1. **Items are clearance-filtered and renumbered by the server, and the number
+ *    withheld is disclosed as a COUNT (ADR-018, #198).**
+ *    `_fetch_items_for_packs` (`meridian/packs.py`) pushes the clearance predicate
+ *    into the WHERE clause and then renumbers the surviving rows from 1, so what the
+ *    caller receives is always contiguous. The reason is that an investor shown items
+ *    at positions [2, 3] learns a position 1 exists and can count the holes, which is
+ *    the same disclosure as a placeholder, only quieter.
  *
- *    The consequence for the UI is: **do not derive a withheld count.** No gaps,
- *    no placeholders, no "N items hidden", no subtracting a visible length from
- *    a total. The pack read model carries no total, and that absence is
- *    deliberate — do not add one.
+ *    The count is the deliberate replacement for that covert channel: a pack claims to
+ *    be *the material for a meeting*, so a director who prepares from one that
+ *    silently dropped items walks in believing they are prepared. `withheld_items`
+ *    says HOW MANY and nothing else: no gaps, no placeholder rows, no title, id, date
+ *    or position. Render it with the shared "N withheld" wording (`FieldValue`); a
+ *    non-zero value is not an error state.
  *
- *    The server *does* send `withheld_items` (ADR-018). **Render that field.**
- *    It is a count and nothing else — never a title, id, date, or position.
- *    Forbidding a derived count is not forbidding the field.
+ *    What stays forbidden is *deriving* anything else: no subtracting a visible length
+ *    from an assumed total, and no "N items" figure that mixes visible and withheld.
+ *    This header used to forbid rendering the count at all (#198); the API has
+ *    returned it since CP-C and the ban was the bug.
  *
  * 2. **`position` is a display ordinal, not an identifier.** It is renumbered
  *    per caller, so two readers of the same pack see different numbers on the
@@ -157,6 +160,18 @@ export function supersededBy(pack: BoardPack, all: BoardPack[]): BoardPack | nul
 }
 
 /**
+ * Every version of a meeting's pack, oldest first.
+ *
+ * Built from the packs the caller was sent — `list_packs` already returns them for the
+ * meeting — so a version the caller cannot see is simply absent, not a gap to report.
+ */
+export function versionTrail(pack: BoardPack, all: BoardPack[]): BoardPack[] {
+  return all
+    .filter((p) => p.meeting_id === pack.meeting_id)
+    .sort((a, b) => a.version_no - b.version_no);
+}
+
+/**
  * Pairs each readable item with its document.
  *
  * A `null` document means the row could not be resolved — the reference is
@@ -200,5 +215,62 @@ export const packsApi = {
 
   async get(id: string): Promise<BoardPack | null> {
     return apiGetOrNull<BoardPack>(`/packs/${encodeURIComponent(id)}`);
+  },
+
+  // --- Writes (P5 CP5B) -------------------------------------------------------
+  // Every one of these exists on the server already (`meridian/api/packs.py`); this
+  // block is the client for them and invents nothing. None takes a workspace or a
+  // clearance — both come from the session (ADR-013).
+
+  /** An empty `draft`, version 1, against a meeting that has not started. */
+  async create(body: { meeting_id: string; title: string }): Promise<BoardPack> {
+    return apiPost<BoardPack>("/packs", body);
+  },
+
+  /** Renames a draft. `expected_version` is the pack's `version`, not `version_no`. */
+  async rename(id: string, body: { expected_version: number; title: string }): Promise<BoardPack> {
+    return apiPatch<BoardPack>(`/packs/${encodeURIComponent(id)}`, body);
+  },
+
+  /**
+   * Adds a document to a draft. **Bumps the pack's `version`**, so the `version` on any
+   * pack read before this call is stale — re-`get` before publishing (see the module
+   * docstring of `meridian/api/packs.py`).
+   */
+  async addItem(
+    packId: string,
+    body: { document_id: string; agenda_item_id?: string | null; note?: string | null },
+  ): Promise<BoardPackItem> {
+    return apiPost<BoardPackItem>(`/packs/${encodeURIComponent(packId)}/items`, body);
+  },
+
+  /** Addressed by the item's own id; the server closes the gap. Also bumps `version`. */
+  async removeItem(itemId: string): Promise<void> {
+    await apiDeleteReturning<void>(`/packs/items/${encodeURIComponent(itemId)}`);
+  },
+
+  /**
+   * Sets the order. The server requires EVERY item id, so a caller who cannot read
+   * every item is refused rather than silently dropping the ones they cannot see.
+   */
+  async reorder(packId: string, orderedItemIds: string[]): Promise<BoardPack> {
+    return apiPost<BoardPack>(`/packs/${encodeURIComponent(packId)}/reorder`, {
+      ordered_item_ids: orderedItemIds,
+    });
+  },
+
+  /** Freezes a draft. Irreversible: a published pack is amended only by `supersede`. */
+  async publish(id: string, expectedVersion: number): Promise<BoardPack> {
+    return apiPost<BoardPack>(`/packs/${encodeURIComponent(id)}/publish`, {
+      expected_version: expectedVersion,
+    });
+  },
+
+  /** Issues the next version as a new draft with the items copied forward. */
+  async supersede(
+    id: string,
+    body: { new_title: string; expected_version: number },
+  ): Promise<{ superseded: BoardPack; replacement: BoardPack }> {
+    return apiPost(`/packs/${encodeURIComponent(id)}/supersede`, body);
   },
 };
