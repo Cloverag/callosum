@@ -2,6 +2,7 @@
 name = "callosum"
 version = "0.1.0"
 description = "Institutional Memory: a graph + vector knowledge layer for board and company decisions"
+license = { text = "MIT" }
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "httpx>=0.27",       # Ollama (default provider)
@@ -15,13 +16,17 @@ dependencies = [
     "pydantic-settings>=2.6",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
-    "pypdf>=5.1",
+    "pypdf>=6.16.1",
     "python-docx>=1.1",
     "typer>=0.15",
     "rich>=13.9",
     "rapidfuzz>=3.9",   # entity name similarity for conflict detection
     "authlib>=1.6",     # OIDC client for the P3 authenticated API (ADR-009)
     "itsdangerous>=2.2",# signs the session cookie (Starlette SessionMiddleware)
+    # Floors for pip-audit: not imported directly; keep the installed graph
+    # off the PYSEC ids that currently have a fix (compliance stack).
+    "aiohttp>=3.14.3",
+    "cryptography>=50.0.0",
 ]
 
 [project.optional-dependencies]

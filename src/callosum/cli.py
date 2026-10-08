@@ -117,29 +117,39 @@ def init() -> None:
         # runtime: `callosum.identity` resolves it from here, never from
         # `principal.clearance`, which is now a bootstrap seed value only.
         #
-        # Sourced by SELECT rather than from DEMO_PRINCIPALS so that re-running
-        # `init` after a manual principal insert still grants that person a
-        # membership, instead of silently leaving them unable to ask anything.
+        # Restricted to DEMO_PRINCIPALS emails (#201). `FROM principal` with no
+        # WHERE granted membership to every row — restored dumps, leftover
+        # people, anyone inserted by hand. Re-run still upserts the three seeds
+        # above; extra principals stay without a Default Workspace grant.
+        #
+        # That reverses an earlier argument this comment used to make — "sourced by
+        # SELECT rather than from DEMO_PRINCIPALS so that re-running `init` after a
+        # manual principal insert still grants that person a membership". The
+        # convenience was the defect: `init` is a demo seeder, and a seeder that
+        # hands a Default Workspace membership to every row it happens to find will
+        # do it to a production restore too. Granting access is not a convenience.
         #
         # RULED OUT of #166's actor-attributed membership-audit requirement
-        # (issue #166, comment 5534092138). This INSERT runs on the superuser
-        # connection during `callosum init` — a bootstrap/seed path with no
-        # authenticated product actor to attribute the action to.
-        # `audit.record_audit_event()` requires an actor holding an ACTIVE
-        # membership in the workspace being written to; inventing one here to
-        # satisfy the requirement would put a name in the trail that never took
-        # the action, which is worse than writing no event at all — an absent
-        # event is visibly absent, a false actor is not. In-scope product paths
-        # remain grant, change, and revoke, all in `meridian/workspaces.py`.
+        # (issue #166, comment 5534092138), and the narrowing above does not change
+        # that. This INSERT runs on the superuser connection during `callosum init` —
+        # a bootstrap/seed path with no authenticated product actor to attribute the
+        # action to. `audit.record_audit_event()` requires an actor holding an ACTIVE
+        # membership in the workspace being written to; inventing one here to satisfy
+        # the requirement would put a name in the trail that never took the action,
+        # which is worse than writing no event at all — an absent event is visibly
+        # absent, a false actor is not. In-scope product paths remain grant, change,
+        # and revoke, all in `meridian/workspaces.py`.
+        emails = [email for _name, email, _role, _clr, _org in DEMO_PRINCIPALS]
         seeded = conn.execute(
             """
             INSERT INTO membership (principal_id, workspace_id, role, clearance)
             SELECT p.id, %s, p.role, p.clearance
               FROM principal p
-             ON CONFLICT (principal_id, workspace_id) DO NOTHING
+             WHERE p.email = ANY(%s)
+            ON CONFLICT (principal_id, workspace_id) DO NOTHING
             RETURNING principal_id
             """,
-            (store.DEFAULT_WORKSPACE_ID,),
+            (store.DEFAULT_WORKSPACE_ID, emails),
         ).fetchall()
         conn.commit()
 
