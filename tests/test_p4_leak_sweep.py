@@ -269,12 +269,14 @@ def scene(restore_client):
         )
     ]
     for extra in extra_workspace_ids:
+        _admin("DELETE FROM query_log WHERE workspace_id = %s", (extra,))
         _admin("DELETE FROM audit_event WHERE workspace_id = %s", (extra,))
         _admin("DELETE FROM membership WHERE workspace_id = %s", (extra,))
         _admin("DELETE FROM workspace WHERE id = %s", (extra,))
 
     _admin("DELETE FROM meeting_document WHERE workspace_id = %s", (ws,))
     _admin("DELETE FROM meeting WHERE workspace_id = %s", (ws,))
+    _admin("DELETE FROM query_log WHERE workspace_id = %s", (ws,))
     _admin("DELETE FROM audit_event WHERE workspace_id = %s", (ws,))
     _admin("DELETE FROM extraction_failure WHERE workspace_id = %s", (ws,))
     _admin("DELETE FROM proposed_change WHERE workspace_id = %s", (ws,))
@@ -383,11 +385,15 @@ def _reachable_writes(scene) -> list[tuple[str, str, object]]:
     Bodies are synthesised from `requestBody`, so an endpoint that gains a required
     field stays reachable instead of silently falling back to a 422 that never touches
     the domain.
+
+    `POST /api/ask` is excluded: it calls the live retrieval engine (embeddings +
+    synthesis) and writes `query_log`. Sweeping it would depend on Ollama, take
+    seconds per run, and leave query_log rows that block principal teardown.
     """
     spec = scene["low"].app.openapi()
     calls: list[tuple[str, str, object]] = []
     for path, item in spec["paths"].items():
-        if path.startswith("/auth"):
+        if path.startswith("/auth") or path == "/api/ask":
             continue
         for method in ("post", "patch", "delete"):
             op = item.get(method)

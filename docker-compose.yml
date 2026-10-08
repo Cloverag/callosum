@@ -18,7 +18,7 @@ services:
       retries: 10
 
   neo4j:
-    image: neo4j:5-community
+    image: neo4j:5.26-community
     container_name: callosum-neo4j
     environment:
       NEO4J_AUTH: neo4j/callosum123
@@ -42,7 +42,7 @@ services:
   # The realm, client and a test user are imported from keycloak/realm-dev.json so
   # `docker compose up` gives a working IdP rather than a console to click through.
   keycloak:
-    image: quay.io/keycloak/keycloak:26.0
+    image: quay.io/keycloak/keycloak:26.0.8
     container_name: callosum-keycloak
     command: ["start-dev", "--import-realm"]
     environment:

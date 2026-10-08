@@ -55,7 +55,7 @@ from callosum.identity import PrincipalNotFound, resolve_principal_by_id
 from meridian.api import deps
 from meridian.api import session as sess
 
-router = APIRouter(prefix="/auth/demo", tags=["demo"])
+router = APIRouter(prefix="/auth/demo", tags=["demo"], include_in_schema=False)
 
 #: The env var that turns this on. Absent means off — the state every environment
 #: starts in, and the only safe default for a route that hands out identities.
@@ -128,8 +128,15 @@ def select_identity(request: Request, selection: DemoSelection) -> dict[str, str
 
     email = IDENTITY_EMAILS[selection.identity]
 
-    with psycopg.connect(core_settings().postgres_dsn, row_factory=psycopg.rows.dict_row) as admin:
-        row = admin.execute("SELECT id FROM principal WHERE email = %s", (email,)).fetchone()
+    try:
+        with psycopg.connect(core_settings().postgres_dsn, row_factory=psycopg.rows.dict_row) as admin:
+            row = admin.execute("SELECT id FROM principal WHERE email = %s", (email,)).fetchone()
+    except psycopg.Error as exc:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "service_unavailable",
+                    "detail": "The identity store is not reachable."},
+        ) from exc
 
     if row is None:
         # The demo database has not been seeded. Not the caller's fault and not a

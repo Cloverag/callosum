@@ -4,6 +4,34 @@ Where the project is, at a glance. Detail lives in [ROADMAP.md](./ROADMAP.md), t
 
 Legend: ✅ done/frozen · 🟩 in progress · ⬜ not started
 
+## Current snapshot — 2026-10-08
+
+The dated tables later in this file are **records of the date they name**. They are not
+live counts. Measured on this branch at `ee4c171` — `master` `f5bcf24` plus the #213
+fixes — so every figure moves again when it merges.
+
+| | |
+|---|---|
+| Product track | **4 / 13** accepted (P0, P1, P2, P4). **P4 accepted 2026-10-08** (#224); P3 frozen, exit unclaimed; P5 in flight. |
+| Public demo | [callosum-demo.vercel.app/demo](https://callosum-demo.vercel.app/demo) |
+| Backend | gated **985 passed** / 5 llm-deselected (CI run 37816516227); ungated **399 passed**, 47 skipped |
+| Frontend | **354** tests, 27 suites, Next **16.3.8** |
+| API | **79 operations** / 61 paths / 14 tags (`POST /api/ask` in; `/auth/demo/*` out of schema) |
+| Migrations | 30, head `0030_document_principal_role` |
+| ADRs | 18 numbered, 001–018, no gaps |
+| Commits on `ee4c171` | **562** (`git rev-list --count ee4c171`) |
+| Gold set | `eval/gold.jsonl` is **52** items; README ablation table is still the **29-item** 2026-07-20 run (#203) |
+
+`/entity-conflicts` is no longer mock-backed. `graph` and `assistant` remain local
+gold-graph snapshots deferred to P6 (#100).
+
+**The snapshot's restricted row is gone, not blanked.** This branch originally emptied the
+confidential quote and kept the row; #223 merged the stronger fix and removed the node and
+the edge outright, on the argument that a filter cannot un-ship a row — the row's own
+`document` field still named `compensation_review_CONFIDENTIAL`. #223 also removed
+`/memory`'s founder/investor switch, so the page no longer depicts a clearance check it
+cannot perform. It is still not `retrieve.ask`.
+
 ## Research track — ✅ CLOSED & FROZEN
 
 - R0–R13 accepted (14/14). Baseline frozen at tag **`eval-baseline-v3`** (code + M12–M16 corpus + gold + eval CSVs), immutable.
@@ -53,7 +81,10 @@ Measure-first, one aggregate root per checkpoint (own migration → domain modul
 - **Data honesty is the standing constraint.** Two rounds of fabricated figures were found and removed — repository metadata shown as memory coverage, an invented health %, a contradictory growth series, invented assistant citations, and unwired review-queue counts. Numbers on screen trace to a source or are labelled "not measured". Chart rules live in `frontend/DESIGN.md`.
 - **Settled 2026-07-28 — the product frontend is Next.js `frontend/`.** The Vite glassmorphism prototype at `frontendglass/meridian-glass/` is a visual reference only: it does not get wired to the P3 API and no further work goes into it. It stays in the tree for now; removing it is a separate deliberate commit. See [memory.md](./memory.md).
 - **Both open items from this list are closed:** `/commitments` shipped against CP7, and `decision_stance` now resolves to the board directory (the stale `board_member_id` "coming in CP5" note is gone). The responsive/mobile AI rail is **not** done — it is deferred with the rest of P3, not pending.
-- **Still mock-backed:** `/entity-conflicts` reads `lib/api.ts`. It sits off the demo path and has no backend module, so it was left alone at the freeze rather than swapped.
+- **Still a local snapshot, not a mock in the usual sense:** `/memory` and the assistant
+  rail read `lib/graph.ts` / `lib/assistant.ts` generated from `GOLD_GROUPS` (#100). #213
+  (uncommitted) defaults the filter fail-closed and drops restricted evidence quotes from
+  the bundle. Wire-up to `POST /api/ask` / Neo4j is still P6.
 
 ## Product P3 — Authenticated API — ⏸️ FROZEN (feature-complete, exit gate NOT claimed)
 
@@ -143,11 +174,12 @@ below is kept as written.
 |---|---|
 | Members | ✅ shipped early, as P2 CP5a / CP5b |
 | Document intake / import | ✅ merged (PR #128) |
-| Metadata / sensitivity | ✅ merged (#128) — clearance ladder 0–3 |
+| Metadata / sensitivity | ✅ merged (#128) — clearance ladder 0–3; founder-only (4) is eval PR #204, not on `master` |
 | Duplicates | ✅ merged (#128) — SHA-256, tenant-scoped by `0022_doc_content_hash_uq` |
 | Processing / quarantine state | ✅ merged (#128) — `GET /api/documents/quarantine` |
 | Versions | ✅ built (`0024_document_version`, ADR-017) — **not** an exit gate |
 | Workspace / meeting assignment | ✅ built (`0025_meeting_document`, ADR-018) — **not** an exit gate |
+| Membership grant / revoke | ✅ shipped (#186); non-admin grants need a founder/admin signature from 2026-10-08 (#225) |
 | P4 exit gate | ✅ accepted 2026-10-08 at `7f8a84b` — [packet](./docs/reviews/2026-10-08-p4-gate-packet.md) |
 
 **Exit criteria, and where they stand.** The phase exits when "membership is

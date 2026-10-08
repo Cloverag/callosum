@@ -29,7 +29,7 @@ here. If this module ever grows a query over `board_pack_item`, it needs
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter
 from pydantic import BaseModel
 
 from meridian import prep
@@ -77,10 +77,7 @@ def get_readiness(
     principal: deps.CurrentPrincipal,
 ) -> dict[str, Any]:
     """Get meeting readiness metrics."""
-    try:
-        return prep.get_meeting_readiness(meeting_id, workspace_id=principal.workspace_id)
-    except Exception as exc:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return prep.get_meeting_readiness(meeting_id, workspace_id=principal.workspace_id)
 
 
 @router.get("/agenda-suggestions", response_model=list[AgendaSuggestionResponse])
@@ -89,10 +86,7 @@ def get_agenda_suggestions(
     principal: deps.CurrentPrincipal,
 ) -> list[dict[str, Any]]:
     """Get derived agenda item suggestions for the meeting."""
-    try:
-        return prep.get_agenda_suggestions(meeting_id, workspace_id=principal.workspace_id)
-    except Exception as exc:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return prep.get_agenda_suggestions(meeting_id, workspace_id=principal.workspace_id)
 
 
 @router.post("/publish-preread", response_model=PublishPrereadResponse)
@@ -105,11 +99,8 @@ def publish_preread(
     The write on this router, and so the one where a stale membership mattered most:
     publishing is a state change attributed to the actor in the audit trail.
     """
-    try:
-        return prep.publish_preread(
-            meeting_id,
-            workspace_id=principal.workspace_id,
-            actor_id=str(principal.id),
-        )
-    except Exception as exc:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return prep.publish_preread(
+        meeting_id,
+        workspace_id=principal.workspace_id,
+        actor_id=str(principal.id),
+    )

@@ -12,7 +12,8 @@ relationships. A `chunk.id` UUID exists in both stores and is the bridge between
 The repository is a Python 3.12 CLI application **and** a FastAPI product API with a
 Next.js frontend. The research track (R0–R13) is closed and frozen at `eval-baseline-v3`;
 the product track has P0–P2 accepted, P3 frozen feature-complete with its exit gate not
-claimed, and P4 source intake in flight. Evaluation has a deterministic seeded graph,
+claimed, and P4 work items shipped (intake, versions, meeting assignment, membership
+grant/revoke) with the exit gate not attempted. Evaluation has a deterministic seeded graph,
 while normal ingestion/extraction remains model-driven. See `ROADMAP.md` and `phase.md`
 for authoritative status — not this paragraph, which is a summary and will age.
 
@@ -22,10 +23,12 @@ recorded outputs. The active Ollama default in `config.py` and `.env.example` is
 this on 2026-08-15.
 
 CI is `.github/workflows/ci.yml`: a backend job running pytest with
-`CALLOSUM_RUN_INTEGRATION=1` against Postgres and Neo4j service containers, and a
-frontend job running Jest and a Next build. The `llm`-marked tests stay excluded through
-`addopts` in `pyproject.toml`, so their exclusion is not visible in the workflow file.
-The mechanism gate is not in CI and remains a local run.
+`CALLOSUM_RUN_INTEGRATION=1` against Postgres and Neo4j service containers (DSN vars are
+`POSTGRES_DSN` / `NEO4J_*`, no `CALLOSUM_` prefix), and a frontend job on **Node 22**
+running Jest, `npm audit --omit=dev --audit-level=critical`, and a Next build. The
+`llm`-marked tests stay excluded through `addopts` in `pyproject.toml`, so their exclusion
+is not visible in the workflow file. The mechanism gate is not in CI and remains a local
+run.
 
 ## Meridian product context
 
@@ -155,7 +158,7 @@ readable chunk; a vector result can follow `Chunk -[:MENTIONS]-> Entity` into th
 | `src/app/` | Next.js App Router providing the Meridian shell (Sidebar, Header, Layout) and feature pages (e.g., `entity-conflicts`). |
 | `src/app/globals.css` | Implements design system v2 **"Calm Desk"**: **light mode only**, semantic token layer, blue `#2563EB` = action, violet `#6D28D9` reserved for Institutional Memory. The `dark` variant is deliberately bound to a `.dark` class that is never applied, so third-party `dark:` classes can never fire — do not remove that binding. See `frontend/DESIGN.md`. |
 | `src/components/` | Reusable UI components, `lucide-react` for iconography. |
-| `src/lib/` | The typed API client layer. Nine modules call the real API through `lib/http.ts` (agenda, board members, commitments, decisions, documents, meetings, minutes, packs, resolutions). `graph` and `assistant` remain local snapshots deferred to P6 (#100) and `insights` is a tile-by-tile audited local module — recorded exceptions, not pending swaps. |
+| `src/lib/` | The typed API client layer. Nine modules call the real API through `lib/http.ts` (agenda, board members, commitments, decisions, documents, meetings, minutes, packs, resolutions). `graph` and `assistant` remain local snapshots deferred to P6 (#100); this working tree makes the snapshot fail-closed on unknown filters and drops restricted quotes (#213), but it is still not `retrieve.ask`. `insights` is a tile-by-tile audited local module — recorded exceptions, not pending swaps. |
 
 ### Persistence: `schema/`
 

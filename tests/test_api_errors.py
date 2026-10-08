@@ -22,6 +22,7 @@ from meridian import (
     meetings,
     minutes,
     packs,
+    prep,
     resolutions,
 )
 from meridian.api.errors import (
@@ -237,6 +238,15 @@ class TestUnknownExceptions:
         assert mapped.status == 500
         assert "hunter2" not in mapped.detail
         assert mapped.detail == "Internal error."
+
+
+class TestMeetingPrepIsA400:
+    """Authorized caller, nothing to publish — not a 500 and not a swallowed Exception."""
+
+    def test_missing_pack_is_400(self):
+        mapped = classify(prep.MeetingPrepError("No board pack exists for meeting x"))
+        assert mapped.status == 400
+        assert mapped.code == INVALID
 
 
 class TestWireShape:

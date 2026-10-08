@@ -12,12 +12,13 @@ Roughly 15 minutes, most of it waiting for containers.
 
 | | |
 |---|---|
-| Docker + Docker Compose | Postgres, Neo4j, Keycloak |
+| Docker + Docker Compose | Postgres (host **5433**), Neo4j, Keycloak |
 | Python 3.12 | via `uv` |
-| Node 20+ | the Next.js application |
+| Node 22 | the Next.js application (CI installs Node 22; 20 is EOL) |
 
-Four ports must be free: **5432** Postgres · **7474/7687** Neo4j · **8080** Keycloak ·
-**8000** API · **3000** web.
+Compose binds **5433** Postgres · **7474/7687** Neo4j · **8080** Keycloak to
+`127.0.0.1`. The API (**8000**) and Next (**3000**) are local processes, not
+containers. Do not expect Postgres on host `5432` — that is the in-container port.
 
 ---
 
@@ -99,7 +100,7 @@ Three steps, in order. Each is idempotent.
 .venv/bin/callosum ingest-doc data/demo/board_meeting_13_transcript.txt --type transcript --sensitivity 1
 .venv/bin/callosum ingest-doc data/demo/board_meeting_14_transcript.txt --type transcript --sensitivity 1
 .venv/bin/callosum ingest-doc data/demo/finance_fy27_forecast.txt       --type memo       --sensitivity 1
-.venv/bin/callosum ingest-doc data/demo/compensation_review_CONFIDENTIAL.txt --type memo --sensitivity 4
+.venv/bin/callosum ingest-doc data/demo/compensation_review_CONFIDENTIAL.txt --type memo --sensitivity 3
 
 # 3. Link Keycloak users to principals, then create the board data.
 .venv/bin/python scripts/seed_demo_identities.py

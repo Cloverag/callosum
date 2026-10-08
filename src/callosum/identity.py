@@ -148,8 +148,8 @@ def _clearance_for(role: str) -> int:
     """Maps a `membership.role` to its clearance. Fails closed on an unrecognised one.
 
     Reachable today only if a role enters `membership` that `0027`'s CHECK would
-    refuse — this branch does not carry that migration, and `ROLE_TO_CLEARANCE`
-    could in principle drift from a CHECK that does land, in either direction. An
+    refuse — that migration is on this tree, and `ROLE_TO_CLEARANCE` could in
+    principle drift from the CHECK in either direction. An
     unrecognised role is treated as unresolvable rather than given clearance 0 or
     raising a bare `KeyError`: this module's existing idiom is one failure shape,
     not a partial grant and not a crash a caller has to know to catch.
