@@ -1,9 +1,10 @@
 # Callosum contributor guide
 
-> **Two agents work in this repository (Claude and Codex).** Read
+> **Two agents and two humans work in this repository.** Read
 > [`COORDINATION.md`](COORDINATION.md) first: it says which lane you own, which worktree is
-> yours, and the rules that stop the two of you from overwriting each other. Claim your work
-> in its ledger before you start.
+> yours, and the rules that stop you from overwriting each other's work. Claim your work in
+> its ledger before you start. Ownership of the backend lane is set by
+> [`rules.md`](rules.md) §5, which `COORDINATION.md` must not contradict.
 
 ## Purpose and current state
 
