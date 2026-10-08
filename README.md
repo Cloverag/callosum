@@ -165,7 +165,7 @@ hit can traverse into the graph** and a **graph hit can pull back the passage th
 it**.
 
 **Stack** — Postgres 16 + pgvector · Neo4j **5.26** · Python 3.12 + FastAPI · Next.js
-**16.3.5** + React 19 + Tailwind v4 · Keycloak 26 (OIDC). The LLM provider is pluggable and defaults to a
+**16.3.8** + React 19 + Tailwind v4 · Keycloak 26 (OIDC). The LLM provider is pluggable and defaults to a
 free tier (Ollama Cloud / `gpt-oss:120b-cloud`, bge-m3 embeddings), because *extraction quality is
 graph quality* — which model does the extracting is a research variable, not an
 implementation detail. Documentation that still names Claude or Kimi as the default is stale.
