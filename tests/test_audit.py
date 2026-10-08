@@ -21,7 +21,7 @@ if os.environ.get("CALLOSUM_RUN_INTEGRATION") != "1":
 import psycopg
 from psycopg.rows import dict_row
 
-from callosum import store
+from callosum import identity, store
 from callosum.config import settings
 from meridian.audit import (
     ACTIONS,
@@ -331,15 +331,15 @@ def _workspace(label: str) -> uuid.UUID:
 def _principal_in(ws: uuid.UUID, name: str) -> uuid.UUID:
     pid = uuid.uuid4()
     _admin(
-        "INSERT INTO principal (id, name, role, clearance) VALUES (%s, %s, 'director', 2)",
-        (pid, name),
+        "INSERT INTO principal (id, name, role, clearance) VALUES (%s, %s, %s, %s)",
+        (pid, name, "director", identity.ROLE_TO_CLEARANCE["director"]),
     )
     _admin(
         """
         INSERT INTO membership (principal_id, workspace_id, role, clearance, active)
-        VALUES (%s, %s, 'director', 2, true)
+        VALUES (%s, %s, %s, %s, true)
         """,
-        (pid, ws),
+        (pid, ws, "director", identity.ROLE_TO_CLEARANCE["director"]),
     )
     return pid
 

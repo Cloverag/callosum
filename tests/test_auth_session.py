@@ -43,8 +43,8 @@ def _admin(sql: str, params: tuple = ()) -> None:
 def _provisioned_principal(subject: str) -> str:
     pid = str(uuid.uuid4())
     _admin(
-        "INSERT INTO principal (id, name, role, clearance) VALUES (%s, %s, 'director', 2)",
-        (pid, f"OIDC User {pid[:6]}"),
+        "INSERT INTO principal (id, name, role, clearance) VALUES (%s, %s, %s, %s)",
+        (pid, f"OIDC User {pid[:6]}", "director", identity.ROLE_TO_CLEARANCE["director"]),
     )
     _admin(
         "INSERT INTO principal_identity (principal_id, provider, subject) VALUES (%s, %s, %s)",

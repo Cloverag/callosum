@@ -49,7 +49,13 @@ jobs:
           - 7687:7687
 
     steps:
+      # fetch-depth: 0 is a predicted requirement of tests/test_readme_pin.py
+      # (#159): `git rev-list --count <pin>` fails on the default shallow clone.
+      # The first green run does not demonstrate the depth change was necessary;
+      # the two land together.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5

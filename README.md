@@ -185,24 +185,36 @@ intake has shipped without one.
 
 | | |
 |---|---|
-| Backend tests | **786** passing, gated suite |
-| Frontend tests | **290** passing, 20 suites |
-| API | **75 operations** across 57 paths, 12 routers |
-| Migrations | 25, head `0025_meeting_document`, forward and reverse tested |
+| Backend tests | **980** passing, gated suite |
+| Frontend tests | **356** passing, 28 suites |
+| API | **80 operations** across 62 paths, 14 tags |
+| Migrations | 30, head `0030_document_principal_role`, forward and reverse tested |
 | Architecture decisions | 18 ADRs |
-| Commits | 495 (`git rev-list --count 8dd2d3d`) |
+| Commits | 560 (`git rev-list --count 1b89f2e`) |
 
-Measured on `8dd2d3d` (2026-08-24), not carried forward. Both test figures are a **real
-run** on that commit — the gated suite against local Postgres 16 and Neo4j, and Jest with
-`tsc --noEmit` clean. The API, migration, ADR and commit figures all derive at `8dd2d3d`,
-and the parenthetical names the pin rather than a moving ref, so the command printed beside
-the figure reproduces it (see #159).
+Measured on `1b89f2e` (2026-10-08) — this branch, which is `master` `f5bcf24` plus the
+hygiene fixes. Both test figures are a **real run**: CI run
+[37819558318](https://github.com/Cloverag/callosum/actions/runs/37819558318), the gated backend tier
+against Postgres 16 and Neo4j service containers, and Jest with a clean Next build.
+Commits, migrations and ADRs derive at that SHA — the parenthetical names the pin, not a
+moving ref (#159), and `tests/test_readme_pin.py` now checks those three *against* it, so
+editing a number without re-pinning fails. API counts are from
+`meridian.api.main:app.openapi()`.
 
-The backend delta is **+55 on master's 731**: 20 in `tests/test_document_versions.py`, 4 in
-`tests/test_p4_leak_sweep.py`, 15 in `tests/test_withheld_discipline.py`, 14 in
-`tests/test_meeting_material.py`, and two parametrized cases —
-`test_an_applied_migration_is_unchanged` runs once per migration file, so `0024` and `0025`
-add one each. Reconciled by **collecting each file**, not by arithmetic.
+**Re-measured because merging master moved all of them**, and the previous block quoted
+`--collect-only` counts rather than a run, since the gated suite had not been executed
+when it was written. CI has now executed it. The backend delta over master's 973 is
+**+7**, reconciled by collecting every file on both commits and diffing rather than by
+arithmetic: 3 in `tests/test_demo_schema_hygiene.py` (#195, #183), 2 in
+`tests/test_principal_clearance_fixtures.py` (#182), 2 in `tests/test_readme_pin.py`
+(#159). The frontend gains the 2 cases in
+`frontend/__tests__/evidence-panel-keyboard.test.ts` (#211). The 2 `packs.ts` header cases
+this branch originally added are **gone**: #198 is closed on master, and those assertions
+were pinned to this branch's own wording — see the merge commit.
+
+One failure is Windows-only and is **not** fixed here: `error-text-discipline` compares a
+path against a hardcoded `/` separator (#213 T4). PR #215 carries that fix. Linux CI is
+the pass/fail authority, and the figures above are from it.
 
 **P3 is frozen, not accepted** — of its three exit criteria one is met, one is partial and
 one is not met, because the accessibility and error-state checkpoints were deliberately
@@ -308,14 +320,16 @@ routes. Set `MERIDIAN_API_ORIGIN` if the API is not on `:8000`.
 ```bash
 docker compose up -d && docker compose ps               # all three healthy FIRST
 .venv/bin/callosum eval-mechanism                        # deterministic gate, no LLM
-CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 786 tests, real stores
-cd frontend && npx jest && npm run build                 # 290 tests, 20 suites
+CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 980 tests, real stores
+cd frontend && npx jest && npm run build                 # 356 tests, 28 suites
 ```
 
 `CALLOSUM_RUN_INTEGRATION=1` runs against real Postgres and Neo4j, so the compose stack
-must be up. Without the gate the suite selects 253 tests; with it, 750. Run it with the
-containers stopped and the 497 gated tests fail on connection errors — the failure looks
-like a broken build and is a missing database.
+must be up. Without the gate the suite skips 47 tests and runs the rest; with it, all
+**980** run. Those 253 / 750 / 497 figures were stale by six phases — they predate the
+gate's current shape and did not add up to either total. Run it with the containers stopped
+and the gated tests fail on connection errors — the failure looks like a broken build and
+is a missing database.
 
 ---
 

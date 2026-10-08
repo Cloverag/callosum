@@ -420,6 +420,9 @@ export function KnowledgeGraph({
         maxZoom={2}
         proOptions={{ hideAttribution: false }}
         nodesConnectable={false}
+        // Keyboard users reach edge evidence through EvidencePanel (Tab to a
+        // node). Making ~40 edges focusable inserts them into the tab order
+        // between the nodes (#211). Do not flip this without a roving tabindex.
         edgesFocusable={false}
         className="[&_.react-flow\_\_pane]:cursor-grab"
       >
@@ -522,8 +525,10 @@ export function EvidencePanel({
       <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
         <p className="text-sm text-muted-foreground">Select a node</p>
         <p className="max-w-[22rem] text-xs text-subtle-foreground">
-          Every relationship carries the verbatim quote it was extracted from. Choose
-          an entity to read its evidence.
+          Tab to an entity to read every relationship touching it, with the
+          verbatim quote each edge was extracted from. Hover and tap on an edge
+          are pointer shortcuts; this panel is the keyboard path. Edges are not
+          tab stops — forty of them between the nodes would be worse.
         </p>
       </div>
     );

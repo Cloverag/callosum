@@ -95,6 +95,16 @@ def test_session_absolute_expiration():
     assert sess.read(s) is None
 
 
+def _wipe_workspace(*workspace_ids: str) -> None:
+    """#184: this file used to leave two workspaces + a meeting behind every gated run."""
+    with psycopg.connect(store.settings().postgres_dsn) as conn:
+        for ws in workspace_ids:
+            conn.execute("DELETE FROM agenda_item WHERE workspace_id = %s", (ws,))
+            conn.execute("DELETE FROM meeting WHERE workspace_id = %s", (ws,))
+            conn.execute("DELETE FROM workspace WHERE id = %s", (ws,))
+        conn.commit()
+
+
 def test_conflicts_api_router_registered():
     """H-15: /api/conflicts route must be registered in meridian.api.main."""
     from meridian.api import main
@@ -110,27 +120,30 @@ def test_composite_tenant_foreign_key_constraint():
     meeting_id = uuid.uuid4()
     item_id = uuid.uuid4()
 
-    with psycopg.connect(store.settings().postgres_dsn, row_factory=store.dict_row) as conn:
-        conn.execute("INSERT INTO workspace (id, name) VALUES (%s, 'W1')", (w1,))
-        conn.execute("INSERT INTO workspace (id, name) VALUES (%s, 'W2')", (w2,))
+    try:
+        with psycopg.connect(store.settings().postgres_dsn, row_factory=store.dict_row) as conn:
+            conn.execute("INSERT INTO workspace (id, name) VALUES (%s, 'W1')", (w1,))
+            conn.execute("INSERT INTO workspace (id, name) VALUES (%s, 'W2')", (w2,))
 
-        # Create meeting in workspace w1 (bypassing RLS as superuser to test FK constraint)
-        conn.execute(
-            """
-            INSERT INTO meeting (id, title, scheduled_start, workspace_id)
-            VALUES (%s, 'Meeting W1', now(), %s)
-            """,
-            (meeting_id, w1),
-        )
-
-        # Attempt to insert agenda item referencing meeting_id but workspace w2
-        with pytest.raises(psycopg.errors.ForeignKeyViolation):
+            # Create meeting in workspace w1 (bypassing RLS as superuser to test FK constraint)
             conn.execute(
                 """
-                INSERT INTO agenda_item (id, meeting_id, title, position, workspace_id)
-                VALUES (%s, %s, 'Cross-Tenant Item', 1, %s)
+                INSERT INTO meeting (id, title, scheduled_start, workspace_id)
+                VALUES (%s, 'Meeting W1', now(), %s)
                 """,
-                (item_id, meeting_id, w2),
+                (meeting_id, w1),
             )
+
+            # Attempt to insert agenda item referencing meeting_id but workspace w2
+            with pytest.raises(psycopg.errors.ForeignKeyViolation):
+                conn.execute(
+                    """
+                    INSERT INTO agenda_item (id, meeting_id, title, position, workspace_id)
+                    VALUES (%s, %s, 'Cross-Tenant Item', 1, %s)
+                    """,
+                    (item_id, meeting_id, w2),
+                )
+    finally:
+        _wipe_workspace(w1, w2)
 
 

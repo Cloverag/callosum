@@ -75,6 +75,15 @@ def upsert_document(
     same board deck under a different filename does not double every entity in the
     graph. Idempotent ingestion is not a nicety here — the extractor is expensive
     and the graph is append-only.
+
+    Single-workspace by construction (#196): this INSERT never names
+    ``workspace_id``, so the row takes the table default (the Default Workspace).
+    FORCE RLS then rejects a connection scoped to any other tenant — fail-closed,
+    but as a row-level-security error rather than a typed one. Product intake
+    (``meridian.documents``) names ``workspace_id`` and is multi-tenant. Giving
+    this helper a workspace argument is a freeze-exception signature change;
+    ``test_core_ingest_helper_cannot_write_outside_the_default_workspace`` pins
+    the limitation until that decision is taken.
     """
     row = conn.execute(
         """

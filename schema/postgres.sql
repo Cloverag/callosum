@@ -54,7 +54,11 @@ CREATE TABLE document (
     doc_type     TEXT NOT NULL,     -- board_deck | transcript | email | memo | contract | minutes
     source_uri   TEXT,              -- original file path / gdrive link
     raw_text     TEXT NOT NULL,
-    content_hash TEXT UNIQUE NOT NULL,   -- dedupe: same bytes never ingested twice
+    -- Uniqueness is per workspace: (workspace_id, content_hash). This bootstrap
+    -- file has no workspace_id column; migration 0022_doc_content_hash_uq owns
+    -- the composite unique. Do not restore a global UNIQUE here — that is the
+    -- pre-0022 invariant that broke ingest (#193 / #195).
+    content_hash TEXT NOT NULL,
     sensitivity  INT  NOT NULL REFERENCES sensitivity(level) DEFAULT 2,
     authored_by  UUID REFERENCES principal(id),
     authored_at  TIMESTAMPTZ,       -- when the doc was written, not when ingested
