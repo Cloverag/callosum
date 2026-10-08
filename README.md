@@ -174,9 +174,9 @@ implementation detail.
 
 ## What is built
 
-Two tracks. The research engine is closed and frozen. The product has three phases
-accepted; P3 is frozen feature-complete with its exit gate unclaimed, and P4 source
-intake has shipped without one.
+Two tracks. The research engine is closed and frozen. The product has four phases
+accepted: P4 passed its exit gate on 2026-10-08, at the second attempt. P3 is frozen
+feature-complete with its exit gate unclaimed, and P5 is in flight.
 
 | Track | State |
 |---|---|
@@ -185,24 +185,32 @@ intake has shipped without one.
 
 | | |
 |---|---|
-| Backend tests | **786** passing, gated suite |
-| Frontend tests | **290** passing, 20 suites |
-| API | **75 operations** across 57 paths, 12 routers |
-| Migrations | 25, head `0025_meeting_document`, forward and reverse tested |
-| Architecture decisions | 18 ADRs |
-| Commits | 495 (`git rev-list --count 8dd2d3d`) |
+| Backend tests | **1014** passing, gated suite |
+| Frontend tests | **354** passing, 27 suites |
+| API | **83 operations** across 65 paths, 14 routers |
+| Migrations | 31, head `0031_membership_request`, forward and reverse tested |
+| Architecture decisions | 19 ADRs |
+| Commits | 561 (`git rev-list --count 77b2c47`) |
 
-Measured on `8dd2d3d` (2026-08-24), not carried forward. Both test figures are a **real
-run** on that commit — the gated suite against local Postgres 16 and Neo4j, and Jest with
-`tsc --noEmit` clean. The API, migration, ADR and commit figures all derive at `8dd2d3d`,
-and the parenthetical names the pin rather than a moving ref, so the command printed beside
-the figure reproduces it (see #159).
+Measured on `77b2c47` (2026-10-08), not carried forward. Both test figures are a **real
+run** — CI run [37801964242](https://github.com/Cloverag/callosum/actions/runs/37801964242), the
+gated backend tier against Postgres 16 and Neo4j service containers, and Jest with a clean
+Next build. The API, migration, ADR and commit figures all derive at `77b2c47`, and the
+parenthetical names the pin rather than a moving ref, so the command printed beside the
+figure reproduces it (see #159).
 
-The backend delta is **+55 on master's 731**: 20 in `tests/test_document_versions.py`, 4 in
-`tests/test_p4_leak_sweep.py`, 15 in `tests/test_withheld_discipline.py`, 14 in
-`tests/test_meeting_material.py`, and two parametrized cases —
-`test_an_applied_migration_is_unchanged` runs once per migration file, so `0024` and `0025`
-add one each. Reconciled by **collecting each file**, not by arithmetic.
+The previous block was pinned at `8dd2d3d` (2026-08-24) and had not been re-measured since,
+so it had drifted by 228 backend tests. It is replaced rather than appended to: a stale pin
+is not a second data point, and the rule in `AGENTS.md` is that a reader must not have to
+tell a stale figure from a regression.
+
+The backend delta is **+41 on master's 973** at `f5bcf24`, all of it from this branch:
+29 in `tests/test_membership_approval.py`, 7 added to `tests/test_api_errors.py`, 3 in
+`tests/test_membership_approval_policy.py`, and 2 parametrized cases — both
+`test_an_applied_migration_is_unchanged` and `test_the_split_covers_the_whole_file` run
+once per migration file, so `0031` adds one to each. Reconciled by **collecting each file
+on both commits and diffing**, not by arithmetic; the two parametrized cases are the reason
+arithmetic would have been wrong, since the obvious count is 39.
 
 **P3 is frozen, not accepted** — of its three exit criteria one is met, one is partial and
 one is not met, because the accessibility and error-state checkpoints were deliberately
@@ -308,8 +316,8 @@ routes. Set `MERIDIAN_API_ORIGIN` if the API is not on `:8000`.
 ```bash
 docker compose up -d && docker compose ps               # all three healthy FIRST
 .venv/bin/callosum eval-mechanism                        # deterministic gate, no LLM
-CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 786 tests, real stores
-cd frontend && npx jest && npm run build                 # 290 tests, 20 suites
+CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 1014 tests, real stores
+cd frontend && npx jest && npm run build                 # 354 tests, 27 suites
 ```
 
 `CALLOSUM_RUN_INTEGRATION=1` runs against real Postgres and Neo4j, so the compose stack
