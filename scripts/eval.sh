@@ -49,6 +49,10 @@ $CLI ingest-doc data/demo/messy_restricted_email.md --type email --sensitivity 3
 $CLI ingest-doc data/demo/messy_board_meeting_17_transcript.txt --type transcript --sensitivity 1 --no-extract
 $CLI ingest-doc data/demo/messy_vendor_followup_email.md --type email --sensitivity 1 --no-extract
 $CLI ingest-doc "$COMP" --type transcript --sensitivity 3 --no-extract
+# The only sensitivity-4 document in the corpus, and the only thing that
+# distinguishes founder (clearance 4) from exec (clearance 3): every other
+# document is 1 or 3, so without this Raj and Priya see identical material.
+$CLI ingest-doc data/demo/board_governance_note_FOUNDER_ONLY.txt --type memo --sensitivity 4 --no-extract
 
 hr "Seeding the gold graph (deterministic — no LLM)"
 $CLI seed-eval

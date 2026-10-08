@@ -16,6 +16,7 @@ import {
   type ReactFlowInstance,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { X } from "lucide-react";
 import { useForceLayout } from "./force-layout";
 import { hierarchyLayout } from "./hierarchy-layout";
 import { DURATION } from "@/lib/motion";
@@ -196,6 +197,31 @@ export function KnowledgeGraph({
 
   const layout = useForceLayout(view.nodes, view.edges, refit, mode === "force");
 
+  // The pane, not the viewport, is what `fitView` frames against — and the pane
+  // changes size without the viewport moving: the mobile nav drawer opens and
+  // closes over it, a phone rotates. `useForceLayout` only fires `refit` ONCE,
+  // when the simulation first settles, so every later size change leaves the
+  // graph framed for the previous pane — off-centre or half off-screen, with no
+  // gesture that fixes it. A `ResizeObserver` on the container re-frames it,
+  // debounced so a drag-resize does not glide the viewport on every frame.
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [narrowPane, setNarrowPane] = useState(false);
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const ro = new ResizeObserver(([entry]) => {
+      setNarrowPane(entry.contentRect.width < 640);
+      clearTimeout(t);
+      t = setTimeout(refit, 160);
+    });
+    ro.observe(el);
+    return () => {
+      clearTimeout(t);
+      ro.disconnect();
+    };
+  }, [refit]);
+
   // Recomputed only when the graph or the mode changes: dagre is deterministic,
   // so the layered picture is stable across renders without being baked anywhere.
   const ranked = useMemo(
@@ -338,20 +364,32 @@ export function KnowledgeGraph({
   }, [hovered, view.edges, view.nodes]);
 
   const handleNodeClick = useCallback(
-    (_: React.MouseEvent, node: Node) => onSelect(node.id),
+    (_: React.MouseEvent, node: Node) => {
+      onSelect(node.id);
+      setHovered(null); // opening a node's evidence supersedes an edge readout
+    },
     [onSelect]
   );
 
   return (
-    <div className="h-full w-full">
+    <div ref={containerRef} className="h-full w-full">
       <ReactFlow
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
         onNodeClick={handleNodeClick}
-        onPaneClick={() => onSelect(null)}
+        onPaneClick={() => {
+          onSelect(null);
+          // A pane tap is also the dismiss for the edge readout — on touch
+          // there is no mouse-leave, so this is what closes it.
+          setHovered(null);
+        }}
         onEdgeMouseEnter={(_, edge) => setHovered(edge.id)}
         onEdgeMouseLeave={() => setHovered(null)}
+        // Touch has no hover. A tap on an edge toggles the same readout the
+        // pointer shows on hover, so the relation and its verbatim quote are
+        // reachable on a phone — not just as forty identical grey lines.
+        onEdgeClick={(_, edge) => setHovered((h) => (h === edge.id ? null : edge.id))}
 
         onNodesChange={onNodesChange}
         onInit={(instance) => {
@@ -372,7 +410,13 @@ export function KnowledgeGraph({
         onNodeDragStop={(_, node) => layout.onDragStop(node.id)}
         fitView
         fitViewOptions={{ padding: 0.16 }}
-        minZoom={0.3}
+        // The settled graph is ~1000px across whatever the pane is — a property
+        // of 38 boxes at 168px wide, not of the viewport. On a pane under 640px
+        // `fitView` would clamp near this floor, where the labels stop being
+        // readable (measured ~0.4). Raising the floor there means the graph
+        // opens legible and is panned rather than fully fitted — the better
+        // trade on a phone. Desktop keeps 0.3 so the whole graph can show.
+        minZoom={narrowPane ? 0.5 : 0.3}
         maxZoom={2}
         proOptions={{ hideAttribution: false }}
         nodesConnectable={false}
@@ -388,8 +432,20 @@ export function KnowledgeGraph({
           hover is the cheapest gesture that can answer "what is this line?".
         */}
         {hoveredEdge && (
-          <Panel position="bottom-center" className="!mb-3 max-w-[26rem]">
-            <div className="pointer-events-none rounded-[12px] border border-border bg-surface-raised/95 p-3 shadow-card backdrop-blur-sm">
+          <Panel position="bottom-center" className="!mb-3 max-w-[calc(100%-1rem)] sm:max-w-[26rem]">
+            <div className="pointer-events-none relative rounded-[12px] border border-border bg-surface-raised/95 p-3 pr-8 shadow-card backdrop-blur-sm">
+              {/* Dismiss. Hover has a mouse-leave; a tap does not, so a touch
+                  reader needs a way to put the readout away that is not
+                  "tap exactly on the pane". `pointer-events-auto` on just the
+                  button keeps the panel body from blocking the canvas. */}
+              <button
+                type="button"
+                onClick={() => setHovered(null)}
+                aria-label="Dismiss"
+                className="pointer-events-auto absolute right-1.5 top-1.5 grid size-6 place-items-center rounded-[8px] text-muted-foreground transition-colors duration-(--duration-hover) hover:bg-surface-sunken hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+              >
+                <X className="size-3.5" aria-hidden />
+              </button>
               <p className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
                 {hoveredEdge.sourceLabel}
                 <span className="mx-1.5 text-accent">{hoveredEdge.relation}</span>

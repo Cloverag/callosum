@@ -20,8 +20,8 @@ requirements.
 
 | Track | Completed | Active | Remaining |
 |---|---:|---|---:|
-| Research engine | **14 / 14** accepted (`R0`–`R13`) | — research track CLOSED 2026-07-18, baseline frozen at `eval-baseline-v3` | 0 |
-| Meridian product | **3 / 13** accepted (`P0`, `P1`, `P2`) | **P3 FROZEN**, exit gate not claimed (CP-F/G/H deferred, #93) · **P4 work items shipped** (intake, versions, meeting assignment, membership grant/revoke); **exit gate not attempted** — audit coverage still open (#166) | **10** (`P3`–`P12`) |
+| Research engine | **14 / 14** accepted (`R0`–`R13`) | — research track CLOSED 2026-07-18, baseline frozen at `6ed5ed5` | 0 |
+| Meridian product | **4 / 13** accepted (`P0`, `P1`, `P2`, `P4`) | **P3 FROZEN**, exit gate not claimed (CP-F/G/H deferred, #93) · **P4 ACCEPTED 2026-10-08** at `7f8a84b` — [packet](./docs/reviews/2026-10-08-p4-gate-packet.md) | **9** (`P3`, `P5`–`P12`) |
 
 The counts must not be combined into one percentage: the research track validates the
 memory engine; the product track makes it a deployable board operating system. P3 gave the
@@ -393,13 +393,12 @@ observability.
 **Exit:** users access only authorized workspaces; UI distinguishes draft/approved/withheld/
 failed states; primary flows pass keyboard and accessibility smoke checks.
 
-## P4 — Board workspace, members, and source intake — items shipped, gate unclaimed
+## P4 — Board workspace, members, and source intake — ✅ ACCEPTED (2026-10-08)
 
-Source intake merged 2026-08-22 (PR #128); versions built 2026-08-23; membership
-grant/revoke shipped 2026-08-28 (#186). **Not accepted:** the exit gate has not been
-attempted, and `rules.md` §4 is explicit that only an exit gate advances the accepted
-count, so the product track stays at 3 of 13. Checkpoint detail in
-[phase.md](./phase.md#product-p4--board-workspace-members-and-source-intake--in-progress).
+**Accepted 2026-10-08 at `7f8a84b`** — [packet](./docs/reviews/2026-10-08-p4-gate-packet.md). The first attempt (2026-08-24) was refused on
+#166; the second passed with its not-covered gaps accepted. Follow-up recorded at signing: non-admin
+membership grants need founder/admin approval (#225). The product track is **4 of 13**.
+Checkpoint detail in [phase.md](./phase.md).
 
 | Work item | State |
 |---|---|
@@ -407,8 +406,8 @@ count, so the product track stays at 3 of 13. Checkpoint detail in
 | Document intake / import · metadata / sensitivity · duplicates · quarantine state | ✅ merged (#128) |
 | Versions | ✅ built 2026-08-23 (`0024_document_version`, ADR-017) |
 | Workspace / meeting assignment | ✅ built 2026-08-24 (`0025_meeting_document`, ADR-018) |
-| Membership grant / revoke (audited) | ✅ shipped (#186); remaining P4 audit steps are #166 |
-| Exit gate | ⬜ not attempted |
+| Membership grant / revoke (audited) | ✅ shipped (#186); non-admin grants need founder/admin approval from 2026-10-08 (#225) |
+| Exit gate | ✅ accepted 2026-10-08 — [packet](./docs/reviews/2026-10-08-p4-gate-packet.md) |
 
 **Recorded gap — CLOSED.** Intake applied no sensitivity ceiling: a clearance-1 principal
 could file a sensitivity-3 document. Raised in #128's review, decided in #143 and shipped in

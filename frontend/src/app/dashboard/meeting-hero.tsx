@@ -114,7 +114,12 @@ export function MeetingHero({ meeting, loading }: { meeting: Meeting | null; loa
               flat. Deliberately NOT a new larger step: the hero already outranks
               the page title by surface and elevation, so buying the same
               hierarchy twice would cost a ramp step to say nothing new. */}
-          <h2 className="mt-2 truncate text-3xl font-medium leading-tight tracking-tight text-focal-foreground">
+          {/* `truncate` clipped "Board Meeting 14" to "Board Me…" at 390px, where
+              the hero is only ~330px wide. Below `lg` it wraps instead (and sits
+              a step down, `text-2xl`); at `lg` and up — where the hero is wide
+              enough that a normal title never reaches the edge — it is the exact
+              `truncate text-3xl` it always was. */}
+          <h2 className="mt-2 whitespace-normal text-2xl font-medium leading-tight tracking-tight text-focal-foreground lg:truncate lg:text-3xl">
             {meeting.title}
           </h2>
         </div>
