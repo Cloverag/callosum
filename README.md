@@ -185,20 +185,27 @@ intake has shipped without one.
 
 | | |
 |---|---|
-| Backend tests | **985** passing, gated suite |
-| Frontend tests | **354** passing, 27 suites |
+| Backend tests | **987** passing, gated suite |
+| Frontend tests | **355** passing, 28 suites |
 | API | **79 operations** across 61 paths, 14 tags (health is untagged) |
 | Migrations | 30, head `0030_document_principal_role`, forward and reverse tested |
 | Architecture decisions | 18 ADRs |
-| Commits | 562 (`git rev-list --count ee4c171`) |
+| Commits | 565 (`git rev-list --count 91f0ea5`) |
 
-Measured on `ee4c171` (2026-10-08), not carried forward — this branch, which is `master`
-`f5bcf24` plus the #213 fixes. The backend figure is CI run
-[37816516227](https://github.com/Cloverag/callosum/actions/runs/37816516227), the gated tier
-against Postgres 16 and Neo4j service containers; the frontend figure is a local
-`npx jest` with `npm run build` clean on Next 16.3.8. The API, migration, ADR and commit
-figures all derive at `ee4c171`, and the parenthetical names the pin rather than a moving
-ref, so the command printed beside the figure reproduces it (see #159).
+Measured on `91f0ea5` (2026-10-08), not carried forward — this branch, which is `master`
+`f5bcf24` plus the #213 fixes (PR #215) and this compliance stack. Both test figures are a
+**real run**: CI run [37822687882](https://github.com/Cloverag/callosum/actions/runs/37822687882), the
+gated backend tier against Postgres 16 and Neo4j service containers, and Jest with a clean
+Next build on Next 16.3.8. The API, migration, ADR and commit figures all derive at
+`91f0ea5`, and the parenthetical names the pin rather than a moving ref, so the command
+printed beside the figure reproduces it (see #159).
+
+**This branch is stacked on PR #215**, so its delta splits two ways and both are
+reconciled by collecting every file on both commits and diffing, not by arithmetic:
+**+2 over #215** (`tests/test_init_membership_scope.py`, for #201) and **+14 over master's
+973** once #215's twelve are included. The frontend is **+1 suite / +1 test** over #215
+(`frontend/__tests__/ungated-routes.test.ts`). Merge #215 first; this one carries its
+commits as ancestors.
 
 **The API row counts tags, not routers.** The previous wording said "12 routers" and the
 number was taken from `app.openapi()`, which reports tags — `/health` carries no tag, so
@@ -316,13 +323,13 @@ routes. Set `MERIDIAN_API_ORIGIN` if the API is not on `:8000`.
 ```bash
 docker compose up -d && docker compose ps               # all three healthy FIRST
 .venv/bin/callosum eval-mechanism                        # deterministic gate, no LLM
-CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 985 tests, real stores
-cd frontend && npx jest && npm run build                 # 354 tests, 27 suites
+CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 987 tests, real stores
+cd frontend && npx jest && npm run build                 # 355 tests, 28 suites
 ```
 
 `CALLOSUM_RUN_INTEGRATION=1` runs against real Postgres and Neo4j, so the compose stack
-must be up. Without the gate the suite is **399 passed, 47 skipped**; with it,
-**985 passed**. Run it with the containers stopped and the gated tests fail on
+must be up. Without the gate the suite is **401 passed, 47 skipped**; with it,
+**987 passed**. Run it with the containers stopped and the gated tests fail on
 connection errors — the failure looks like a broken build and is a missing database.
 
 ---

@@ -7,19 +7,20 @@ Legend: ✅ done/frozen · 🟩 in progress · ⬜ not started
 ## Current snapshot — 2026-10-08
 
 The dated tables later in this file are **records of the date they name**. They are not
-live counts. Measured on this branch at `ee4c171` — `master` `f5bcf24` plus the #213
-fixes — so every figure moves again when it merges.
+live counts. Measured on this branch at `91f0ea5` — `master` `f5bcf24` plus the #213
+fixes (PR #215, which this branch is stacked on) and this compliance stack — so every
+figure moves again when it merges.
 
 | | |
 |---|---|
 | Product track | **4 / 13** accepted (P0, P1, P2, P4). **P4 accepted 2026-10-08** (#224); P3 frozen, exit unclaimed; P5 in flight. |
 | Public demo | [callosum-demo.vercel.app/demo](https://callosum-demo.vercel.app/demo) |
-| Backend | gated **985 passed** / 5 llm-deselected (CI run 37816516227); ungated **399 passed**, 47 skipped |
-| Frontend | **354** tests, 27 suites, Next **16.3.8** |
+| Backend | gated **987 passed** / 5 llm-deselected (CI run 37822687882); ungated **401 passed**, 47 skipped |
+| Frontend | **355** tests, 28 suites, Next **16.3.8** |
 | API | **79 operations** / 61 paths / 14 tags (`POST /api/ask` in; `/auth/demo/*` out of schema) |
 | Migrations | 30, head `0030_document_principal_role` |
 | ADRs | 18 numbered, 001–018, no gaps |
-| Commits on `ee4c171` | **562** (`git rev-list --count ee4c171`) |
+| Commits on `91f0ea5` | **565** (`git rev-list --count 91f0ea5`) |
 | Gold set | `eval/gold.jsonl` is **52** items; README ablation table is still the **29-item** 2026-07-20 run (#203) |
 
 `/entity-conflicts` is no longer mock-backed. `graph` and `assistant` remain local
