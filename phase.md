@@ -4,27 +4,33 @@ Where the project is, at a glance. Detail lives in [ROADMAP.md](./ROADMAP.md), t
 
 Legend: ✅ done/frozen · 🟩 in progress · ⬜ not started
 
-## Current snapshot — 2026-09-12
+## Current snapshot — 2026-10-08
 
 The dated tables later in this file are **records of the date they name**. They are not
-live counts. GitHub `master` is `7c260cd` (#202). Uncommitted local work for #213 is not
-on origin.
+live counts. Measured on this branch at `ee4c171` — `master` `f5bcf24` plus the #213
+fixes — so every figure moves again when it merges.
 
 | | |
 |---|---|
-| Product track | **3 / 13** accepted. P3 frozen, exit unclaimed. P4 items shipped, **exit gate not attempted**. |
+| Product track | **4 / 13** accepted (P0, P1, P2, P4). **P4 accepted 2026-10-08** (#224); P3 frozen, exit unclaimed; P5 in flight. |
 | Public demo | [callosum-demo.vercel.app/demo](https://callosum-demo.vercel.app/demo) |
-| Backend (this working tree) | gated **948 passed** / 5 llm-deselected; ungated **385 passed**, 43 skipped |
-| Frontend (this working tree) | **295** tests, 22 suites, Next **16.3.5** |
-| API (this working tree) | **79 operations** / 61 paths / 14 tags (`POST /api/ask` in; `/auth/demo/*` out of schema) |
-| Migrations | 29, head `0029_workspace_bootstrap` |
-| ADRs | 18 numbered (016 reserved) |
-| Commits on `7c260cd` | **526** (`git rev-list --count 7c260cd`) |
-| Gold set | `eval/gold.jsonl` is **36** items; README ablation table is still the **29-item** 2026-07-20 run (#203) |
+| Backend | gated **985 passed** / 5 llm-deselected (CI run 37816516227); ungated **399 passed**, 47 skipped |
+| Frontend | **354** tests, 27 suites, Next **16.3.8** |
+| API | **79 operations** / 61 paths / 14 tags (`POST /api/ask` in; `/auth/demo/*` out of schema) |
+| Migrations | 30, head `0030_document_principal_role` |
+| ADRs | 18 numbered, 001–018, no gaps |
+| Commits on `ee4c171` | **562** (`git rev-list --count ee4c171`) |
+| Gold set | `eval/gold.jsonl` is **52** items; README ablation table is still the **29-item** 2026-07-20 run (#203) |
 
-`/entity-conflicts` is no longer mock-backed. `graph` and `assistant` remain local gold-graph
-snapshots deferred to P6 (#100); #213 stripped restricted quotes from that snapshot and
-defaults the memory page fail-closed, but it is still not `retrieve.ask`.
+`/entity-conflicts` is no longer mock-backed. `graph` and `assistant` remain local
+gold-graph snapshots deferred to P6 (#100).
+
+**The snapshot's restricted row is gone, not blanked.** This branch originally emptied the
+confidential quote and kept the row; #223 merged the stronger fix and removed the node and
+the edge outright, on the argument that a filter cannot un-ship a row — the row's own
+`document` field still named `compensation_review_CONFIDENTIAL`. #223 also removed
+`/memory`'s founder/investor switch, so the page no longer depicts a clearance check it
+cannot perform. It is still not `retrieve.ask`.
 
 ## Research track — ✅ CLOSED & FROZEN
 

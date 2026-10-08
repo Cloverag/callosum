@@ -4,10 +4,10 @@ Short records of *why* major structural choices were made, so the reasoning surv
 past the session that made it. Format per record: Decision · Alternatives · Why · Status.
 Status is **Accepted** (implemented + in `master`) or **Proposed** (design-only, not built).
 
-There are **18 numbered ADRs**; **016 is reserved** (claimed by the dedup-oracle work,
-not missing). Product schema after the frozen `schema/postgres.sql` base is Alembic;
-the linear chain currently heads at **`0029_workspace_bootstrap`**. ADR-007's original
-`0001→0005` wording is the decision at the time, not the live head.
+There are **18 numbered ADRs**, 001 through 018, with no gaps. Product schema after the
+frozen `schema/postgres.sql` base is Alembic; the linear chain currently heads at
+**`0030_document_principal_role`**. ADR-007's original `0001→0005` wording is the
+decision at the time, not the live head.
 
 ---
 
@@ -272,10 +272,11 @@ frequently resubmit will accumulate audit rows that record no state change.
 endpoint is specified (D7), or if intake ever accepts content the submitter does not
 already hold — a URL fetch or an integration pull would remove the "already has the bytes"
 bound this decision rests on.
-> **ADR-016 is reserved, not missing.** It is claimed by PR #153 (the dedup existence
-> oracle), which was open when this record was written. Taking the number would have
-> collided on merge; leaving a gap is the cheaper of the two, and this note is here so a
-> reader does not go looking for a record that was never lost.
+> **ADR-016's reservation is closed.** This note said the number was claimed by the then-open
+> PR #153 and deliberately left as a gap. #153 merged, ADR-016 is the record directly above,
+> and there is no gap. Kept rather than deleted because the reservation is why the numbers
+> arrived out of order — 017 and 018 were written while 016 was still a hole — and that is
+> worth one sentence to a reader who notices.
 
 ## ADR-017 — A document is corrected by supersession, and a revision may never lower sensitivity
 **Decision:** `document` gains `superseded_by_id` and `revision` (`0024_document_version`). A correction is a **new document** linked to the one it replaces; the predecessor's text, chunks and extracted graph facts are never edited. `supersede_document` refuses a revision below its predecessor's sensitivity, refuses a second successor, and answers 404 — not 403 — for a predecessor above the caller's clearance. `superseded_by_id` is **nulled per caller** when the successor is above their clearance, and `version_chain` discloses withheld revisions as a **count** with `current_id: null` when the current revision is one of them.

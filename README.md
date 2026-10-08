@@ -185,24 +185,32 @@ intake has shipped without one.
 
 | | |
 |---|---|
-| Backend tests | **786** passing, gated suite |
-| Frontend tests | **290** passing, 20 suites |
-| API | **75 operations** across 57 paths, 12 routers |
-| Migrations | 25, head `0025_meeting_document`, forward and reverse tested |
+| Backend tests | **985** passing, gated suite |
+| Frontend tests | **354** passing, 27 suites |
+| API | **79 operations** across 61 paths, 14 tags (health is untagged) |
+| Migrations | 30, head `0030_document_principal_role`, forward and reverse tested |
 | Architecture decisions | 18 ADRs |
-| Commits | 495 (`git rev-list --count 8dd2d3d`) |
+| Commits | 562 (`git rev-list --count ee4c171`) |
 
-Measured on `8dd2d3d` (2026-08-24), not carried forward. Both test figures are a **real
-run** on that commit — the gated suite against local Postgres 16 and Neo4j, and Jest with
-`tsc --noEmit` clean. The API, migration, ADR and commit figures all derive at `8dd2d3d`,
-and the parenthetical names the pin rather than a moving ref, so the command printed beside
-the figure reproduces it (see #159).
+Measured on `ee4c171` (2026-10-08), not carried forward — this branch, which is `master`
+`f5bcf24` plus the #213 fixes. The backend figure is CI run
+[37816516227](https://github.com/Cloverag/callosum/actions/runs/37816516227), the gated tier
+against Postgres 16 and Neo4j service containers; the frontend figure is a local
+`npx jest` with `npm run build` clean on Next 16.3.8. The API, migration, ADR and commit
+figures all derive at `ee4c171`, and the parenthetical names the pin rather than a moving
+ref, so the command printed beside the figure reproduces it (see #159).
 
-The backend delta is **+55 on master's 731**: 20 in `tests/test_document_versions.py`, 4 in
-`tests/test_p4_leak_sweep.py`, 15 in `tests/test_withheld_discipline.py`, 14 in
-`tests/test_meeting_material.py`, and two parametrized cases —
-`test_an_applied_migration_is_unchanged` runs once per migration file, so `0024` and `0025`
-add one each. Reconciled by **collecting each file**, not by arithmetic.
+**The API row counts tags, not routers.** The previous wording said "12 routers" and the
+number was taken from `app.openapi()`, which reports tags — `/health` carries no tag, so
+router count and tag count are not the same figure. Renamed rather than re-derived,
+because the honest fix for a mislabelled number is the label.
+
+**This block had been stale since 2026-08-24.** It advertised 786 / 290 / 75 ops / head
+`0025` at a pin of `8dd2d3d` while five weeks of merged work went by — versions, meeting
+assignment, the leak sweep, the demo deployment, the eval strata, #166's audit coverage, the
+P4 gate, and P5's agenda and pack work. None of those re-pinned it. Replaced rather than
+appended to: two pinned figures in one table is how a reader loses the ability to tell a
+stale number from a regression.
 
 **P3 is frozen, not accepted** — of its three exit criteria one is met, one is partial and
 one is not met, because the accessibility and error-state checkpoints were deliberately
@@ -308,14 +316,14 @@ routes. Set `MERIDIAN_API_ORIGIN` if the API is not on `:8000`.
 ```bash
 docker compose up -d && docker compose ps               # all three healthy FIRST
 .venv/bin/callosum eval-mechanism                        # deterministic gate, no LLM
-CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 786 tests, real stores
-cd frontend && npx jest && npm run build                 # 290 tests, 20 suites
+CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 985 tests, real stores
+cd frontend && npx jest && npm run build                 # 354 tests, 27 suites
 ```
 
 `CALLOSUM_RUN_INTEGRATION=1` runs against real Postgres and Neo4j, so the compose stack
-must be up. Without the gate the suite selects 253 tests; with it, 750. Run it with the
-containers stopped and the 497 gated tests fail on connection errors — the failure looks
-like a broken build and is a missing database.
+must be up. Without the gate the suite is **399 passed, 47 skipped**; with it,
+**985 passed**. Run it with the containers stopped and the gated tests fail on
+connection errors — the failure looks like a broken build and is a missing database.
 
 ---
 
