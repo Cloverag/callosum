@@ -106,11 +106,12 @@ def grant_membership(
 def list_membership_requests(principal: CurrentPrincipal) -> list[domain.MembershipRequest]:
     """The pending approval queue for the caller's workspace. Founders and admins only.
 
-    Registered BEFORE `/api/membership/{principal_id}/revoke` is irrelevant to matching —
-    that route is a POST with a different arity — but the literal `requests` segment is
-    load-bearing for a different reason: the approve/reject routes below live under it, so
-    the queue and its actions share one prefix instead of competing with `{principal_id}`
-    for the same position.
+    There is no matching ambiguity with `/api/membership/{principal_id}/revoke`, despite
+    `requests` sitting where a principal id goes on that route: this one is a GET, that
+    one is a POST, and the two have different segment counts. The reason `requests` is a
+    collection prefix rather than a flat `/api/membership-requests` is that approve and
+    reject hang off an individual request — `requests/{id}/approve` — so the queue and
+    the two actions on its entries share one path root.
     """
     return domain.list_pending_requests(
         workspace_id=principal.workspace_id,
