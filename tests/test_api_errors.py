@@ -23,6 +23,7 @@ from meridian import (
     minutes,
     packs,
     resolutions,
+    workspaces,
 )
 from meridian.api.errors import (
     BAD_WORKSPACE,
@@ -198,6 +199,58 @@ class TestTheOtherStatuses:
         move is a conflict with current state, not a malformed request.
         """
         assert classify(meetings.InvalidTransition("x")).status == 409
+
+
+class TestTheMembershipApprovalGate:
+    """#225's five refusals, each at the status a client has to act on differently.
+
+    Three of them need explicit registrations in `errors.py` and would otherwise be
+    wrong rather than merely imprecise:
+    `ApprovalNotAuthorizedError` and `SelfApprovalDeniedError` carry no recognised
+    suffix, so pass 3 would make them 422 — telling a caller to fix a request that was
+    correctly formed when the real answer is "ask somebody else to sign it". The same
+    for the two `AlreadyPending` / `AlreadyDecided` conflicts.
+
+    The other two are mapped by convention and are asserted here precisely *because*
+    nothing in `errors.py` names them: `MembershipRequestNotFoundError` by the
+    `NotFound` suffix, and `StaleMembershipRequestError` by the `Stale` prefix. Both
+    class docstrings claim that is deliberate. If someone renames either class, the
+    mapping changes with no diff in `errors.py` to review — this is where that shows up.
+    """
+
+    @pytest.mark.parametrize(
+        "exc,status,code",
+        [
+            (workspaces.ApprovalNotAuthorizedError("x"), 403, FORBIDDEN),
+            (workspaces.SelfApprovalDeniedError("x"), 403, FORBIDDEN),
+            (workspaces.MembershipRequestAlreadyDecidedError("x"), 409, CONFLICT),
+            (workspaces.MembershipRequestAlreadyPendingError("x"), 409, CONFLICT),
+            (workspaces.MembershipRequestNotFoundError("x"), 404, NOT_FOUND),
+            (workspaces.StaleMembershipRequestError("x"), 409, STALE),
+        ],
+        ids=lambda v: v if isinstance(v, (int, str)) else type(v).__name__,
+    )
+    def test_status_and_code(self, exc, status, code):
+        mapped = classify(exc)
+        assert (mapped.status, mapped.code) == (status, code)
+
+    def test_the_403s_name_the_rule_and_never_a_principals_standing(self):
+        """Unlike `PrincipalNotFound`, these keep their detail — see the class below for
+        the contrast, and `errors.py`'s comment for why the two differ.
+
+        What the message may say is the *rule* ("only a founder or an admin may…").
+        What it may never say is whether a given principal is a member here, what the
+        actor's own role is, or what the requester's was: that is the membership oracle
+        `PrincipalNotFound` exists to avoid, and a 403 that leaked it would reopen the
+        hole at a different endpoint.
+        """
+        mapped = classify(
+            workspaces.ApprovalNotAuthorizedError(
+                "only a founder or an admin may approve a membership request"
+            )
+        )
+        assert mapped.detail != "Not available to you."
+        assert "founder or an admin" in mapped.detail
 
 
 class TestAuthorizationDoesNotExplainItself:

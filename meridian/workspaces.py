@@ -91,6 +91,8 @@ test that could not have caught it and the one substituted instead.
 
 from dataclasses import dataclass
 
+import psycopg
+
 from callosum import identity, store
 from callosum.store import DEFAULT_WORKSPACE_ID
 
@@ -139,6 +141,95 @@ class LastActiveMembershipError(WorkspaceError):
     """
 
 
+class ApprovalNotAuthorizedError(WorkspaceError):
+    """The actor is a member here, but not one who may sign off a membership grant (#225).
+
+    Separate from `EscalationDeniedError`, which is about *clearance*. This one is about
+    an authority that `ROLE_TO_CLEARANCE` deliberately does not express: `identity.py`'s
+    own note on the mapping says `admin` "carries clearance 4 *and* separately carries
+    membership-management authority — the two are distinct grants on one role." Conflating
+    them would make any future clearance-4 role an approver by accident.
+    """
+
+
+class SelfApprovalDeniedError(WorkspaceError):
+    """The actor filed this request and may not also sign it (#225).
+
+    Reachable, not defensive decoration: founders and admins never produce a pending
+    request (they grant directly), so at the moment of filing the requester is by
+    construction not an approver — but they may be *promoted* to founder or admin while
+    their own request sits in the queue, at which point approving it is a round trip from
+    "may not grant this alone" to "granted it alone".
+    """
+
+
+class MembershipRequestNotFoundError(WorkspaceError):
+    """No membership request with that id in this workspace.
+
+    Takes the `NotFound` suffix knowingly: `errors.py`'s name pass maps it to 404, which
+    is right here — unlike `LastActiveMembershipError`, this one really is "there is
+    nothing at that id", and a caller's move is to re-read the queue.
+    """
+
+
+class MembershipRequestAlreadyDecidedError(WorkspaceError):
+    """The request was already approved or rejected; it cannot be decided twice.
+
+    Mapped explicitly to 409 in `errors.py`. It carries none of the suffixes pass 2
+    recognises, so without that entry it would fall through to a 422 and tell the caller
+    to fix a request that was perfectly well formed — the state refused it.
+    """
+
+
+class MembershipRequestAlreadyPendingError(WorkspaceError):
+    """There is already an open request for this principal in this workspace.
+
+    Enforced by `uq_membership_request_pending` (migration `0031`), a partial unique
+    index, and surfaced here rather than reasoned about: the alternative — read first,
+    then insert — is two statements with a window between them, and two non-admins
+    submitting at once would both read "no pending request" and both insert. Letting the
+    index refuse the second write is the only version that is correct under concurrency.
+
+    Mapped explicitly to 409 in `errors.py` for the same reason as
+    `MembershipRequestAlreadyDecidedError`: the request was well formed, the state
+    refused it.
+    """
+
+
+class StaleMembershipRequestError(WorkspaceError):
+    """The request is pending, but the authority it rests on has lapsed since it was filed.
+
+    Two ways that happens, both re-checked at approval time rather than trusted from the
+    moment of filing: the requester's membership was revoked, or their role was lowered
+    below what they asked to grant. See `approve_membership_request()` for why an
+    approver's own authority is not sufficient to cure either.
+
+    The `Stale` prefix is load-bearing, not stylistic: `errors.py`'s pass 2 maps it to 409
+    with code `stale_resource`, which is exactly the instruction a client needs — refetch
+    the queue, this row is no longer actionable — and it gets there without an explicit
+    registration that could be forgotten.
+    """
+
+
+@dataclass(frozen=True)
+class MembershipRequest:
+    """A read model for one `membership_request` row — a grant that is NOT in effect.
+
+    Deliberately not a `Membership` with a flag. The two are different kinds of thing and
+    the type system is where that should be visible: a `Membership` means someone has
+    access, a `MembershipRequest` means someone asked. `grant_membership()` returns one or
+    the other, and a caller that forgets to distinguish them gets an attribute error
+    rather than a silent misreading of `active`.
+    """
+
+    id: str
+    workspace_id: str
+    principal_id: str
+    role: str
+    requested_by: str
+    status: str
+
+
 @dataclass(frozen=True)
 class Membership:
     """A read model for one `membership` row.
@@ -168,11 +259,65 @@ def _row_to_membership(row: dict) -> Membership:
     )
 
 
+def _row_to_request(row: dict) -> MembershipRequest:
+    return MembershipRequest(
+        id=str(row["id"]),
+        workspace_id=str(row["workspace_id"]),
+        principal_id=str(row["principal_id"]),
+        role=row["role"],
+        requested_by=str(row["requested_by"]),
+        status=row["status"],
+    )
+
+
 def _clearance_for(role: str) -> int:
     try:
         return identity.ROLE_TO_CLEARANCE[role]
     except KeyError:
         raise UnknownRoleError(role) from None
+
+
+#: The roles that may grant a membership without a second signature, and the only roles
+#: that may sign somebody else's (#225, the maintainer's requirement at the P4 signing).
+#:
+#: **Enumerated, not derived from clearance.** `founder` and `admin` are also the only two
+#: roles at clearance 4, so `{r for r, c in ROLE_TO_CLEARANCE.items() if c == 4}` would
+#: produce this same set today — and would be wrong, because it would make *any* future
+#: clearance-4 role an approver silently, on the day it was added, without anyone deciding
+#: that it should be. `identity.ROLE_TO_CLEARANCE`'s own comment states the distinction
+#: this set depends on: "`admin` carries clearance 4 *and* separately carries
+#: membership-management authority — the two are distinct grants on one role." This is the
+#: second grant, and it is written down rather than inferred.
+#:
+#: `tests/test_membership_approval.py::test_the_approver_set_is_not_a_clearance_threshold`
+#: pins that the two are distinguishable, by adding a clearance-4 role to the mapping and
+#: asserting it does not become an approver.
+_APPROVER_ROLES = frozenset({"founder", "admin"})
+
+
+def _upsert_membership(conn, principal_id: str, role: str, workspace_id: str) -> dict:
+    """The one statement that puts a membership into effect. Shared by both grant paths.
+
+    Factored out so the direct path (`grant_membership` by a founder/admin) and the
+    approved path (`approve_membership_request`) cannot drift: whatever the approval
+    requirement is for, it is not for producing a *different* membership than the one a
+    founder would have written. One body of SQL means that holds by construction instead
+    of by two authors remembering to keep two copies the same.
+
+    `clearance` is written from `_clearance_for(role)`, not read from a caller — the
+    column is legacy and no longer read for authorization (#166 step 3), but it is still
+    written on every mutation here, mirroring `cli.py:125`'s convention.
+    """
+    return conn.execute(
+        """
+        INSERT INTO membership (principal_id, workspace_id, role, clearance, active)
+        VALUES (%s, %s, %s, %s, true)
+        ON CONFLICT (principal_id, workspace_id) DO UPDATE
+            SET role = EXCLUDED.role, clearance = EXCLUDED.clearance, active = true
+        RETURNING *, (xmax = 0) AS inserted
+        """,
+        (principal_id, workspace_id, role, _clearance_for(role)),
+    ).fetchone()
 
 
 # ---------------------------------------------------------------------------
@@ -233,8 +378,8 @@ def grant_membership(
     *,
     workspace_id: str,
     actor_principal_id: str,
-) -> Membership:
-    """Grants a new membership, or changes an existing one's role. Upsert on the PK.
+) -> Membership | MembershipRequest:
+    """Grants a new membership, or files one for approval. See the return type (#225).
 
     Takes only the acting principal's id — NOT their clearance. An earlier version
     of this function took `actor_clearance: int` as a caller-supplied primitive; the
@@ -253,6 +398,20 @@ def grant_membership(
 
     Anti-escalation: the actor may never grant a role whose clearance exceeds their
     own — the maintainer's ruling.
+
+    **A non-approver's grant does not take effect; it is filed for approval (#225).**
+    Returns a `Membership` when the actor is a `founder` or `admin` — the membership is
+    live on return, exactly as before. Returns a `MembershipRequest` for every other
+    role, and in that case **nothing in `membership` has changed**: the row is a claim
+    waiting for an approver, and `identity.resolve_*` cannot see it because it is not a
+    membership at all (migration `0031`'s docstring has the full argument for why that is
+    a separate table rather than a state on the row).
+
+    Anti-escalation still runs FIRST, before either branch. A request that could never be
+    approved is not worth filing, and refusing it at submission time keeps the refusal on
+    the person who made the mistake rather than surfacing it to an approver later as a
+    `StaleMembershipRequestError`. It also means the clearance ceiling is enforced in
+    exactly one place for both paths.
     """
     requested_clearance = _clearance_for(role)
 
@@ -264,16 +423,46 @@ def grant_membership(
                 f"cannot grant role {role!r}: exceeds the acting principal's own clearance"
             )
 
-        row = conn.execute(
-            """
-            INSERT INTO membership (principal_id, workspace_id, role, clearance, active)
-            VALUES (%s, %s, %s, %s, true)
-            ON CONFLICT (principal_id, workspace_id) DO UPDATE
-                SET role = EXCLUDED.role, clearance = EXCLUDED.clearance, active = true
-            RETURNING *, (xmax = 0) AS inserted
-            """,
-            (principal_id, workspace_id, role, requested_clearance),
-        ).fetchone()
+        if actor.role not in _APPROVER_ROLES:
+            try:
+                request_row = conn.execute(
+                    """
+                    INSERT INTO membership_request
+                        (workspace_id, principal_id, role, requested_by)
+                    VALUES (%s, %s, %s, %s)
+                    RETURNING *
+                    """,
+                    (workspace_id, principal_id, role, actor_principal_id),
+                ).fetchone()
+            except psycopg.errors.UniqueViolation as exc:
+                # `uq_membership_request_pending`. Raising out of `store.pg()` rolls the
+                # transaction back, so the refusal writes no audit event — consistent
+                # with `revoke_membership`'s last-member refusal, which also leaves no
+                # trail. Nothing happened, so nothing is recorded as having happened.
+                raise MembershipRequestAlreadyPendingError(
+                    f"a membership request for {principal_id} is already awaiting approval"
+                ) from exc
+
+            # Audited at FILING, not only at decision. A request is an attempt to change
+            # who can read this workspace's material, and the trail has to show the
+            # attempt even if no approver ever answers it — a queue that is only audited
+            # when someone acts on it loses exactly the requests nobody wanted to own.
+            audit.record_audit_event(
+                conn,
+                aggregate_type="membership_request",
+                aggregate_id=str(request_row["id"]),
+                action="created",
+                actor_principal_id=actor_principal_id,
+                payload={
+                    "role": request_row["role"],
+                    "principal_id": str(request_row["principal_id"]),
+                    "status": request_row["status"],
+                },
+                workspace_id=workspace_id,
+            )
+            return _row_to_request(request_row)
+
+        row = _upsert_membership(conn, principal_id, role, workspace_id)
 
         audit.record_audit_event(
             conn,
@@ -449,3 +638,320 @@ def revoke_membership(
             )
 
     return _row_to_membership(row)
+
+
+# ---------------------------------------------------------------------------
+# Approval of a non-approver's grant (#225)
+# ---------------------------------------------------------------------------
+
+def approve_membership_request(
+    request_id: str,
+    *,
+    workspace_id: str,
+    actor_principal_id: str,
+) -> Membership:
+    """Signs a pending request, putting the membership into effect. Returns the membership.
+
+    The maintainer's requirement at the P4 signing (#225): a grant by any role other than
+    `founder` or `admin` needs a second signature from one of those two. This is where the
+    signature happens, and it is the only path that turns a `membership_request` into a
+    `membership`.
+
+    FOUR REFUSALS, AND WHY EACH IS A DIFFERENT FAILURE
+    ----------------------------------------------------------------------------------
+    1. **Not an approver** (`ApprovalNotAuthorizedError`, 403). Checked against
+       `actor.role`, resolved from the database on the workspace-scoped connection — the
+       same discipline `grant_membership` uses for clearance, for the same reason: a
+       client-supplied role is untrusted, and so is the actor's own.
+
+    2. **Self-approval** (`SelfApprovalDeniedError`, 403). #225's named requirement, and
+       reachable despite looking impossible: founders and admins never *create* a pending
+       request, so a request's author is never an approver at filing time — but promoting
+       them while their request waits would otherwise let them sign it themselves, which
+       is the whole requirement undone in two steps.
+
+    3. **Already decided** (`MembershipRequestAlreadyDecidedError`, 409). The
+       `FOR UPDATE` below is what makes this correct under concurrency rather than merely
+       usually right: two approvers clicking the same queue entry serialize on the row
+       lock, and the second one re-reads a committed `'approved'` instead of writing the
+       membership a second time.
+
+    4. **The requester's authority has lapsed** (`StaleMembershipRequestError`, 409) —
+       the one refusal that is a decision rather than a mechanism, so it is argued rather
+       than asserted.
+
+    WHY THE REQUESTER IS RE-VALIDATED, WHEN THE APPROVER HAS FULL AUTHORITY
+    ----------------------------------------------------------------------------------
+    An approver is a founder or admin at clearance 4; they could have granted this role
+    outright, with no request involved. So it is tempting to treat approval as the
+    approver's own act and ignore what has happened to the requester since.
+
+    That reading is wrong, and #225 says why in one clause: *"the grant does not take
+    effect until a founder/admin approves it."* **The grant** — the requester's. The
+    approver is a co-signatory to somebody else's act, not the author of a new one. Two
+    consequences follow, and both are re-checked here rather than trusted from filing
+    time:
+
+      * **The requester must still hold an active membership.** Otherwise revoking
+        somebody for cause leaves their pending requests live, to be signed later by an
+        approver working through a queue with no reason to know the requester is gone.
+        Revocation has to retract what the revoked member set in motion, or it is not
+        revocation.
+
+      * **The requester must still out-rank the role they asked to grant.** A demotion
+        that leaves its author's pending requests approvable is the same hole one rung
+        down: an exec requests `director`, is demoted to `observer` for exactly that
+        reason, and the request they could no longer file today is still sitting there
+        waiting to be honoured.
+
+    This mirrors ADR-012's rule for the request path — authorization is re-derived, never
+    carried — applied across time instead of across a redirect. The cost is a queue entry
+    that can expire; the alternative is an authority that cannot be withdrawn.
+
+    **The approver's own clearance is deliberately NOT re-checked against the role.**
+    Both approver roles sit at clearance 4, the ceiling, so such a check could never fire
+    and a test for it could never go red — the vacuous-check shape `COORDINATION.md` §5
+    names. If `_APPROVER_ROLES` is ever widened to a role below 4, that check becomes
+    load-bearing and must be added with it.
+    """
+    with store.pg(workspace_id) as conn:
+        actor = identity.resolve_principal_by_id(
+            conn, actor_principal_id, workspace_id=workspace_id
+        )
+        if actor.role not in _APPROVER_ROLES:
+            raise ApprovalNotAuthorizedError(
+                "only a founder or an admin may approve a membership request"
+            )
+
+        request_row = conn.execute(
+            """
+            SELECT * FROM membership_request
+             WHERE id = %s AND workspace_id = %s
+               FOR UPDATE
+            """,
+            (request_id, workspace_id),
+        ).fetchone()
+        if request_row is None:
+            raise MembershipRequestNotFoundError(
+                f"no membership request {request_id} in this workspace"
+            )
+        if request_row["status"] != "pending":
+            raise MembershipRequestAlreadyDecidedError(
+                f"membership request {request_id} was already {request_row['status']}"
+            )
+
+        requested_by = str(request_row["requested_by"])
+        if requested_by == str(actor_principal_id):
+            raise SelfApprovalDeniedError(
+                "the principal who requested a membership may not approve it"
+            )
+
+        try:
+            requester = identity.resolve_principal_by_id(
+                conn, requested_by, workspace_id=workspace_id
+            )
+        except identity.PrincipalNotFound as exc:
+            # Not re-raised as `PrincipalNotFound`: that maps to a 403 reading "Not
+            # available to you.", which would tell an approver who IS authorized that
+            # they are not. The refusal is about the request, not about them.
+            raise StaleMembershipRequestError(
+                "the principal who requested this membership no longer holds an active "
+                "membership in this workspace"
+            ) from exc
+
+        if _clearance_for(request_row["role"]) > requester.clearance:
+            raise StaleMembershipRequestError(
+                f"the requester may no longer grant role {request_row['role']!r}"
+            )
+
+        row = _upsert_membership(
+            conn, str(request_row["principal_id"]), request_row["role"], workspace_id
+        )
+
+        conn.execute(
+            """
+            UPDATE membership_request
+               SET status = 'approved', decided_by = %s, decided_at = now()
+             WHERE id = %s AND workspace_id = %s
+            """,
+            (actor_principal_id, request_id, workspace_id),
+        )
+
+        # TWO events, not one, because they answer two different questions and a reader
+        # has only one of them in hand at a time.
+        #
+        # "How did this person get access?" is asked of the `membership` aggregate, and
+        # must be answerable without knowing a request ever existed — so that row carries
+        # the same shape every other grant writes, plus the two names that make this grant
+        # different: who asked, and which request it was.
+        #
+        # "What happened to request X?" is asked of the `membership_request` aggregate.
+        # Folding it into the first row would leave the queue's own history unreadable
+        # except by scanning membership events and inspecting their payloads.
+        #
+        # The ACTOR on the membership event is the APPROVER, not the requester: the actor
+        # column answers "on whose authority did this take effect", and the answer is the
+        # person whose signature made it effective. The requester is named in the payload
+        # rather than erased — an approved grant whose trail credits only one of the two
+        # people involved is exactly the attribution gap #225 exists to close.
+        audit.record_audit_event(
+            conn,
+            aggregate_type="membership",
+            aggregate_id=str(request_row["principal_id"]),
+            action="created" if row["inserted"] else "updated",
+            actor_principal_id=actor_principal_id,
+            payload={
+                "role": row["role"],
+                "active": row["active"],
+                "requested_by": requested_by,
+                "request_id": str(request_row["id"]),
+            },
+            workspace_id=workspace_id,
+        )
+        audit.record_audit_event(
+            conn,
+            aggregate_type="membership_request",
+            aggregate_id=str(request_row["id"]),
+            action="approved",
+            actor_principal_id=actor_principal_id,
+            payload={
+                "role": request_row["role"],
+                "principal_id": str(request_row["principal_id"]),
+                "requested_by": requested_by,
+            },
+            workspace_id=workspace_id,
+        )
+
+    return _row_to_membership(row)
+
+
+def reject_membership_request(
+    request_id: str,
+    *,
+    workspace_id: str,
+    actor_principal_id: str,
+) -> MembershipRequest:
+    """Refuses a pending request. Writes nothing to `membership`.
+
+    Not a courtesy to the UI — structurally required. `uq_membership_request_pending`
+    permits one open request per principal per workspace, so a request nobody answers
+    blocks every future request about that principal forever. A queue has to have an exit
+    that is not approval.
+
+    **Two deliberate asymmetries with `approve_membership_request()`.**
+
+    *No self-approval check.* Signing your own grant is self-dealing; withdrawing your own
+    claim grants nothing and takes nothing from anyone, so there is no reason to refuse
+    it. The check exists on the approve path because that is the only side where acting
+    alone produces a privilege.
+
+    *No staleness check.* A request whose requester was revoked or demoted is exactly the
+    kind a queue needs cleared, and refusing to let an approver clear it — because the
+    thing that makes it unapprovable also made it unrejectable — would wedge the grant
+    path for that principal permanently. Approval has to be the strict side; rejection has
+    to be the available one.
+
+    **Still approver-only.** Rejecting is not neutral: it is the act of refusing someone
+    access, and it cancels another member's decision. A requester cannot withdraw their
+    own request through this path, which is a gap in the flow rather than a decision
+    against it — recorded in the PR for #225. Approver-only is the fail-closed starting
+    point, and widening it later is additive; narrowing it would not be.
+    """
+    with store.pg(workspace_id) as conn:
+        actor = identity.resolve_principal_by_id(
+            conn, actor_principal_id, workspace_id=workspace_id
+        )
+        if actor.role not in _APPROVER_ROLES:
+            raise ApprovalNotAuthorizedError(
+                "only a founder or an admin may reject a membership request"
+            )
+
+        request_row = conn.execute(
+            """
+            SELECT * FROM membership_request
+             WHERE id = %s AND workspace_id = %s
+               FOR UPDATE
+            """,
+            (request_id, workspace_id),
+        ).fetchone()
+        if request_row is None:
+            raise MembershipRequestNotFoundError(
+                f"no membership request {request_id} in this workspace"
+            )
+        if request_row["status"] != "pending":
+            raise MembershipRequestAlreadyDecidedError(
+                f"membership request {request_id} was already {request_row['status']}"
+            )
+
+        row = conn.execute(
+            """
+            UPDATE membership_request
+               SET status = 'rejected', decided_by = %s, decided_at = now()
+             WHERE id = %s AND workspace_id = %s
+            RETURNING *
+            """,
+            (actor_principal_id, request_id, workspace_id),
+        ).fetchone()
+
+        audit.record_audit_event(
+            conn,
+            aggregate_type="membership_request",
+            aggregate_id=str(row["id"]),
+            action="rejected",
+            actor_principal_id=actor_principal_id,
+            payload={
+                "role": row["role"],
+                "principal_id": str(row["principal_id"]),
+                "requested_by": str(row["requested_by"]),
+            },
+            workspace_id=workspace_id,
+        )
+
+    return _row_to_request(row)
+
+
+def list_pending_requests(
+    *,
+    workspace_id: str,
+    actor_principal_id: str,
+) -> list[MembershipRequest]:
+    """The approval queue for this workspace. Approvers only.
+
+    **Not a clearance-filtered collection, and that is why ADR-018 does not reach it.**
+    `tests/test_withheld_discipline.py` requires every domain function taking a
+    `clearance` parameter to declare count-or-erase. This one takes no clearance and
+    filters no rows by sensitivity: an approver sees every pending request in their
+    workspace, and a non-approver sees none of it and is told so. There is no partial view
+    for a reader to mistake for a complete one, which is the harm ADR-018 addresses — the
+    answer is all of it or a 403, never a quiet subset.
+
+    Deliberately all-or-nothing rather than "you may also see requests about yourself",
+    which is the obvious next feature and a second disclosure rule: a pending request
+    names a principal, a role, and who proposed it, and whether a non-approver may learn
+    that somebody proposed a role change about them is a product decision nobody has
+    taken. It is also adjacent to D7 (who may read the audit trail), still open — ADR-016's
+    own disclosure argument depends on it. Fail closed until it is decided.
+
+    Only `pending` rows. The decided ones are history, kept by the table and reachable
+    through the audit trail; a queue that also lists what it has already answered stops
+    being a queue.
+    """
+    with store.pg(workspace_id) as conn:
+        actor = identity.resolve_principal_by_id(
+            conn, actor_principal_id, workspace_id=workspace_id
+        )
+        if actor.role not in _APPROVER_ROLES:
+            raise ApprovalNotAuthorizedError(
+                "only a founder or an admin may read the membership approval queue"
+            )
+
+        rows = conn.execute(
+            """
+            SELECT * FROM membership_request
+             WHERE workspace_id = %s AND status = 'pending'
+             ORDER BY created_at, id
+            """,
+            (workspace_id,),
+        ).fetchall()
+
+    return [_row_to_request(row) for row in rows]
