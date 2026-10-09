@@ -197,9 +197,11 @@ run** — CI run [37922728543](https://github.com/Cloverag/callosum/actions/runs
 backend tier against Postgres 16 and Neo4j service containers, and Jest with a clean Next
 build. The pin moved twice while this branch was in review — once because the first gated run
 was red on event ordering, once because the `supersede_minutes` guard added a sixth static
-test — and each move re-measured rather than adjusted the figure by hand. The API, migration, ADR and commit figures all derive at `3f2fcb9`, and the
-parenthetical names the pin rather than a moving ref, so the command printed beside the
-figure reproduces it (see #159).
+test — and each move re-measured rather than adjusted the figure by hand.
+
+The API, migration, ADR and commit figures all derive at `3f2fcb9`, and the parenthetical
+names the pin rather than a moving ref, so the command printed beside the figure reproduces
+it (see #159).
 
 **The API row counts tags, not routers.** The previous wording said "12 routers" and took
 the number from `app.openapi()`, which reports tags — `/health` carries none, so the two are
