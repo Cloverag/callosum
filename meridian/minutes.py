@@ -413,6 +413,29 @@ def supersede_minutes(
             (new_uuid, old_uuid, expected_version),
         ).fetchone()
 
+        # Symmetric with `update_minutes` and `finalise_minutes`, and deliberately kept
+        # even though it cannot fire today.
+        #
+        # **Why it cannot fire:** the row was taken `FOR UPDATE` at the top of this
+        # transaction and its `version` was compared to `expected_version` there, so
+        # nothing can change it before this statement runs. The only write in between is
+        # the INSERT of the replacement, which is a different row.
+        #
+        # **Why it is here anyway:** that argument is a property of the *lock*, not of
+        # this statement. Its two siblings guard the identical `WHERE id = %s AND
+        # version = %s ... RETURNING *` shape, and the asymmetry would outlive whatever
+        # change moved the lock — dropping the `FOR UPDATE`, splitting the read and the
+        # write across transactions, or adding a trigger on `minutes`. Without the
+        # check, `_row_to_minutes(None)` raises `TypeError` at the end of the function:
+        # a concurrency failure surfacing as a 500 and an internal traceback, instead of
+        # the 409 the taxonomy already maps `StaleMinutesError` to.
+        #
+        # It raises BEFORE the audit write, so a refusal records nothing —
+        # `test_minutes_audit_static.py::test_the_audit_write_is_the_last_statement_in_
+        # the_transaction_body` enforces that position rather than leaving it to habit.
+        if updated_old is None:
+            raise StaleMinutesError(f"minutes {old_minutes_id}: concurrent modification")
+
         _audit_minutes(
             conn, updated_old, "superseded", actor_principal_id, workspace_id,
             new_minutes_id=str(new_uuid),

@@ -125,3 +125,74 @@ def test_the_mutator_list_is_not_hand_maintained():
         f"{sorted(MUTATORS)}. Add the new one to MUTATORS and to the audited paths, or "
         f"say here why it does not need a trail."
     )
+
+
+def test_every_version_guarded_update_checks_for_a_lost_race():
+    """A `WHERE version = %s ... RETURNING *` that matched nothing must raise, not fall through.
+
+    `supersede_minutes` shipped without this check while `update_minutes` and
+    `finalise_minutes` had it. It could not fire — the row is held `FOR UPDATE` and its
+    version was compared in the same transaction — but that is a property of the lock,
+    not of the statement, and `_row_to_minutes(None)` raises `TypeError` at the end of
+    the function: a concurrency failure surfacing as a 500 with an internal traceback
+    instead of the 409 `StaleMinutesError` is already mapped to.
+
+    **This is a structural test, not a behavioural one, because the branch is
+    unreachable** — a behavioural test would assert a path no input can take, which is
+    the vacuous shape `COORDINATION.md` §5 lists.
+
+    **And the first version of this test was itself vacuous.** It counted
+    `is None -> raise` guards against version-guarded UPDATEs and asserted
+    `len(guards) >= len(updates)`. Every mutator already has an unrelated
+    `if current is None: raise MinutesNotFound` for the row lookup, so the count held
+    with the real guard deleted — removing it left the test green. Caught by
+    red-proofing, which is the entire reason §5 requires it.
+
+    The fix is to tie each guard to **the variable its UPDATE was assigned to**, so a
+    `MinutesNotFound` check on a different name cannot stand in for it.
+    """
+    tree = ast.parse(_DOMAIN.read_text(encoding="utf-8"))
+
+    def _is_guarded_update(node) -> bool:
+        return isinstance(node, ast.Call) and any(
+            isinstance(a, ast.Constant)
+            and isinstance(a.value, str)
+            and "UPDATE minutes" in a.value
+            and "version = %s" in a.value
+            and "RETURNING" in a.value
+            for a in ast.walk(node)
+            if isinstance(a, ast.Constant)
+        )
+
+    for fn in (n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in MUTATORS):
+        # The names assigned from a version-guarded UPDATE in this function.
+        targets = {
+            node.targets[0].id
+            for node in ast.walk(fn)
+            if isinstance(node, ast.Assign)
+            and isinstance(node.targets[0], ast.Name)
+            and _is_guarded_update(node.value)
+        }
+        if not targets:
+            continue
+
+        # The names a `if <name> is None: raise ...` actually guards.
+        guarded = {
+            node.test.left.id
+            for node in ast.walk(fn)
+            if isinstance(node, ast.If)
+            and isinstance(node.test, ast.Compare)
+            and isinstance(node.test.left, ast.Name)
+            and node.test.ops
+            and isinstance(node.test.ops[0], ast.Is)
+            and isinstance(node.test.comparators[0], ast.Constant)
+            and node.test.comparators[0].value is None
+            and any(isinstance(b, ast.Raise) for b in ast.walk(node))
+        }
+
+        missing = targets - guarded
+        assert not missing, (
+            f"minutes.{fn.name}: {sorted(missing)} comes from a version-guarded UPDATE "
+            f"but is never checked for None. An UPDATE that matched nothing must refuse, "
+            f"not hand None to _row_to_minutes()."
+        )
