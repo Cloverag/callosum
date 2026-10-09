@@ -141,6 +141,21 @@ class _World:
         _admin("DELETE FROM principal WHERE id = %s", (self.actor,))
 
 
+def _newest_first(events) -> list[str]:
+    """Actions in the order `list_audit_events` returns them: **newest first**.
+
+    `audit.list_audit_events` is `ORDER BY created_at DESC, id DESC`. Asserting the
+    sequence rather than `sorted(...)` — which is what `test_packs_agenda_audit.py`
+    does — pins the reading order as part of the contract: a trail that silently
+    flipped to oldest-first would still pass a sorted assertion, and any UI showing
+    "most recent activity" would quietly invert.
+
+    The first version of this file asserted oldest-first and CI caught all four. Kept
+    as a helper so the direction is stated in one place.
+    """
+    return [e.action for e in events]
+
+
 @pytest.fixture
 def w():
     world = _World()
@@ -174,9 +189,9 @@ def test_update_is_audited_and_names_the_changed_field(w):
     )
 
     events = w.events(m.id)
-    assert [e.action for e in events] == ["created", "updated"]
-    assert events[1].payload["changed_fields"] == ["body"]
-    assert str(events[1].actor_principal_id) == w.actor
+    assert _newest_first(events) == ["updated", "created"]
+    assert events[0].payload["changed_fields"] == ["body"]
+    assert str(events[0].actor_principal_id) == w.actor
 
 
 def test_finalise_is_audited_as_a_status_change_naming_the_status_it_left(w):
@@ -193,9 +208,9 @@ def test_finalise_is_audited_as_a_status_change_naming_the_status_it_left(w):
     assert final.status == "final"
 
     events = w.events(m.id)
-    assert [e.action for e in events] == ["created", "status_changed"]
-    assert events[1].payload["from_status"] == "draft"
-    assert events[1].payload["status"] == "final"
+    assert _newest_first(events) == ["status_changed", "created"]
+    assert events[0].payload["from_status"] == "draft"
+    assert events[0].payload["status"] == "final"
 
 
 def test_supersede_is_one_event_on_the_old_minutes_naming_the_replacement(w):
@@ -217,10 +232,10 @@ def test_supersede_is_one_event_on_the_old_minutes_naming_the_replacement(w):
         actor_principal_id=w.actor,
     )
 
-    assert [e.action for e in w.events(m.id)] == ["created", "status_changed", "superseded"]
+    assert _newest_first(w.events(m.id)) == ["superseded", "status_changed", "created"]
     assert w.events(new.id) == [], "the replacement must not get its own created event"
 
-    superseded = w.events(m.id)[-1]
+    superseded = w.events(m.id)[0]
     assert superseded.payload["new_minutes_id"] == new.id
     assert superseded.payload["version_no"] == 1
     assert superseded.payload["new_version_no"] == 2
@@ -388,7 +403,7 @@ def test_the_route_attributes_every_minutes_event(w, monkeypatch):
     assert superseded.status_code == 201, superseded.text
 
     events = w.events(mid)
-    assert [e.action for e in events] == ["created", "updated", "status_changed", "superseded"]
+    assert _newest_first(events) == ["superseded", "status_changed", "updated", "created"]
     assert {str(e.actor_principal_id) for e in events} == {w.actor}, (
         "every event from the HTTP path must name the caller — an unattributed event is "
         "the failure this test exists for"
