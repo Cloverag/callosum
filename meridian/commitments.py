@@ -34,6 +34,7 @@ from datetime import date, datetime
 
 from callosum import store
 from callosum.store import DEFAULT_WORKSPACE_ID
+from meridian import audit
 
 OPEN = "open"
 IN_PROGRESS = "in_progress"
@@ -227,6 +228,44 @@ def _fetch_updates(conn, commitment_uuids: list[uuid.UUID]) -> dict[str, list[Co
     return out
 
 
+def _iso(value: date | None) -> str | None:
+    return value.isoformat() if value is not None else None
+
+
+def _audit_commitment(conn, row: dict, action: str, actor_principal_id, workspace_id, **extra) -> None:
+    """Records one `commitment` event inside the caller's transaction (#168).
+
+    Shaped after `packs._audit_pack`, `minutes._audit_minutes` and
+    `resolutions._audit_resolution`: same transaction as the mutation, called only after
+    the write is confirmed, so a refusal — not found, stale version, terminal status, an
+    inactive owner — has already raised and records nothing.
+
+    The payload is the accountability core of FR-EXEC-01: which decision, who owns it,
+    by when, and in what state. **`detail` is not carried.** It is free text, and who may
+    read the audit trail is undecided (D7) — the same reason `minutes` and `resolutions`
+    record `body_chars` rather than `body`. `title` is carried, as it is for packs and
+    resolutions, because it is the handle a reader needs to know which commitment an
+    event is about.
+    """
+    audit.record_audit_event(
+        conn,
+        aggregate_type="commitment",
+        aggregate_id=row["id"],
+        action=action,
+        actor_principal_id=actor_principal_id,
+        payload={
+            "decision_id": str(row["decision_id"]),
+            "resolution_id": str(row["resolution_id"]) if row["resolution_id"] else None,
+            "owner_board_member_id": str(row["owner_board_member_id"]),
+            "title": row["title"],
+            "status": row["status"],
+            "due_date": _iso(row["due_date"]),
+            **extra,
+        },
+        workspace_id=workspace_id,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Public Operations
 # ---------------------------------------------------------------------------
@@ -241,8 +280,15 @@ def create_commitment(
     accountable_team: str | None = None,
     detail: str | None = None,
     due_date: date | None = None,
+    actor_principal_id: str | None = None,
 ) -> Commitment:
-    """Creates an `open` commitment against `decision_id`, owned by a board member."""
+    """Creates an `open` commitment against `decision_id`, owned by a board member.
+
+    `actor_principal_id` is optional for the same reason it is in `minutes.py` and
+    `resolutions.py` — existing call sites predate the audit write. Both production
+    callers supply it (the route, and `resolutions.bridge_resolution_to_commitment`);
+    `test_commitments_audit_static.py` is what holds that true, not the signature.
+    """
     if not title or not title.strip():
         raise CommitmentValidationError("title must not be empty")
 
@@ -292,6 +338,8 @@ def create_commitment(
                 workspace_id,
             ),
         ).fetchone()
+
+        _audit_commitment(conn, row, "created", actor_principal_id, workspace_id)
 
     return _row_to_commitment(row, updates=[])
 
@@ -363,6 +411,7 @@ def update_commitment(
     due_date=_UNSET,
     accountable_team=_UNSET,
     owner_board_member_id=_UNSET,
+    actor_principal_id: str | None = None,
 ) -> Commitment:
     """Edits an open commitment's details under optimistic concurrency.
 
@@ -385,8 +434,13 @@ def update_commitment(
     c_uuid = uuid.UUID(str(commitment_id))
 
     with store.pg(workspace_id) as conn:
+        # `owner_board_member_id` and `due_date` are read here only for the audit
+        # payload below: the row after the UPDATE says who owns it and by when, but not
+        # who owned it or by when it was due *before*.
         current = conn.execute(
-            "SELECT status, version FROM commitment WHERE id = %s FOR UPDATE", (c_uuid,)
+            "SELECT status, version, owner_board_member_id, due_date"
+            " FROM commitment WHERE id = %s FOR UPDATE",
+            (c_uuid,),
         ).fetchone()
         if current is None:
             raise CommitmentNotFound(str(commitment_id))
@@ -439,6 +493,25 @@ def update_commitment(
         if row is None:
             raise StaleCommitmentError(f"commitment {commitment_id}: concurrent modification")
 
+        # `changed_fields` names what the caller supplied, derived the same way the SET
+        # clause above is, so it cannot name a field the statement did not write.
+        #
+        # Owner and deadline also carry their prior values. They are what a commitment
+        # *is* — who owes it and by when — and a reassigned owner or a moved deadline
+        # that the trail records only as "updated" is the quiet renegotiation this
+        # object exists to make visible. The other fields are descriptive and carry
+        # their name only.
+        changed = [name for name, value in fields.items() if value is not _UNSET]
+        prior = {}
+        if owner_board_member_id is not _UNSET:
+            prior["from_owner_board_member_id"] = str(current["owner_board_member_id"])
+        if due_date is not _UNSET:
+            prior["from_due_date"] = _iso(current["due_date"])
+        _audit_commitment(
+            conn, row, "updated", actor_principal_id, workspace_id,
+            changed_fields=changed, **prior,
+        )
+
         updates = _fetch_updates(conn, [c_uuid]).get(str(c_uuid), [])
 
     return _row_to_commitment(row, updates=updates)
@@ -452,6 +525,7 @@ def record_update(
     workspace_id: str = DEFAULT_WORKSPACE_ID,
     new_status: str | None = None,
     author_board_member_id: str | None = None,
+    actor_principal_id: str | None = None,
 ) -> Commitment:
     """Appends a progress note, optionally moving the commitment to `new_status`.
 
@@ -531,12 +605,23 @@ def record_update(
         if row is None:
             raise StaleCommitmentError(f"commitment {commitment_id}: concurrent modification")
 
-        from meridian import audit
+        # `actor_principal_id` was absent here, so every progress event this module has
+        # written is ANONYMOUS. `author_board_member_id` does not fill that gap: it is
+        # optional, it names a board member rather than an authenticated principal, and
+        # it is supplied by the caller in the request body — so it records whom the
+        # update is attributed TO, not who submitted it. Same distinction as
+        # `board_member_id` on a resolution vote.
+        #
+        # The action and payload are otherwise left exactly as they were, so old and new
+        # events for the same act agree. That includes `note`, which is free text in the
+        # trail where `minutes` and `resolutions` carry only a length — reported on the
+        # PR for D7 rather than changed here.
         audit.record_audit_event(
             conn,
             aggregate_type="commitment",
             aggregate_id=c_uuid,
             action="status_changed" if new_status is not None else "updated",
+            actor_principal_id=actor_principal_id,
             payload={"new_status": new_status, "note": note.strip()},
             workspace_id=workspace_id,
         )
