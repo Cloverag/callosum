@@ -56,6 +56,13 @@ def _mutator_nodes(tree: ast.Module):
     return [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in MUTATORS]
 
 
+def _sql_text(node: ast.AST) -> str:
+    """Every string constant under `node`, joined — so an f-string reads as one statement."""
+    return " ".join(
+        n.value for n in ast.walk(node) if isinstance(n, ast.Constant) and isinstance(n.value, str)
+    )
+
+
 def test_every_mutating_route_passes_the_actor_to_the_domain():
     """A route that forgets `actor_principal_id` writes an anonymous event.
 
@@ -144,6 +151,42 @@ def test_the_audit_write_follows_the_mutation_it_records():
         )
 
 
+def _guarded_update_targets(fn: ast.FunctionDef) -> set[str]:
+    """Names assigned from an `UPDATE resolution ... version = %s ... RETURNING`.
+
+    The statement's string constants are **joined** before matching. `update_resolution`
+    builds its SET clause with an f-string, which splits the SQL into several constants
+    either side of the interpolation — `UPDATE resolution` in one, `version = %s` in
+    another — so matching each constant separately found no UPDATE in that function and
+    the lost-race check skipped it without checking anything. Found while writing the
+    commitments guard, whose `update_commitment` has the same shape.
+    """
+
+    def _is_guarded_update(node) -> bool:
+        if not isinstance(node, ast.Call):
+            return False
+        sql = _sql_text(node)
+        return "UPDATE resolution" in sql and "version = %s" in sql and "RETURNING" in sql
+
+    return {
+        node.targets[0].id
+        for node in ast.walk(fn)
+        if isinstance(node, ast.Assign)
+        and isinstance(node.targets[0], ast.Name)
+        and _is_guarded_update(node.value)
+    }
+
+
+def test_the_lost_race_check_actually_sees_every_guarded_update():
+    """Pins the set of functions the next test inspects, so none can drop out of it silently.
+
+    Before the fragment join this set was missing `update_resolution`, and the test
+    below passed with that function's guard deleted.
+    """
+    found = {fn.name for fn in _mutator_nodes(_domain_tree()) if _guarded_update_targets(fn)}
+    assert found == {"update_resolution", "transition_resolution", "supersede_resolution"}, found
+
+
 def test_every_version_guarded_update_checks_for_a_lost_race():
     """A `WHERE version = %s ... RETURNING *` that matched nothing must raise.
 
@@ -153,26 +196,8 @@ def test_every_version_guarded_update_checks_for_a_lost_race():
     deleted — every mutator has an unrelated `if current is None: raise ...NotFound` for
     its row lookup, which satisfied a count.
     """
-    tree = _domain_tree()
-
-    def _is_guarded_update(node) -> bool:
-        return isinstance(node, ast.Call) and any(
-            isinstance(a, ast.Constant)
-            and isinstance(a.value, str)
-            and "UPDATE resolution" in a.value
-            and "version = %s" in a.value
-            and "RETURNING" in a.value
-            for a in ast.walk(node)
-        )
-
-    for fn in _mutator_nodes(tree):
-        targets = {
-            node.targets[0].id
-            for node in ast.walk(fn)
-            if isinstance(node, ast.Assign)
-            and isinstance(node.targets[0], ast.Name)
-            and _is_guarded_update(node.value)
-        }
+    for fn in _mutator_nodes(_domain_tree()):
+        targets = _guarded_update_targets(fn)
         if not targets:
             continue
         guarded = {
