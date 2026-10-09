@@ -332,8 +332,17 @@ cd frontend && npx jest && npm run build                 # 354 tests, 27 suites
 ```
 
 `CALLOSUM_RUN_INTEGRATION=1` runs against real Postgres and Neo4j, so the compose stack
-must be up. Without the gate the suite is **359 passed, 48 skipped**; with it, all
-**987** run. The 253 / 750 / 497 figures this paragraph used to quote were stale by
+must be up. With the gate, all **987** run. Without it — at `3f2fcb9`, on Linux, no
+database — the suite is **391 passed, 48 skipped, 2 failed**. The two failures are
+`test_demo_selector.py` tests that reach Postgres without the gate; #215 fixes both.
+
+**This line used to say 359 passed, and that was wrong.** It was measured on Windows,
+where 32 ungated tests fail because `read_text()` decodes as cp1252 (also fixed in #215),
+and only the passed and skipped counts were copied — so the failures fell out of the
+figure instead of appearing in it. Re-measured in a clean `python:3.12-slim` container from
+`git archive 3f2fcb9`, which is the environment the figure is about.
+
+The 253 / 750 / 497 figures this paragraph used to quote were stale by
 several phases — internally consistent (253 + 497 = 750) and still false, which is the kind
 of wrong number that survives review. Run it with the containers stopped and the gated tests
 fail on connection errors — the failure looks like a broken build and is a missing database.
