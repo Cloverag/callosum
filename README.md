@@ -185,17 +185,19 @@ intake has shipped without one.
 
 | | |
 |---|---|
-| Backend tests | **986** passing, gated suite |
+| Backend tests | **987** passing, gated suite |
 | Frontend tests | **354** passing, 27 suites |
 | API | **80 operations** across 62 paths, 14 tags (health is untagged) |
 | Migrations | 30, head `0030_document_principal_role`, forward and reverse tested |
 | Architecture decisions | 18 ADRs |
-| Commits | 562 (`git rev-list --count 3b8eb28`) |
+| Commits | 564 (`git rev-list --count 3f2fcb9`) |
 
-Measured on `3b8eb28` (2026-10-09), not carried forward. Both test figures are a **real
-run** — CI run [37921764950](https://github.com/Cloverag/callosum/actions/runs/37921764950), the gated
+Measured on `3f2fcb9` (2026-10-09), not carried forward. Both test figures are a **real
+run** — CI run [37922728543](https://github.com/Cloverag/callosum/actions/runs/37922728543), the gated
 backend tier against Postgres 16 and Neo4j service containers, and Jest with a clean Next
-build. The API, migration, ADR and commit figures all derive at `3b8eb28`, and the
+build. The pin moved twice while this branch was in review — once because the first gated run
+was red on event ordering, once because the `supersede_minutes` guard added a sixth static
+test — and each move re-measured rather than adjusted the figure by hand. The API, migration, ADR and commit figures all derive at `3f2fcb9`, and the
 parenthetical names the pin rather than a moving ref, so the command printed beside the
 figure reproduces it (see #159).
 
@@ -211,9 +213,9 @@ P4 gate, P5's agenda and pack work, and the rules split. None of those re-pinned
 Replaced rather than appended to: two pinned figures in one table is how a reader loses the
 ability to tell a stale number from a regression.
 
-The backend delta over master's 973 is **+13**, all of it this branch, reconciled by
+The backend delta over master's 973 is **+14**, all of it this branch, reconciled by
 collecting every file on both commits and diffing rather than by arithmetic: 9 in
-`tests/test_minutes_audit.py` and 4 in `tests/test_minutes_audit_static.py`.
+`tests/test_minutes_audit.py` and 5 in `tests/test_minutes_audit_static.py`.
 
 Three other open PRs (#215, #217, #218) also re-pin this block at their own commits. That is
 each one stating the truth of its own tree, not a conflict to avoid — whichever merges after
@@ -323,13 +325,13 @@ routes. Set `MERIDIAN_API_ORIGIN` if the API is not on `:8000`.
 ```bash
 docker compose up -d && docker compose ps               # all three healthy FIRST
 .venv/bin/callosum eval-mechanism                        # deterministic gate, no LLM
-CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 986 tests, real stores
+CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 987 tests, real stores
 cd frontend && npx jest && npm run build                 # 354 tests, 27 suites
 ```
 
 `CALLOSUM_RUN_INTEGRATION=1` runs against real Postgres and Neo4j, so the compose stack
-must be up. Without the gate the suite is **358 passed, 48 skipped**; with it, all
-**986** run. The 253 / 750 / 497 figures this paragraph used to quote were stale by
+must be up. Without the gate the suite is **359 passed, 48 skipped**; with it, all
+**987** run. The 253 / 750 / 497 figures this paragraph used to quote were stale by
 several phases — internally consistent (253 + 497 = 750) and still false, which is the kind
 of wrong number that survives review. Run it with the containers stopped and the gated tests
 fail on connection errors — the failure looks like a broken build and is a missing database.
