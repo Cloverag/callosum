@@ -31,7 +31,7 @@ from datetime import datetime
 
 from callosum import store
 from callosum.store import DEFAULT_WORKSPACE_ID
-from meridian import board_members
+from meridian import audit, board_members
 
 DRAFT = "draft"
 ADOPTED = "adopted"
@@ -257,14 +257,59 @@ def _fetch_votes(conn, resolution_uuids: list[uuid.UUID]) -> dict[str, list[Reso
 # Public Operations
 # ---------------------------------------------------------------------------
 
+def _audit_resolution(conn, row: dict, action: str, actor_principal_id, workspace_id, **extra) -> None:
+    """Records one `resolution` event inside the caller's transaction (#168).
+
+    Shaped after `packs._audit_pack` (P5 CP5A) and `minutes._audit_minutes`: same
+    transaction as the mutation, called only after the write is confirmed, so a refusal
+    — not found, stale version, immutable because adopted, or a parent meeting no longer
+    mutable — has already raised and records nothing.
+
+    **`body` is not in the payload, `body_chars` is.** A resolution's body is the formal
+    motion text. `audit_event` is a different table with different read rules, and who
+    may read the audit trail is undecided (D7, which ADR-016's disclosure argument also
+    waits on), so copying the motion in would put it on a surface whose policy does not
+    exist yet. `title` IS carried, matching `_audit_pack`: it is the handle a reader
+    needs to know which motion an event is about, and resolutions carry no `sensitivity`
+    column to withhold it by.
+
+    `version_no` is the supersession lineage; `version` is the optimistic-concurrency
+    counter and says how many times a row was written rather than anything about the
+    board, so it is not recorded.
+    """
+    audit.record_audit_event(
+        conn,
+        aggregate_type="resolution",
+        aggregate_id=row["id"],
+        action=action,
+        actor_principal_id=actor_principal_id,
+        payload={
+            "decision_id": str(row["decision_id"]),
+            "title": row["title"],
+            "status": row["status"],
+            "version_no": row["version_no"],
+            "body_chars": len(row["body"]),
+            **extra,
+        },
+        workspace_id=workspace_id,
+    )
+
+
 def create_resolution(
     decision_id: str,
     title: str,
     body: str,
     *,
     workspace_id: str = DEFAULT_WORKSPACE_ID,
+    actor_principal_id: str | None = None,
 ) -> Resolution:
-    """Creates a draft resolution recording `decision_id`."""
+    """Creates a draft resolution recording `decision_id`.
+
+    `actor_principal_id` is optional for the same reason it is in `packs.py` and
+    `minutes.py` — the existing call sites predate the audit write. The API layer always
+    supplies it, and `test_resolutions_audit_static.py` is what holds that true rather
+    than the signature.
+    """
     if not title or not title.strip():
         raise ResolutionValidationError("title must not be empty")
     if not body or not body.strip():
@@ -292,6 +337,8 @@ def create_resolution(
             """,
             (dec_uuid, title.strip(), body.strip(), workspace_id),
         ).fetchone()
+
+        _audit_resolution(conn, row, "created", actor_principal_id, workspace_id)
 
     return _row_to_resolution(row, votes=[])
 
@@ -345,6 +392,7 @@ def update_resolution(
     workspace_id: str = DEFAULT_WORKSPACE_ID,
     title=_UNSET,
     body=_UNSET,
+    actor_principal_id: str | None = None,
 ) -> Resolution:
     """Updates the text of a `draft` resolution under optimistic concurrency."""
     if title is _UNSET and body is _UNSET:
@@ -400,6 +448,17 @@ def update_resolution(
         if row is None:
             raise StaleResolutionError(f"resolution {resolution_id}: concurrent modification")
 
+        # Derived from which fields the caller actually supplied, not from a literal:
+        # `update_resolution` takes two optional fields and builds its SET clause the
+        # same way, so a payload naming both when only one moved would be a fabricated
+        # detail in an append-only trail.
+        changed = [
+            name for name, value in (("title", title), ("body", body)) if value is not _UNSET
+        ]
+        _audit_resolution(
+            conn, row, "updated", actor_principal_id, workspace_id, changed_fields=changed,
+        )
+
         votes = _fetch_votes(conn, [res_uuid]).get(str(res_uuid), [])
 
     return _row_to_resolution(row, votes=votes)
@@ -411,6 +470,7 @@ def record_vote(
     vote: str,
     *,
     workspace_id: str = DEFAULT_WORKSPACE_ID,
+    actor_principal_id: str | None = None,
 ) -> ResolutionVote:
     """Records or changes a board member's vote on a `draft` resolution.
 
@@ -489,12 +549,22 @@ def record_vote(
             (res_uuid,),
         )
 
-        from meridian import audit
+        # `actor_principal_id` was absent here, so every vote event this module has
+        # ever written is ANONYMOUS. `board_member_id` is the subject of the vote — whose
+        # vote it is — not the authenticated caller who submitted it, and on a board
+        # motion those are exactly the two facts an auditor needs to be able to separate:
+        # a vote recorded on a member's behalf by someone else is a different event from
+        # one they cast themselves, and the trail could not tell them apart.
+        #
+        # Unlike `cli.py`'s seeder — ruled exempt in #166 because a bootstrap path has no
+        # authenticated actor — this runs behind `CurrentPrincipal`. There was always a
+        # caller to name.
         audit.record_audit_event(
             conn,
             aggregate_type="resolution",
             aggregate_id=res_uuid,
             action="voted",
+            actor_principal_id=actor_principal_id,
             payload={"board_member_id": str(member_uuid), "vote": vote},
             workspace_id=workspace_id,
         )
@@ -521,6 +591,7 @@ def transition_resolution(
     *,
     expected_version: int,
     workspace_id: str = DEFAULT_WORKSPACE_ID,
+    actor_principal_id: str | None = None,
 ) -> Resolution:
     """Moves a `draft` resolution to `adopted` or `rejected`.
 
@@ -572,6 +643,16 @@ def transition_resolution(
         if row is None:
             raise StaleResolutionError(f"resolution {resolution_id}: concurrent modification")
 
+        # The most governance-critical mutation on this aggregate and the one that was
+        # unaudited: this is how a motion becomes adopted or rejected. `from_status` is
+        # carried because the resulting status alone cannot answer "what did it move
+        # from?", and an adoption out of `draft` is a different act from one out of
+        # `voting`.
+        _audit_resolution(
+            conn, row, "status_changed", actor_principal_id, workspace_id,
+            from_status=current["status"],
+        )
+
         votes = _fetch_votes(conn, [res_uuid]).get(str(res_uuid), [])
 
     return _row_to_resolution(row, votes=votes)
@@ -584,6 +665,7 @@ def supersede_resolution(
     *,
     expected_version: int,
     workspace_id: str = DEFAULT_WORKSPACE_ID,
+    actor_principal_id: str | None = None,
 ) -> tuple[Resolution, Resolution]:
     """Amends an adopted resolution by creating a new draft version.
 
@@ -655,6 +737,19 @@ def supersede_resolution(
             raise StaleResolutionError(
                 f"resolution {old_resolution_id}: concurrent modification"
             )
+
+        # One event, on the OLD id — the same choice `documents.supersede_document` and
+        # `minutes.supersede_minutes` make, so "what replaced this?" is answerable from
+        # the superseded record without joining forward to a row that may itself have
+        # been superseded. A second `created` on the replacement would make an auditor
+        # filtering `action = 'created'` read corrections and original motions as the
+        # same kind of act.
+        _audit_resolution(
+            conn, updated_old, "superseded", actor_principal_id, workspace_id,
+            new_resolution_id=str(new_row["id"]),
+            new_version_no=new_row["version_no"],
+            new_body_chars=len(new_row["body"]),
+        )
 
         old_votes = _fetch_votes(conn, [old_uuid]).get(str(old_uuid), [])
 
@@ -729,6 +824,7 @@ def bridge_resolution_to_commitment(
     *,
     due_date: datetime | None = None,
     workspace_id: str = DEFAULT_WORKSPACE_ID,
+    actor_principal_id: str | None = None,
 ) -> Any:
     """Converts an ADOPTED resolution into an actionable Commitment linked to the Decision."""
     res_uuid = uuid.UUID(str(resolution_id))
@@ -755,12 +851,18 @@ def bridge_resolution_to_commitment(
     )
 
     with store.pg(workspace_id) as conn:
-        from meridian import audit
+        # Also anonymous before this change. The action and payload are left exactly as
+        # they were: `status_changed` is a poor fit for an act that changes no status —
+        # bridging creates a commitment and leaves the resolution where it is — and the
+        # `detail` discriminator is doing the work a distinct action should. Changing it
+        # would make old and new events for the same act disagree, so it is reported
+        # rather than fixed here; see the PR.
         audit.record_audit_event(
             conn,
             aggregate_type="resolution",
             aggregate_id=res_uuid,
             action="status_changed",
+            actor_principal_id=actor_principal_id,
             payload={"commitment_id": commitment.id, "owner_id": owner_board_member_id, "detail": "resolution_bridged_to_commitment"},
             workspace_id=workspace_id,
         )
