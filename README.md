@@ -185,21 +185,23 @@ intake has shipped without one.
 
 | | |
 |---|---|
-| Backend tests | **987** passing, gated suite |
+| Backend tests | **1002** passing, gated suite |
 | Frontend tests | **354** passing, 27 suites |
 | API | **80 operations** across 62 paths, 14 tags (health is untagged) |
 | Migrations | 30, head `0030_document_principal_role`, forward and reverse tested |
 | Architecture decisions | 18 ADRs |
-| Commits | 564 (`git rev-list --count 3f2fcb9`) |
+| Commits | 568 (`git rev-list --count 3d88c7e`) |
 
-Measured on `3f2fcb9` (2026-10-09), not carried forward. Both test figures are a **real
-run** — CI run [37922728543](https://github.com/Cloverag/callosum/actions/runs/37922728543), the gated
+Measured on `3d88c7e` (2026-10-09), not carried forward. Both test figures are a **real
+run** — CI run [37924770818](https://github.com/Cloverag/callosum/actions/runs/37924770818), the gated
 backend tier against Postgres 16 and Neo4j service containers, and Jest with a clean Next
 build. The pin moved twice while this branch was in review — once because the first gated run
 was red on event ordering, once because the `supersede_minutes` guard added a sixth static
-test — and each move re-measured rather than adjusted the figure by hand.
+test — and each move re-measured rather than adjusted the figure by hand. It moved a
+third time here, for the resolutions module, after CI refused a test asserting the wrong
+exception type.
 
-The API, migration, ADR and commit figures all derive at `3f2fcb9`, and the parenthetical
+The API, migration, ADR and commit figures all derive at `3d88c7e`, and the parenthetical
 names the pin rather than a moving ref, so the command printed beside the figure reproduces
 it (see #159).
 
@@ -215,9 +217,9 @@ P4 gate, P5's agenda and pack work, and the rules split. None of those re-pinned
 Replaced rather than appended to: two pinned figures in one table is how a reader loses the
 ability to tell a stale number from a regression.
 
-The backend delta over master's 973 is **+14**, all of it this branch, reconciled by
-collecting every file on both commits and diffing rather than by arithmetic: 9 in
-`tests/test_minutes_audit.py` and 5 in `tests/test_minutes_audit_static.py`.
+The backend delta over master's 973 is **+29**, reconciled by collecting every file on
+both commits and diffing rather than by arithmetic — 9 + 5 for minutes (PR #234, which
+this branch is stacked on) and 9 + 6 for resolutions (PR #235). Both modules are #168.
 
 Three other open PRs (#215, #217, #218) also re-pin this block at their own commits. That is
 each one stating the truth of its own tree, not a conflict to avoid — whichever merges after
@@ -327,20 +329,21 @@ routes. Set `MERIDIAN_API_ORIGIN` if the API is not on `:8000`.
 ```bash
 docker compose up -d && docker compose ps               # all three healthy FIRST
 .venv/bin/callosum eval-mechanism                        # deterministic gate, no LLM
-CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 987 tests, real stores
+CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 1002 tests, real stores
 cd frontend && npx jest && npm run build                 # 354 tests, 27 suites
 ```
 
 `CALLOSUM_RUN_INTEGRATION=1` runs against real Postgres and Neo4j, so the compose stack
-must be up. With the gate, all **987** run. Without it — at `3f2fcb9`, on Linux, no
-database — the suite is **391 passed, 48 skipped, 2 failed**. The two failures are
+must be up. With the gate, all **1002** run. Without it — at `3d88c7e`, on Linux, no
+database — the suite is **397 passed, 49 skipped, 2 failed**. The two failures are
 `test_demo_selector.py` tests that reach Postgres without the gate; #215 fixes both.
 
-**This line used to say 359 passed, and that was wrong.** It was measured on Windows,
-where 32 ungated tests fail because `read_text()` decodes as cp1252 (also fixed in #215),
-and only the passed and skipped counts were copied — so the failures fell out of the
-figure instead of appearing in it. Re-measured in a clean `python:3.12-slim` container from
-`git archive 3f2fcb9`, which is the environment the figure is about.
+**This line used to say 365 passed (and 359 before that), and both were wrong.** They were
+measured on Windows, where 32 ungated tests fail because `read_text()` decodes as cp1252
+(also fixed in #215), and only the passed and skipped counts were copied — so the failures
+fell out of the figure instead of appearing in it. Re-measured in a clean
+`python:3.12-slim` container from `git archive`, which is the environment the figure is
+about.
 
 The 253 / 750 / 497 figures this paragraph used to quote were stale by
 several phases — internally consistent (253 + 497 = 750) and still false, which is the kind
