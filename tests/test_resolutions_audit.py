@@ -45,6 +45,7 @@ from callosum import identity
 from callosum.config import settings
 from meridian import audit, board_members, decisions, meetings, resolutions
 from meridian.resolutions import (
+    ResolutionLockedError,
     ResolutionNotFound,
     ResolutionValidationError,
     StaleResolutionError,
@@ -281,12 +282,16 @@ def test_a_refused_resolution_write_records_nothing(w):
             workspace_id=w.ws, actor_principal_id=w.actor,
         )
 
-    # An adopted resolution is immutable.
+    # An adopted resolution is immutable. `ResolutionLockedError`, not
+    # `ResolutionValidationError`: the request is well formed and the state refuses it,
+    # which is why `errors.py` maps the two to 409 and 422 respectively. CI caught this
+    # test asserting the wrong one — the four refusals here are four *different* branches
+    # and the exception type is part of what distinguishes them.
     adopted = resolutions.transition_resolution(
         r.id, resolutions.ADOPTED, expected_version=r.version,
         workspace_id=w.ws, actor_principal_id=w.actor,
     )
-    with pytest.raises(ResolutionValidationError):
+    with pytest.raises(ResolutionLockedError):
         resolutions.update_resolution(
             adopted.id, expected_version=adopted.version, title="too late",
             workspace_id=w.ws, actor_principal_id=w.actor,
