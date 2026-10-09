@@ -848,6 +848,7 @@ def bridge_resolution_to_commitment(
         decision_id=decision_id,
         due_date=due_date,
         workspace_id=workspace_id,
+        actor_principal_id=actor_principal_id,
     )
 
     with store.pg(workspace_id) as conn:

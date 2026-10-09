@@ -112,6 +112,7 @@ def create_commitment(payload: CommitmentCreate, principal: CurrentPrincipal) ->
         accountable_team=payload.accountable_team,
         detail=payload.detail,
         due_date=payload.due_date,
+        actor_principal_id=str(principal.id) if principal.id else None,
     )
 
 
@@ -132,6 +133,7 @@ def update_commitment(
         str(commitment_id),
         expected_version=payload.expected_version,
         workspace_id=principal.workspace_id,
+        actor_principal_id=str(principal.id) if principal.id else None,
         **changes,
     )
 
@@ -158,4 +160,5 @@ def record_update(
         author_board_member_id=str(payload.author_board_member_id)
         if payload.author_board_member_id
         else None,
+        actor_principal_id=str(principal.id) if principal.id else None,
     )

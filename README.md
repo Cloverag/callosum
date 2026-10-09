@@ -185,24 +185,27 @@ intake has shipped without one.
 
 | | |
 |---|---|
-| Backend tests | **1003** passing, gated suite |
+| Backend tests | **1022** passing, gated suite |
 | Frontend tests | **354** passing, 27 suites |
 | API | **80 operations** across 62 paths, 14 tags (health is untagged) |
 | Migrations | 30, head `0030_document_principal_role`, forward and reverse tested |
 | Architecture decisions | 18 ADRs |
-| Commits | 571 (`git rev-list --count c9c8f7d`) |
+| Commits | 574 (`git rev-list --count c98d90e`) |
 
-Measured on `c9c8f7d` (2026-10-09), not carried forward. Both test figures are a **real
-run** — CI run [37964793373](https://github.com/Cloverag/callosum/actions/runs/37964793373), the gated
+Measured on `c98d90e` (2026-10-09), not carried forward. Both test figures are a **real
+run** — CI run [37964884432](https://github.com/Cloverag/callosum/actions/runs/37964884432), the gated
 backend tier against Postgres 16 and Neo4j service containers, and Jest with a clean Next
 build. The pin moved twice while this branch was in review — once because the first gated run
 was red on event ordering, once because the `supersede_minutes` guard added a sixth static
 test — and each move re-measured rather than adjusted the figure by hand. It moved a
 third time here, for the resolutions module, after CI refused a test asserting the wrong
 exception type. It moved a fourth time when the lost-race guard turned out never to have
-checked `update_resolution`, whose UPDATE is an f-string; the fix added one test.
+checked `update_resolution`, whose UPDATE is an f-string; the fix added one test. It moved
+a fifth time for the commitments module (#236), the first in this stack to pass its gated
+run on the first push: the gated tier ran locally, against a live database, before anything
+was pushed.
 
-The API, migration, ADR and commit figures all derive at `c9c8f7d`, and the parenthetical
+The API, migration, ADR and commit figures all derive at `c98d90e`, and the parenthetical
 names the pin rather than a moving ref, so the command printed beside the figure reproduces
 it (see #159).
 
@@ -330,13 +333,13 @@ routes. Set `MERIDIAN_API_ORIGIN` if the API is not on `:8000`.
 ```bash
 docker compose up -d && docker compose ps               # all three healthy FIRST
 .venv/bin/callosum eval-mechanism                        # deterministic gate, no LLM
-CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 1003 tests, real stores
+CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 1022 tests, real stores
 cd frontend && npx jest && npm run build                 # 354 tests, 27 suites
 ```
 
 `CALLOSUM_RUN_INTEGRATION=1` runs against real Postgres and Neo4j, so the compose stack
-must be up. With the gate, all **1003** run. Without it — at `c9c8f7d`, on Linux, no
-database — the suite is **398 passed, 49 skipped, 2 failed**. The two failures are
+must be up. With the gate, all **1022** run. Without it — at `c98d90e`, on Linux, no
+database — the suite is **406 passed, 50 skipped, 2 failed**. The two failures are
 `test_demo_selector.py` tests that reach Postgres without the gate; #215 fixes both.
 
 **This line used to say 365 passed (and 359 before that), and both were wrong.** They were
