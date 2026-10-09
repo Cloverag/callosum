@@ -22,6 +22,7 @@ from datetime import datetime
 
 from callosum import store
 from callosum.store import DEFAULT_WORKSPACE_ID
+from meridian import audit
 from meridian.meetings import MeetingNotFound
 
 DRAFT = "draft"
@@ -116,13 +117,62 @@ def _assert_meeting_active_or_completed(conn, meeting_id_uuid: uuid.UUID) -> Non
 # Public Operations
 # ---------------------------------------------------------------------------
 
+def _audit_minutes(conn, row: dict, action: str, actor_principal_id, workspace_id, **extra) -> None:
+    """Records one `minutes` event inside the caller's transaction (#168).
+
+    Shaped after `packs._audit_pack` (P5 CP5A) on purpose: same transaction as the
+    mutation, called only *after* the write is confirmed, so a refusal — not found,
+    stale version, locked because the minutes are final, or a parent meeting still in
+    `draft` — has already raised and records nothing. `tests/test_minutes_audit.py`
+    pins that for all four refusal shapes.
+
+    **The payload deliberately does NOT carry `body`.** Minutes are the formal prose
+    record of what a board was told, and `audit_event` is a different table with
+    different read rules: who may read the audit trail is still open (D7, see
+    ADR-016's dependency on it), so copying the text in would publish the minutes to
+    a surface whose own disclosure policy has not been decided. ADR-015 is the other
+    half of the reason — minutes carry no `sensitivity` column, so there is no
+    clearance predicate on an audit row that would hold back a body it had copied.
+    `body_chars` is carried instead: enough to see that a correction changed something
+    substantial, which is the question an auditor asks of a supersession, without the
+    trail becoming a second copy of the record.
+
+    `version_no` is the lineage a supersession walks; `version` is the optimistic-
+    concurrency counter and is not recorded, because it says how many times a row was
+    written rather than anything about the board.
+    """
+    audit.record_audit_event(
+        conn,
+        aggregate_type="minutes",
+        aggregate_id=row["id"],
+        action=action,
+        actor_principal_id=actor_principal_id,
+        payload={
+            "meeting_id": str(row["meeting_id"]),
+            "status": row["status"],
+            "version_no": row["version_no"],
+            "body_chars": len(row["body"]),
+            **extra,
+        },
+        workspace_id=workspace_id,
+    )
+
+
 def create_minutes(
     meeting_id: str,
     body: str,
     *,
     workspace_id: str = DEFAULT_WORKSPACE_ID,
+    actor_principal_id: str | None = None,
 ) -> Minutes:
-    """Creates a draft minutes record for an in_progress or completed meeting."""
+    """Creates a draft minutes record for an in_progress or completed meeting.
+
+    `actor_principal_id` is optional for the same reason it is in `packs.py` — the
+    existing callers predate the audit write and a required argument would have been a
+    26-site change to pass `None` in most of them. The API layer always supplies it,
+    and `test_minutes_audit.py::test_the_route_attributes_every_minutes_event` is what
+    holds that true rather than the signature.
+    """
     if not body or not body.strip():
         raise MinutesValidationError("body must not be empty")
 
@@ -140,6 +190,8 @@ def create_minutes(
             """,
             (meeting_uuid, body.strip(), workspace_id),
         ).fetchone()
+
+        _audit_minutes(conn, row, "created", actor_principal_id, workspace_id)
 
     return _row_to_minutes(row)
 
@@ -179,6 +231,7 @@ def update_minutes(
     expected_version: int,
     workspace_id: str = DEFAULT_WORKSPACE_ID,
     body=_UNSET,
+    actor_principal_id: str | None = None,
 ) -> Minutes:
     """Updates body of a draft minutes record under version-guarded optimistic concurrency."""
     if body is _UNSET:
@@ -222,6 +275,14 @@ def update_minutes(
         if row is None:
             raise StaleMinutesError(f"minutes {minutes_id}: concurrent modification")
 
+        # `changed_fields` mirrors `packs._audit_pack`'s convention. It is a list of
+        # one because `body` is the only updatable field on this aggregate; written as
+        # a list anyway so a second field does not change the payload's shape.
+        _audit_minutes(
+            conn, row, "updated", actor_principal_id, workspace_id,
+            changed_fields=["body"],
+        )
+
     return _row_to_minutes(row)
 
 
@@ -230,8 +291,16 @@ def finalise_minutes(
     *,
     expected_version: int,
     workspace_id: str = DEFAULT_WORKSPACE_ID,
+    actor_principal_id: str | None = None,
 ) -> Minutes:
-    """Finalises draft minutes, locking its contents and setting finalised_at."""
+    """Finalises draft minutes, locking its contents and setting finalised_at.
+
+    Audited as `status_changed`, not `published`. Nothing is published by finalising —
+    no reader gains access and nothing is sent; a draft becomes the frozen record.
+    `status_changed` is the action `workspaces.revoke_membership` already uses for
+    exactly this shape (a status flip on one row), and `published` is reserved for
+    `packs.publish_pack`, where a pre-read genuinely becomes visible to a board.
+    """
     min_uuid = uuid.UUID(str(minutes_id))
 
     with store.pg(workspace_id) as conn:
@@ -265,6 +334,11 @@ def finalise_minutes(
         if row is None:
             raise StaleMinutesError(f"minutes {minutes_id}: concurrent modification")
 
+        _audit_minutes(
+            conn, row, "status_changed", actor_principal_id, workspace_id,
+            from_status=DRAFT,
+        )
+
     return _row_to_minutes(row)
 
 
@@ -274,8 +348,18 @@ def supersede_minutes(
     *,
     expected_version: int,
     workspace_id: str = DEFAULT_WORKSPACE_ID,
+    actor_principal_id: str | None = None,
 ) -> tuple[Minutes, Minutes]:
-    """Supersedes finalised minutes with a new draft minutes version."""
+    """Supersedes finalised minutes with a new draft minutes version.
+
+    **One event, on the OLD id** — mirroring `documents.supersede_document`, which
+    made the same choice so that "what replaced this?" is answerable from the
+    superseded record without joining forward to a row that may itself have been
+    superseded since. The payload names both ids and both `version_no`s. A second
+    `created` event on the new row would say nothing the `superseded` payload does not
+    already carry, and would make the pair non-atomic to read: an auditor filtering
+    `action = 'created'` would see corrections and originals as the same kind of act.
+    """
     if not new_body or not new_body.strip():
         raise MinutesValidationError("new_body must not be empty")
 
@@ -328,5 +412,12 @@ def supersede_minutes(
             """,
             (new_uuid, old_uuid, expected_version),
         ).fetchone()
+
+        _audit_minutes(
+            conn, updated_old, "superseded", actor_principal_id, workspace_id,
+            new_minutes_id=str(new_uuid),
+            new_version_no=new_row["version_no"],
+            new_body_chars=len(new_row["body"]),
+        )
 
     return _row_to_minutes(new_row), _row_to_minutes(updated_old)
