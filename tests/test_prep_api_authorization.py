@@ -199,15 +199,16 @@ class TestAnActiveMemberIsServed:
             _cleanup([pid], [ws])
 
     def test_the_write_is_reachable(self, restore_client):
-        """`publish-preread` 400s without a pack to publish — not 401, 403 or 500.
+        """`publish-preread` 409s without a pack to publish — not 401, 403 or 500.
 
-        A 400 proves the request reached the domain, which is what distinguishes
-        "authorized and there is nothing to publish" from "refused at the door".
+        A 409 proves the request reached the domain, which is what distinguishes
+        "authorized and there is nothing to publish" from "refused at the door". It was
+        a 400 from a catch-all `except Exception` until #239.
         """
         client, pid, ws, meeting_id = _signed_in("active_write")
         try:
             res = client.post(f"/api/meetings/{meeting_id}/publish-preread")
-            assert res.status_code == 400
+            assert res.status_code == 409
         finally:
             _cleanup([pid], [ws])
 
@@ -361,3 +362,51 @@ def test_every_route_on_this_router_depends_on_current_principal():
             f"{fn.__name__} does not depend on deps.current_principal, so nothing on that "
             f"path re-validates membership"
         )
+
+
+class TestErrorsUseTheSharedEnvelope:
+    """#239: these three handlers caught every exception and re-raised it as a fixed
+    404 or 400 with `detail=str(exc)`. A server fault read as "not found", and a
+    driver's message — SQL, table and column names — went to the client. Errors now
+    reach `errors.install_exception_handlers` like every other router's.
+    """
+
+    def test_an_unknown_meeting_is_a_404_envelope_on_every_route(self, restore_client):
+        client, pid, ws, _ = _signed_in("unknown_meeting")
+        try:
+            for method, path in _endpoints(str(uuid.uuid4())):
+                res = _call(client, method, path)
+                assert res.status_code == 404, (method, path, res.status_code)
+                assert res.json()["error"]["code"] == "not_found", (method, path, res.text)
+        finally:
+            _cleanup([pid], [ws])
+
+    def test_publishing_with_no_pack_is_a_409_envelope(self, restore_client):
+        """409, not 422: the request is right and the meeting's state refuses it — the
+        caller's move is to build a pack, not to change their input (`errors.py`)."""
+        client, pid, ws, meeting_id = _signed_in("no_pack")
+        try:
+            res = client.post(f"/api/meetings/{meeting_id}/publish-preread")
+            assert res.status_code == 409
+            assert res.json()["error"]["code"] == "conflict"
+            assert "No board pack" in res.json()["error"]["detail"]
+        finally:
+            _cleanup([pid], [ws])
+
+    def test_an_unexpected_failure_is_a_500_that_says_nothing(self, restore_client, monkeypatch):
+        """The leak, end to end: a driver error's text must not reach the client."""
+        from meridian import prep
+
+        def _broken(*_args, **_kwargs):
+            raise RuntimeError('relation "board_pack_internal_secret" does not exist')
+
+        client, pid, ws, meeting_id = _signed_in("unexpected")
+        try:
+            monkeypatch.setattr(prep, "get_meeting_readiness", _broken)
+            quiet = TestClient(client.app, raise_server_exceptions=False, follow_redirects=False)
+            quiet.cookies = client.cookies
+            res = quiet.get(f"/api/meetings/{meeting_id}/readiness")
+            assert res.status_code == 500
+            assert "board_pack_internal_secret" not in res.text
+        finally:
+            _cleanup([pid], [ws])
