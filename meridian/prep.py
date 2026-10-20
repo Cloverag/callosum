@@ -5,15 +5,29 @@ permissioned pre-read publication.
 """
 
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 from callosum import store
 from callosum.store import DEFAULT_WORKSPACE_ID
-from meridian import audit, meetings, packs
+from meridian import audit, commitments, meetings, packs
 
 
 class MeetingPrepError(ValueError):
     """Base exception for meeting preparation operations."""
+
+
+def _overdue_commitments(workspace_id: str) -> list[commitments.Commitment]:
+    """Overdue by `Commitment.is_overdue`, the domain's one definition (#238).
+
+    `today` is the UTC date, which is what the `due_date < NOW()` this replaced compared
+    against on the server. Soonest due first, as `list_commitments` returns them.
+    """
+    today = datetime.now(timezone.utc).date()
+    return [
+        c for c in commitments.list_commitments(workspace_id=workspace_id, open_only=True)
+        if c.is_overdue(today=today)
+    ]
 
 
 def get_meeting_readiness(
@@ -54,23 +68,14 @@ def get_meeting_readiness(
         ).fetchone()
         open_decisions_count = int(dec_row["n"]) if dec_row else 0
 
-        # Count overdue commitments
-        com_row = conn.execute(
-            """
-            SELECT COUNT(*) AS n
-              FROM commitment
-             WHERE workspace_id = %s AND status = 'open' AND due_date < NOW()
-            """,
-            (workspace_id,),
-        ).fetchone()
-        overdue_commitments_count = int(com_row["n"]) if com_row else 0
-
         # Count active board members (attendees)
         att_row = conn.execute(
             "SELECT COUNT(*) AS n FROM board_member WHERE workspace_id = %s AND active = TRUE",
             (workspace_id,),
         ).fetchone()
         attendee_count = int(att_row["n"]) if att_row else 0
+
+    overdue_commitments_count = len(_overdue_commitments(workspace_id))
 
     return {
         "meeting_id": str(meeting.id),
@@ -97,36 +102,24 @@ def get_agenda_suggestions(
     suggestions: list[dict[str, Any]] = []
 
     with store.pg(workspace_id) as conn:
-        # 1. Overdue Commitments
-        # `commitment` has no `owner_name`; it has `owner_board_member_id`, and the name
-        # lives on `board_member`. The previous query selected `owner_name` directly and
-        # therefore raised `UndefinedColumn` on every call — see the module note in
-        # `meridian/api/prep.py` about why that surfaced as a 404.
-        #
-        # LEFT JOIN because an unowned commitment is a legitimate state, and the caller
-        # below already renders `owner_name or 'unassigned'`. The join is on the composite
-        # `(id, workspace_id)`, matching the tenant-scoped foreign keys from `0019`, so it
-        # cannot resolve a name across a workspace boundary.
-        overdue = conn.execute(
-            """
-            SELECT c.id, c.title, bm.full_name AS owner_name, c.due_date
-              FROM commitment c
-              LEFT JOIN board_member bm
-                     ON bm.id = c.owner_board_member_id
-                    AND bm.workspace_id = c.workspace_id
-             WHERE c.workspace_id = %s AND c.status = 'open' AND c.due_date < NOW()
-             ORDER BY c.due_date ASC
-             LIMIT 5
-            """,
-            (workspace_id,),
-        ).fetchall()
+        # 1. Overdue Commitments, by the same definition readiness counts (#238). Owner
+        # names come from `board_member` on this RLS-scoped connection, so an id cannot
+        # resolve across a workspace boundary.
+        overdue = _overdue_commitments(workspace_id)[:5]
+        owner_names = {
+            str(r["id"]): r["full_name"]
+            for r in conn.execute(
+                "SELECT id, full_name FROM board_member WHERE id = ANY(%s)",
+                ([uuid.UUID(c.owner_board_member_id) for c in overdue],),
+            ).fetchall()
+        }
 
         for c in overdue:
             suggestions.append(
                 {
-                    "title": f"Review Overdue Commitment: {c['title']}",
-                    "reason": f"Overdue commitment assigned to {c['owner_name'] or 'unassigned'}",
-                    "source": {"kind": "commitment", "id": str(c["id"]), "label": c["title"]},
+                    "title": f"Review Overdue Commitment: {c.title}",
+                    "reason": f"Overdue commitment assigned to {owner_names.get(c.owner_board_member_id) or 'unassigned'}",
+                    "source": {"kind": "commitment", "id": c.id, "label": c.title},
                     "suggested_duration_minutes": 10,
                 }
             )
