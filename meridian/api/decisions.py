@@ -129,6 +129,7 @@ def create_decision(body: DecisionCreate, principal: CurrentPrincipal) -> domain
         workspace_id=principal.workspace_id,
         agenda_item_id=str(body.agenda_item_id) if body.agenda_item_id else None,
         rationale=body.rationale,
+        actor_principal_id=str(principal.id) if principal.id else None,
     )
 
 
@@ -147,6 +148,7 @@ def update_decision(
         str(decision_id),
         expected_version=body.expected_version,
         workspace_id=principal.workspace_id,
+        actor_principal_id=str(principal.id) if principal.id else None,
         **changes,
     )
 
@@ -168,6 +170,7 @@ def record_stance(
         body.stance,
         workspace_id=principal.workspace_id,
         comment=body.comment,
+        actor_principal_id=str(principal.id) if principal.id else None,
     )
 
 
@@ -185,6 +188,7 @@ def transition_decision(
         body.new_status,
         expected_version=body.expected_version,
         workspace_id=principal.workspace_id,
+        actor_principal_id=str(principal.id) if principal.id else None,
     )
 
 
@@ -209,5 +213,6 @@ def supersede_decision(
         workspace_id=principal.workspace_id,
         agenda_item_id=str(body.agenda_item_id) if body.agenda_item_id else None,
         rationale=body.rationale,
+        actor_principal_id=str(principal.id) if principal.id else None,
     )
     return Supersession(superseded=old, replacement=new)
