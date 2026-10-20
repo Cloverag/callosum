@@ -199,42 +199,51 @@ def _fetch_items_for_packs(
     missing three items walks into the room believing they are prepared. That is the same
     harm `version_chain` exists to prevent, one object over.
 
-    **Two queries, and the second returns only numbers.** The count cannot come from the
-    first: rows above clearance are removed by its WHERE clause before any window
-    function could see them, and widening that clause to count them would put restricted
-    rows on the wire — the exact trade Invariant #1 forbids. So the complement is
-    aggregated in the database and only `(pack_id, count)` crosses. This is the pattern
+    **One statement, two CTEs, and the second returns only numbers.** The count cannot
+    come from the visible rows: those are filtered before any window function could see
+    the rest, and widening the filter would put restricted rows on the wire — the exact
+    trade Invariant #1 forbids. So the complement is aggregated in the database and only
+    `(pack_id, count)` crosses. It is one statement rather than two because `store.pg`
+    runs at READ COMMITTED, where each statement takes its own snapshot: two statements
+    could return a list from before an edit and a count from after it (#240). This is the pattern
     the frozen core already set: `retrieve.vector_search` runs its search twice for the
     same reason, once filtered and once not, purely to learn what it withheld.
     """
     if not pack_ids:
         return {}
+    # FULL OUTER JOIN so a pack whose items are all withheld still comes back, as a row
+    # whose item columns are all NULL and whose count is set.
     rows = conn.execute(
         """
-        SELECT bpi.*
-          FROM board_pack_item bpi
-          JOIN document d ON d.id = bpi.document_id
-         WHERE bpi.board_pack_id = ANY(%s)
-           AND d.sensitivity <= %s
-         ORDER BY bpi.position ASC
+        WITH visible AS (
+            SELECT bpi.*
+              FROM board_pack_item bpi
+              JOIN document d ON d.id = bpi.document_id
+             WHERE bpi.board_pack_id = ANY(%s)
+               AND d.sensitivity <= %s
+        ), withheld AS (
+            SELECT bpi.board_pack_id AS withheld_pack_id, count(*) AS withheld
+              FROM board_pack_item bpi
+              JOIN document d ON d.id = bpi.document_id
+             WHERE bpi.board_pack_id = ANY(%s)
+               AND d.sensitivity > %s
+             GROUP BY bpi.board_pack_id
+        )
+        SELECT visible.*, withheld.withheld_pack_id, withheld.withheld
+          FROM visible
+          FULL OUTER JOIN withheld ON withheld.withheld_pack_id = visible.board_pack_id
+         ORDER BY visible.position ASC NULLS LAST
         """,
-        (pack_ids, clearance),
+        (pack_ids, clearance, pack_ids, clearance),
     ).fetchall()
-    withheld_rows = conn.execute(
-        """
-        SELECT bpi.board_pack_id, count(*) AS withheld
-          FROM board_pack_item bpi
-          JOIN document d ON d.id = bpi.document_id
-         WHERE bpi.board_pack_id = ANY(%s)
-           AND d.sensitivity > %s
-         GROUP BY bpi.board_pack_id
-        """,
-        (pack_ids, clearance),
-    ).fetchall()
-    withheld = {str(r["board_pack_id"]): r["withheld"] for r in withheld_rows}
+    withheld = {
+        str(r["withheld_pack_id"]): r["withheld"] for r in rows if r["withheld_pack_id"] is not None
+    }
 
     visible: dict[str, list[BoardPackItem]] = {}
     for r in rows:
+        if r["id"] is None:
+            continue  # a pack with nothing visible: its count is above, it has no item
         it = _row_to_pack_item(r)
         seen = visible.setdefault(it.board_pack_id, [])
         # Rows arrive in stored-position order, so the running length is the
