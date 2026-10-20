@@ -185,24 +185,24 @@ intake has shipped without one.
 
 | | |
 |---|---|
-| Backend tests | **786** passing, gated suite |
-| Frontend tests | **290** passing, 20 suites |
-| API | **75 operations** across 57 paths, 12 routers |
-| Migrations | 25, head `0025_meeting_document`, forward and reverse tested |
+| Backend tests | **988** passing, gated suite |
+| Frontend tests | **354** passing, 27 suites |
+| API | **80 operations** across 62 paths, 14 tags (health is untagged) |
+| Migrations | 30, head `0030_document_principal_role`, forward and reverse tested |
 | Architecture decisions | 18 ADRs |
-| Commits | 495 (`git rev-list --count 8dd2d3d`) |
+| Commits | 563 (`git rev-list --count 90cc9d9`) |
 
-Measured on `8dd2d3d` (2026-08-24), not carried forward. Both test figures are a **real
-run** on that commit — the gated suite against local Postgres 16 and Neo4j, and Jest with
-`tsc --noEmit` clean. The API, migration, ADR and commit figures all derive at `8dd2d3d`,
-and the parenthetical names the pin rather than a moving ref, so the command printed beside
-the figure reproduces it (see #159).
+Measured on `90cc9d9` (2026-10-21), not carried forward. Both test figures are a **real
+run**: CI run [39475184200](https://github.com/Cloverag/callosum/actions/runs/39475184200),
+the gated backend tier against Postgres 16 and Neo4j service containers, and Jest with a
+clean Next build. The API, migration, ADR and commit figures all derive at `90cc9d9`, and
+the parenthetical names the pin rather than a moving ref, so the command printed beside the
+figure reproduces it (see #159).
 
-The backend delta is **+55 on master's 731**: 20 in `tests/test_document_versions.py`, 4 in
-`tests/test_p4_leak_sweep.py`, 15 in `tests/test_withheld_discipline.py`, 14 in
-`tests/test_meeting_material.py`, and two parametrized cases —
-`test_an_applied_migration_is_unchanged` runs once per migration file, so `0024` and `0025`
-add one each. Reconciled by **collecting each file**, not by arithmetic.
+**This block had been stale since 2026-08-24**, pinned at `8dd2d3d` while six weeks of
+merged work went by, so the jump from 786 is not reconciled file by file here. What this PR (#242) adds is **+15 over master's 973**: 8 in `tests/test_decisions_audit.py` and 7 in `tests/test_decisions_audit_static.py`, both new files.
+The API row counts **tags**, which is what `app.openapi()` reports; the old wording called
+them routers.
 
 **P3 is frozen, not accepted** — of its three exit criteria one is met, one is partial and
 one is not met, because the accessibility and error-state checkpoints were deliberately
@@ -308,14 +308,19 @@ routes. Set `MERIDIAN_API_ORIGIN` if the API is not on `:8000`.
 ```bash
 docker compose up -d && docker compose ps               # all three healthy FIRST
 .venv/bin/callosum eval-mechanism                        # deterministic gate, no LLM
-CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 786 tests, real stores
-cd frontend && npx jest && npm run build                 # 290 tests, 20 suites
+CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 988 tests, real stores
+cd frontend && npx jest && npm run build                 # 354 tests, 27 suites
 ```
 
 `CALLOSUM_RUN_INTEGRATION=1` runs against real Postgres and Neo4j, so the compose stack
-must be up. Without the gate the suite selects 253 tests; with it, 750. Run it with the
-containers stopped and the 497 gated tests fail on connection errors — the failure looks
-like a broken build and is a missing database.
+must be up. With the gate, all **988** run. Without it — at `90cc9d9`, on Linux, no
+database — the suite is **393 passed, 48 skipped, 2 failed**. The two failures are
+`test_demo_selector.py` tests that reach Postgres without the gate; #215 fixes both. Measured
+in a clean `python:3.12-slim` container from `git archive`, not on Windows, where 32 more
+ungated tests fail on cp1252 decoding (also #215). The 253 / 750 / 497 figures this
+paragraph used to quote were stale by several phases. Run the gated tier with the containers
+stopped and those tests fail on connection errors — the failure looks like a broken build
+and is a missing database.
 
 ---
 
