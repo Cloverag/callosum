@@ -183,6 +183,31 @@ def _fetch_stances_for_decisions(conn, decision_ids: list[uuid.UUID]) -> dict[st
 # Public Operations
 # ---------------------------------------------------------------------------
 
+def _audit_decision(conn, row: dict, action: str, actor_principal_id, workspace_id, **extra) -> None:
+    """Records one `decision` event inside the caller's transaction (#168).
+
+    Same shape as `packs._audit_pack`: same transaction as the mutation, called only
+    after the write is confirmed, so a refusal has already raised and records nothing.
+    `rationale` is free text and stays out (who may read the trail is D7); its length
+    goes in, as `body_chars` does for minutes and resolutions.
+    """
+    audit.record_audit_event(
+        conn,
+        aggregate_type="decision",
+        aggregate_id=row["id"],
+        action=action,
+        actor_principal_id=actor_principal_id,
+        payload={
+            "meeting_id": str(row["meeting_id"]),
+            "title": row["title"],
+            "status": row["status"],
+            "rationale_chars": len(row["rationale"] or ""),
+            **extra,
+        },
+        workspace_id=workspace_id,
+    )
+
+
 def create_decision(
     meeting_id: str,
     title: str,
@@ -190,8 +215,14 @@ def create_decision(
     workspace_id: str = DEFAULT_WORKSPACE_ID,
     agenda_item_id: str | None = None,
     rationale: str | None = None,
+    actor_principal_id: str | None = None,
 ) -> Decision:
-    """Creates a decision in `proposed` status attached to `meeting_id`."""
+    """Creates a decision in `proposed` status attached to `meeting_id`.
+
+    `actor_principal_id` is optional because the demo seed scripts are bootstrap paths
+    with no authenticated caller (#166); every route passes it, and
+    `test_decisions_audit_static.py` holds that true.
+    """
     if not title or not title.strip():
         raise DecisionValidationError("title must not be empty")
 
@@ -227,6 +258,8 @@ def create_decision(
                 workspace_id,
             ),
         ).fetchone()
+
+        _audit_decision(conn, row, "created", actor_principal_id, workspace_id)
 
     return _row_to_decision(row, stances=[])
 
@@ -280,6 +313,7 @@ def update_decision(
     workspace_id: str = DEFAULT_WORKSPACE_ID,
     title=_UNSET,
     rationale=_UNSET,
+    actor_principal_id: str | None = None,
 ) -> Decision:
     """Updates title/rationale of a `proposed` decision under version concurrency.
 
@@ -337,6 +371,9 @@ def update_decision(
         if row is None:
             raise StaleDecisionError(f"decision {decision_id}: concurrent modification")
 
+        changed = [n for n, v in (("title", title), ("rationale", rationale)) if v is not _UNSET]
+        _audit_decision(conn, row, "updated", actor_principal_id, workspace_id, changed_fields=changed)
+
         stances = _fetch_stances_for_decisions(conn, [dec_uuid]).get(str(dec_uuid), [])
 
     return _row_to_decision(row, stances=stances)
@@ -349,6 +386,7 @@ def record_stance(
     *,
     workspace_id: str = DEFAULT_WORKSPACE_ID,
     comment: str | None = None,
+    actor_principal_id: str | None = None,
 ) -> DecisionStance:
     """Records or updates a person's stance (SUPPORTED, OPPOSED, APPROVED, REQUESTED).
 
@@ -422,6 +460,8 @@ def record_stance(
             aggregate_type="decision",
             aggregate_id=dec_uuid,
             action="voted",
+            # `person_name` is whose stance this is; the actor is who recorded it (#168).
+            actor_principal_id=actor_principal_id,
             payload={
                 "person_name": person_name.strip(),
                 "old_stance": previous["stance"] if previous else None,
@@ -439,6 +479,7 @@ def transition_decision_status(
     *,
     expected_version: int,
     workspace_id: str = DEFAULT_WORKSPACE_ID,
+    actor_principal_id: str | None = None,
 ) -> Decision:
     """Transitions decision status (e.g. proposed -> approved/rejected/deferred)."""
     if new_status not in DECISION_STATUSES:
@@ -484,6 +525,13 @@ def transition_decision_status(
         if row is None:
             raise StaleDecisionError(f"decision {decision_id}: concurrent modification")
 
+        # How a decision is approved or rejected; the resulting status alone cannot say
+        # what it moved from.
+        _audit_decision(
+            conn, row, "status_changed", actor_principal_id, workspace_id,
+            from_status=current["status"],
+        )
+
         stances = _fetch_stances_for_decisions(conn, [dec_uuid]).get(str(dec_uuid), [])
 
     return _row_to_decision(row, stances=stances)
@@ -497,6 +545,7 @@ def supersede_decision(
     workspace_id: str = DEFAULT_WORKSPACE_ID,
     agenda_item_id: str | None = None,
     rationale: str | None = None,
+    actor_principal_id: str | None = None,
 ) -> tuple[Decision, Decision]:
     """Supersedes an approved decision with a new decision.
 
@@ -572,6 +621,12 @@ def supersede_decision(
 
         if updated_old is None:
             raise StaleDecisionError("concurrent modification during supersession")
+
+        # One event, on the OLD id, as `documents`, `minutes` and `resolutions` do.
+        _audit_decision(
+            conn, updated_old, "superseded", actor_principal_id, workspace_id,
+            new_decision_id=str(new_id),
+        )
 
         old_stances = _fetch_stances_for_decisions(conn, [old_uuid]).get(str(old_uuid), [])
 
