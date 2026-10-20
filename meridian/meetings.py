@@ -130,6 +130,28 @@ _UNSET = object()
 # Operations
 # ---------------------------------------------------------------------------
 
+def _audit_meeting(conn, row: dict, action: str, actor_principal_id, workspace_id, **extra) -> None:
+    """Records one `meeting` event inside the caller's transaction (#168).
+
+    Same shape as `packs._audit_pack`: same transaction as the mutation, called only
+    after the write is confirmed, so a refusal has already raised and records nothing.
+    """
+    audit.record_audit_event(
+        conn,
+        aggregate_type="meeting",
+        aggregate_id=row["id"],
+        action=action,
+        actor_principal_id=actor_principal_id,
+        payload={
+            "title": row["title"],
+            "status": row["status"],
+            "scheduled_start": row["scheduled_start"].isoformat() if row["scheduled_start"] else None,
+            **extra,
+        },
+        workspace_id=workspace_id,
+    )
+
+
 def create_meeting(
     title: str,
     *,
@@ -139,8 +161,14 @@ def create_meeting(
     location: str | None = None,
     created_by: str | None = None,
     importance: str = ROUTINE_IMPORTANCE,
+    actor_principal_id: str | None = None,
 ) -> Meeting:
-    """Create a meeting in `draft` status (version 1)."""
+    """Create a meeting in `draft` status (version 1).
+
+    `actor_principal_id` is optional because `scripts/seed_demo_board.py` is a bootstrap
+    path with no authenticated caller (#166); every route passes it, and
+    `test_meetings_audit_static.py` holds that true.
+    """
     if not title or not title.strip():
         raise MeetingValidationError("title must not be empty")
     if importance not in IMPORTANCE_LEVELS:
@@ -158,6 +186,7 @@ def create_meeting(
             """,
             (title.strip(), scheduled_start, scheduled_end, location, created_by, workspace_id, importance),
         ).fetchone()
+        _audit_meeting(conn, row, "created", actor_principal_id, workspace_id)
     return _row_to_meeting(row)
 
 
@@ -201,6 +230,7 @@ def update_meeting(
     scheduled_end=_UNSET,
     location=_UNSET,
     importance=_UNSET,
+    actor_principal_id: str | None = None,
 ) -> Meeting:
     """Update mutable fields under optimistic concurrency.
 
@@ -263,6 +293,16 @@ def update_meeting(
         ).fetchone()
         if row is None:
             _raise_stale_or_missing(conn, meeting_id)
+        changed = [
+            n for n, v in (("title", title), ("scheduled_start", scheduled_start),
+                           ("scheduled_end", scheduled_end), ("location", location),
+                           ("importance", importance))
+            if v is not _UNSET
+        ]
+        # A moved meeting is the change a board asks about; the new row cannot say from when.
+        prior = {"from_scheduled_start": current["scheduled_start"].isoformat() if current["scheduled_start"] else None} \
+            if scheduled_start is not _UNSET else {}
+        _audit_meeting(conn, row, "updated", actor_principal_id, workspace_id, changed_fields=changed, **prior)
     return _row_to_meeting(row)
 
 
@@ -272,6 +312,7 @@ def transition_status(
     *,
     expected_version: int,
     workspace_id: str = DEFAULT_WORKSPACE_ID,
+    actor_principal_id: str | None = None,
 ) -> Meeting:
     """Move a meeting to `new_status`, enforcing the lifecycle rules.
 
@@ -318,6 +359,8 @@ def transition_status(
         # concurrent writer slipped in between the SELECT and UPDATE.
         if row is None:
             raise StaleMeetingError(f"meeting {meeting_id}: concurrent modification")
+        _audit_meeting(conn, row, "status_changed", actor_principal_id, workspace_id,
+                       from_status=current["status"])
     return _row_to_meeting(row)
 
 
