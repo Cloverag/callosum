@@ -483,10 +483,12 @@ def meeting_material(
 ) -> MeetingMaterial:
     """A meeting's material: what this caller may read, and how many they may not.
 
-    Two queries, and the second returns only a number. The count cannot come from the
-    first — rows above clearance are removed by its WHERE clause before anything could
-    count them, and widening that clause to include them would put restricted titles on
-    the wire, which Invariant #1 forbids. So the complement is aggregated in the database.
+    One statement, two CTEs, and the second returns only a number. The count cannot come
+    from the visible rows — those are filtered before anything could count the rest, and
+    widening the filter would put restricted titles on the wire, which Invariant #1
+    forbids. So the complement is aggregated in the database. It is one statement rather
+    than two because `store.pg` runs at READ COMMITTED, where each statement takes its own
+    snapshot, and two could pair a list from before an edit with a count from after (#240).
     `packs._fetch_items_for_packs` does the same, and both follow
     `callosum.retrieve.vector_search`, which runs its search twice for exactly this reason.
 
@@ -504,28 +506,32 @@ def meeting_material(
         if conn.execute("SELECT 1 FROM meeting WHERE id = %s", (meeting_uuid,)).fetchone() is None:
             raise MeetingNotFound(str(meeting_id))
 
+        # `withheld` always yields one row, so the LEFT JOIN returns at least one row even
+        # when nothing is visible. `meeting_document` is joined again only to order by
+        # `assigned_at`, which `_DOCUMENT_SELECT` does not project.
         rows = conn.execute(
-            documents._DOCUMENT_SELECT
+            "WITH visible AS ("
+            + documents._DOCUMENT_SELECT
             + """
-             JOIN meeting_document md
-               ON md.document_id = d.id AND md.workspace_id = d.workspace_id
-            WHERE md.meeting_id = %s AND d.sensitivity <= %s
-            ORDER BY md.assigned_at ASC, d.id
+                 JOIN meeting_document md
+                   ON md.document_id = d.id AND md.workspace_id = d.workspace_id
+                WHERE md.meeting_id = %s AND d.sensitivity <= %s
+            ), withheld AS (
+                SELECT count(*) AS withheld
+                  FROM meeting_document md
+                  JOIN document d ON d.id = md.document_id AND d.workspace_id = md.workspace_id
+                 WHERE md.meeting_id = %s AND d.sensitivity > %s
+            )
+            SELECT visible.*, withheld.withheld
+              FROM withheld
+              LEFT JOIN visible ON true
+              LEFT JOIN meeting_document o ON o.document_id = visible.id AND o.meeting_id = %s
+             ORDER BY o.assigned_at ASC, visible.id
             """,
-            (clearance, meeting_uuid, clearance),
+            (clearance, meeting_uuid, clearance, meeting_uuid, clearance, meeting_uuid),
         ).fetchall()
 
-        withheld = conn.execute(
-            """
-            SELECT count(*) AS withheld
-              FROM meeting_document md
-              JOIN document d ON d.id = md.document_id AND d.workspace_id = md.workspace_id
-             WHERE md.meeting_id = %s AND d.sensitivity > %s
-            """,
-            (meeting_uuid, clearance),
-        ).fetchone()["withheld"]
-
     return MeetingMaterial(
-        documents=[documents._row_to_document(r) for r in rows],
-        withheld=withheld,
+        documents=[documents._row_to_document(r) for r in rows if r["id"] is not None],
+        withheld=rows[0]["withheld"],
     )
