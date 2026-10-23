@@ -393,6 +393,116 @@ class TestGrantAndRevoke:
         finally:
             _cleanup(workspace_ids=[ws], principal_ids=[founder, director, newcomer])
 
+    def test_a_member_cannot_demote_a_higher_clearance_member_by_granting_a_lower_role(self):
+        """H2 (#232): a grant is an upsert, so it can LOWER an existing member's
+        role — and until this change nothing on that path looked at who the
+        target currently is. `revoke_membership` checks the target's CURRENT
+        standing (`_clearance_for(current["role"]) > actor.clearance`), but
+        `grant_membership` checked only the role being requested, so an
+        advisor (clearance 2) could `grant advisor-or-lower` to an active
+        director (clearance 3) and demote them.
+
+        Symmetric with `test_revoking_a_higher_clearance_member_is_denied`:
+        an actor who could not have granted the target's current role should
+        not be able to strip that role either — grant or revoke, it is the
+        same "revoke-then-regrant" escalation path the grant-side check was
+        written to close.
+
+        A refusal must also leave nothing behind: the demoted role is NOT
+        written, and no audit event commits (6A invariant, same as F).
+        """
+        founder = _principal()
+        director = _principal()
+        advisor = _principal()
+        ws = None
+        try:
+            ws = workspaces.create_workspace("Demote Deny", None, founder)
+            workspaces.grant_membership(
+                director, "director", workspace_id=ws, actor_principal_id=founder,
+            )
+            workspaces.grant_membership(
+                advisor, "advisor", workspace_id=ws, actor_principal_id=founder,
+            )
+
+            with pytest.raises(workspaces.EscalationDeniedError):
+                workspaces.grant_membership(
+                    director, "advisor",  # clearance 2, below director's 3
+                    workspace_id=ws, actor_principal_id=advisor,
+                )
+
+            # The demotion must not have happened — the row was refused
+            # before the upsert, so the target keeps the role they had.
+            rows = _admin_fetch(
+                "SELECT role, active FROM membership WHERE principal_id = %s AND workspace_id = %s",
+                (director, ws),
+            )
+            assert len(rows) == 1
+            assert rows[0]["role"] == "director"
+            assert rows[0]["active"] is True
+
+            # 6A: a refusal commits no audit trail either. The director's own
+            # earlier grants DO appear (one event per legitimate grant), so the
+            # assertion is on the refused call's distinctive signature: the
+            # demotion attempt would have written an event acted BY the advisor
+            # (aggregate_id = director, action = 'updated' via the upsert).
+            events = _admin_fetch(
+                "SELECT 1 FROM audit_event"
+                " WHERE workspace_id = %s AND aggregate_type = 'membership'"
+                "   AND aggregate_id = %s AND actor_principal_id = %s",
+                (ws, director, advisor),
+            )
+            assert events == []
+        finally:
+            _cleanup(workspace_ids=[ws], principal_ids=[founder, director, advisor])
+
+    def test_a_clearance_1_member_cannot_grant_observer_to_the_founder(self):
+        """#232's headline: an investor (clearance 1) sits below the ceiling for
+        both `investor` (1) and `observer` (0), so a grant that checks ONLY the
+        requested role lets them demote the founder — and once every member
+        above clearance 1 is stripped the same way, the workspace is stranded
+        (nobody can grant clearance 4 back, #185's guard never sees it because
+        a demotion leaves every row `active = true`).
+
+        The fix closes the path at the source: the actor's clearance must cover
+        the TARGET'S CURRENT standing, not only the role being requested.
+        """
+        founder = _principal()
+        investor = _principal()
+        ws = None
+        try:
+            ws = workspaces.create_workspace("Investor Strip", None, founder)
+            workspaces.grant_membership(
+                investor, "investor", workspace_id=ws, actor_principal_id=founder,
+            )
+
+            with pytest.raises(workspaces.EscalationDeniedError):
+                workspaces.grant_membership(
+                    founder, "observer",  # clearance 0, within the investor's ceiling
+                    workspace_id=ws, actor_principal_id=investor,
+                )
+
+            rows = _admin_fetch(
+                "SELECT role, active FROM membership WHERE principal_id = %s AND workspace_id = %s",
+                (founder, ws),
+            )
+            assert len(rows) == 1
+            assert rows[0]["role"] == "founder"
+            assert rows[0]["active"] is True
+
+            # 6A: the refused call commits nothing. The founder's OWN events
+            # (bootstrap `created`, the investor grant) legitimately exist, so
+            # the filter names the refused actor: a demotion written by the
+            # investor would appear here and must not.
+            events = _admin_fetch(
+                "SELECT 1 FROM audit_event"
+                " WHERE workspace_id = %s AND aggregate_type = 'membership'"
+                "   AND aggregate_id = %s AND actor_principal_id = %s",
+                (ws, founder, investor),
+            )
+            assert events == []
+        finally:
+            _cleanup(workspace_ids=[ws], principal_ids=[founder, investor])
+
     def test_a_cross_workspace_grant_is_denied(self):
         """G.
 
