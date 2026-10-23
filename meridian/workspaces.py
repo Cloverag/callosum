@@ -252,7 +252,19 @@ def grant_membership(
     never accepting a `workspace_id` field on the wire; it is not re-checked here.
 
     Anti-escalation: the actor may never grant a role whose clearance exceeds their
-    own — the maintainer's ruling.
+    own — the maintainer's ruling — AND the actor's clearance must cover the
+    target's CURRENT standing when the grant would change an existing member
+    (#232). A grant is an upsert (`ON CONFLICT ... DO UPDATE SET role = ...`), so
+    it demotes an existing member as readily as it raises a newcomer; checking
+    only the requested role left that demotion side outside anti-escalation
+    entirely, which is exactly the strip `revoke_membership` refuses. The check
+    mirrors revoke's: compare the TARGET's current role-derived clearance against
+    the actor's, derived from `role` — never read the stored `membership.clearance`
+    column for an authorization decision (#166 step 3; #182 documents fixtures
+    where the two disagree). A brand-new grant (no existing row) is unaffected.
+
+    A demotion refused here commits no audit event and writes no row — raised
+    before the upsert, inside the same transaction.
     """
     requested_clearance = _clearance_for(role)
 
@@ -262,6 +274,15 @@ def grant_membership(
         if requested_clearance > actor.clearance:
             raise EscalationDeniedError(
                 f"cannot grant role {role!r}: exceeds the acting principal's own clearance"
+            )
+
+        current = conn.execute(
+            "SELECT role FROM membership WHERE principal_id = %s AND workspace_id = %s",
+            (principal_id, workspace_id),
+        ).fetchone()
+        if current is not None and _clearance_for(current["role"]) > actor.clearance:
+            raise EscalationDeniedError(
+                "cannot change a membership whose clearance exceeds the acting principal's own"
             )
 
         row = conn.execute(
