@@ -465,18 +465,26 @@ def apply_relationship(driver: Driver, payload: dict[str, Any], workspace_id: st
 
     ws_id = workspace_id if workspace_id is not None else payload.get("workspace_id", DEFAULT_WORKSPACE_ID)
     with driver.session() as session:
-        session.run(
+        written = session.run(
             f"""
             MATCH (s:Entity {{name: $source, workspace_id: $workspace_id}})
             MATCH (t:Entity {{name: $target, workspace_id: $workspace_id}})
             MERGE (s)-[r:{rel_type}]->(t)
             SET r.quote = $quote, r.chunk_id = $chunk_id
+            RETURN count(r) AS n
             """,
             source=payload["source"],
             target=payload["target"],
             workspace_id=ws_id,
             quote=payload.get("quote", ""),
             chunk_id=payload["chunk_id"],
+        ).single()["n"]
+    # A missing endpoint matches nothing and writes nothing. Raising here, before
+    # `approve()` marks the proposal approved, keeps "approved" meaning "in the graph" (#249).
+    if not written:
+        raise ValueError(
+            f"Relationship not written: endpoint {payload['source']!r} or {payload['target']!r}"
+            " is not in the graph yet; approve the entities first"
         )
 
 
