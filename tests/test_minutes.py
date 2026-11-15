@@ -165,6 +165,25 @@ def test_supersede_finalised_minutes():
         _cleanup(ws)
 
 
+
+def test_superseded_minutes_cannot_be_superseded_again():
+    """#249 finding 7: a second supersede would fork the chain into two v2 drafts."""
+    ws = _new_workspace()
+    try:
+        m = _create_live_meeting(ws)
+        m1 = minutes.create_minutes(m.id, "Original Minutes v1", workspace_id=ws)
+        m1 = minutes.finalise_minutes(m1.id, expected_version=1, workspace_id=ws)
+        _m2, m1_updated = minutes.supersede_minutes(
+            m1.id, "Amended v2", expected_version=2, workspace_id=ws
+        )
+
+        with pytest.raises(MinutesLockedError):
+            minutes.supersede_minutes(
+                m1.id, "Competing v2", expected_version=m1_updated.version, workspace_id=ws
+            )
+    finally:
+        _cleanup(ws)
+
 def test_cross_workspace_isolation():
     ws_a = _new_workspace()
     ws_b = _new_workspace()

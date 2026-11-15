@@ -82,13 +82,13 @@ describe("unmeasured figures are null, not zero and not invented", () => {
 
 describe("the figures that ARE measured stay traceable", () => {
   it("reports the seeded gold graph, not this repository's source code", async () => {
-    // 38 entities / 40 edges / 14 relation types / 10 documents, counted from
-    // GOLD_GROUPS. The dashboard once showed 731/1277/53 — the graphify snapshot of
-    // this repo's own code at tag p1.0.2.
+    // Public portion of GOLD_GROUPS: 37 entities / 39 edges / 13 relation types
+    // (the restricted compensation row is not shipped, #213 C2). The dashboard once
+    // showed 731/1277/53 — the graphify snapshot of this repo's own code at p1.0.2.
     const { memory } = await insightsApi.get();
-    expect(memory.entities).toBe(38);
-    expect(memory.edges).toBe(40);
-    expect(memory.relationTypes).toBe(14);
+    expect(memory.entities).toBe(37);
+    expect(memory.edges).toBe(39);
+    expect(memory.relationTypes).toBe(13);
   });
 
   it("ends memory growth exactly where the totals say", async () => {

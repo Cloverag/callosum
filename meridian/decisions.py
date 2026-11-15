@@ -349,6 +349,7 @@ def record_stance(
     *,
     workspace_id: str = DEFAULT_WORKSPACE_ID,
     comment: str | None = None,
+    actor_principal_id: str | None = None,
 ) -> DecisionStance:
     """Records or updates a person's stance (SUPPORTED, OPPOSED, APPROVED, REQUESTED).
 
@@ -422,6 +423,7 @@ def record_stance(
             aggregate_type="decision",
             aggregate_id=dec_uuid,
             action="voted",
+            actor_principal_id=actor_principal_id,
             payload={
                 "person_name": person_name.strip(),
                 "old_stance": previous["stance"] if previous else None,

@@ -82,7 +82,7 @@ class GraphGateway:
                         "type": r["type"],
                         "chunk_id": r["chunk_id"],
                         "ordinal": r["ordinal"],
-                        "sensitivity": r["sensitivity"] or 1,
+                        "sensitivity": r["sensitivity"],  # None stays None: _entity_sensitivity fails it closed (#249)
                     }
             return list(seen.values())
 

@@ -132,12 +132,12 @@ record, not an embarrassment to tidy away. What follows describes that column.
   `evaluate.py` seeds the gold graph positionally, so the changed `workspace_id` parameter fell
   through to its old behaviour. The gate was structurally unable to reach either change.
 
-## Product P4 — Board workspace, members, and source intake — 🟩 IN PROGRESS
+## Product P4 — Board workspace, members, and source intake — ✅ ACCEPTED (2026-10-08)
 
-**Not accepted, and the 3/13 count does not move.** `rules.md` §4's 2026-08-13 amendment
-makes phase order advisory — a phase may begin before the previous one's exit gate is
-claimed — but it is explicit that only an exit gate advances the accepted count. P3's gate
-is unclaimed and P4's has not been attempted, so the product track stays at **3 of 13**.
+**Accepted 2026-10-08 at `7f8a84b`; the product track is 4 of 13** — [packet](./docs/reviews/2026-10-08-p4-gate-packet.md). The 2026-08-24
+attempt was refused on #166 (membership not audited); #166's steps landed and #223 closed the
+client-bundle leak (#213 C2) before the second attempt. Follow-up from signing: #225. The history
+below is kept as written.
 
 | P4 work item | State |
 |---|---|
@@ -148,7 +148,7 @@ is unclaimed and P4's has not been attempted, so the product track stays at **3 
 | Processing / quarantine state | ✅ merged (#128) — `GET /api/documents/quarantine` |
 | Versions | ✅ built (`0024_document_version`, ADR-017) — **not** an exit gate |
 | Workspace / meeting assignment | ✅ built (`0025_meeting_document`, ADR-018) — **not** an exit gate |
-| P4 exit gate | ⬜ not attempted |
+| P4 exit gate | ✅ accepted 2026-10-08 at `7f8a84b` — [packet](./docs/reviews/2026-10-08-p4-gate-packet.md) |
 
 **Exit criteria, and where they stand.** The phase exits when "membership is
 authorized/audited; document lifecycle is visible; restricted titles, text, quotes, graph

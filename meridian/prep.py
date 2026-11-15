@@ -54,12 +54,13 @@ def get_meeting_readiness(
         ).fetchone()
         open_decisions_count = int(dec_row["n"]) if dec_row else 0
 
-        # Count overdue commitments
+        # Overdue = `Commitment.is_overdue`: any still-open status, due before today.
+        # DATE vs CURRENT_DATE, not NOW(): a timestamp made today's items overdue at midnight (#249).
         com_row = conn.execute(
             """
             SELECT COUNT(*) AS n
               FROM commitment
-             WHERE workspace_id = %s AND status = 'open' AND due_date < NOW()
+             WHERE workspace_id = %s AND status IN ('open', 'in_progress', 'blocked') AND due_date < CURRENT_DATE
             """,
             (workspace_id,),
         ).fetchone()
@@ -114,7 +115,7 @@ def get_agenda_suggestions(
               LEFT JOIN board_member bm
                      ON bm.id = c.owner_board_member_id
                     AND bm.workspace_id = c.workspace_id
-             WHERE c.workspace_id = %s AND c.status = 'open' AND c.due_date < NOW()
+             WHERE c.workspace_id = %s AND c.status IN ('open', 'in_progress', 'blocked') AND c.due_date < CURRENT_DATE
              ORDER BY c.due_date ASC
              LIMIT 5
             """,
@@ -170,7 +171,10 @@ def publish_preread(
     workspace_id: str = DEFAULT_WORKSPACE_ID,
     actor_id: str | None = None,
 ) -> dict[str, Any]:
-    """Publishes the latest board pack for pre-read distribution and logs an audit event."""
+    """Publishes the latest board pack for pre-read distribution and logs an audit event.
+
+    Publishing an already-published pack is a no-op that records nothing.
+    """
     m_uuid = uuid.UUID(str(meeting_id))
     meeting = meetings.get_meeting(str(m_uuid), workspace_id=workspace_id)
 
@@ -179,9 +183,10 @@ def publish_preread(
             """
             SELECT id, version_no, status
               FROM board_pack
-             WHERE meeting_id = %s AND status != 'archived'
-             ORDER BY version_no DESC
+             WHERE meeting_id = %s
+             ORDER BY version_no DESC, created_at DESC
              LIMIT 1
+             FOR UPDATE
             """,
             (m_uuid,),
         ).fetchone()
@@ -190,16 +195,34 @@ def publish_preread(
             raise MeetingPrepError(f"No board pack exists for meeting {meeting_id}")
 
         pack_id = pack_row["id"]
-        # Update pack status to published if draft
-        if pack_row["status"] == "draft":
-            conn.execute(
-                """
-                UPDATE board_pack
-                   SET status = 'published', published_at = NOW()
-                 WHERE id = %s
-                """,
-                (pack_id,),
-            )
+
+        # Already published: nothing happens, so nothing is recorded (`rules.md` §2, the
+        # trail records only events that happened). This is a no-op rather than a refusal
+        # because the response is true as it stands — the pack IS published at this
+        # version — and a client retrying after a dropped response should get that
+        # answer, not an error for an operation that had already succeeded. The row lock
+        # above makes two concurrent calls serialise, so exactly one sees `draft`.
+        if pack_row["status"] != "draft":
+            return {
+                "meeting_id": str(m_uuid),
+                "pack_id": str(pack_id),
+                "version_no": pack_row["version_no"],
+                "status": pack_row["status"],
+            }
+
+        # The same guard `packs.publish_pack` applies: a pack for a meeting that has
+        # already happened (or was cancelled) is locked, pre-read or not (#249 finding 16).
+        packs._assert_meeting_pre_meeting(conn, m_uuid)
+
+        conn.execute(
+            """
+            UPDATE board_pack
+               SET status = 'published', published_at = NOW(),
+                   version = version + 1, updated_at = NOW()
+             WHERE id = %s
+            """,
+            (pack_id,),
+        )
 
         # Record audit event
         audit.record_audit_event(

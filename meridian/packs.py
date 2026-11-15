@@ -20,6 +20,7 @@ from datetime import datetime
 
 from callosum import store
 from callosum.store import DEFAULT_WORKSPACE_ID
+from meridian import audit
 from meridian.meetings import MeetingNotFound
 
 # The clearance ladder, mirroring the `sensitivity` lookup table seeded by
@@ -249,6 +250,33 @@ def _fetch_items_for_packs(
     }
 
 
+def _audit_pack(conn, row: dict, action: str, actor_principal_id, workspace_id, **extra) -> None:
+    """Records one `board_pack` event inside the caller's transaction (P5 CP5A).
+
+    Called only after the mutation is confirmed, so a refused write (locked, stale,
+    not found) has raised before reaching here and records nothing. The payload is
+    the pack's governance facts after the write, not the row: `title` and `status`
+    say what the pack was called and whether it was frozen; `version_no` is the
+    published lineage; `meeting_id` says what it was the pre-read for. Item payloads
+    carry `document_id` — see `_audit_item`.
+    """
+    audit.record_audit_event(
+        conn,
+        aggregate_type="board_pack",
+        aggregate_id=row["id"],
+        action=action,
+        actor_principal_id=actor_principal_id,
+        payload={
+            "meeting_id": str(row["meeting_id"]),
+            "title": row["title"],
+            "status": row["status"],
+            "version_no": row["version_no"],
+            **extra,
+        },
+        workspace_id=workspace_id,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Public Operations
 # ---------------------------------------------------------------------------
@@ -258,6 +286,7 @@ def create_pack(
     title: str,
     *,
     workspace_id: str = DEFAULT_WORKSPACE_ID,
+    actor_principal_id: str | None = None,
 ) -> BoardPack:
     """Creates a new draft board pack attached to `meeting_id`."""
     if not title or not title.strip():
@@ -277,6 +306,7 @@ def create_pack(
             """,
             (meeting_uuid, title.strip(), workspace_id),
         ).fetchone()
+        _audit_pack(conn, row, "created", actor_principal_id, workspace_id)
 
     return _row_to_board_pack(row, _NO_ITEMS)
 
@@ -334,6 +364,7 @@ def update_pack(
     workspace_id: str = DEFAULT_WORKSPACE_ID,
     title=_UNSET,
     clearance: int,
+    actor_principal_id: str | None = None,
 ) -> BoardPack:
     """Updates title of a `draft` board pack under version-guarded optimistic concurrency."""
     if title is _UNSET:
@@ -377,6 +408,8 @@ def update_pack(
         if row is None:
             raise StaleBoardPackError(f"board_pack {pack_id}: concurrent modification")
 
+        _audit_pack(conn, row, "updated", actor_principal_id, workspace_id, changed_fields=["title"])
+
         visible = _fetch_items_for_packs(conn, [pack_uuid], clearance=clearance).get(str(pack_uuid), _NO_ITEMS)
 
     return _row_to_board_pack(row, visible)
@@ -390,8 +423,15 @@ def add_pack_item(
     agenda_item_id: str | None = None,
     position: int | None = None,
     note: str | None = None,
+    actor_principal_id: str | None = None,
+    clearance: int | None = None,
 ) -> BoardPackItem:
-    """Adds a document item to a draft board pack."""
+    """Adds a document item to a draft board pack.
+
+    A document above `clearance` reads as not found, identical to a missing one, so
+    this cannot be used to probe or file restricted documents (#249 finding 6).
+    `None` is the non-HTTP caller only.
+    """
     pack_uuid = uuid.UUID(str(pack_id))
     doc_uuid = uuid.UUID(str(document_id))
     ag_uuid = uuid.UUID(str(agenda_item_id)) if agenda_item_id else None
@@ -413,7 +453,8 @@ def add_pack_item(
 
         # Validate document exists
         doc = conn.execute(
-            "SELECT id FROM document WHERE id = %s", (doc_uuid,)
+            "SELECT id FROM document WHERE id = %s AND (%s::int IS NULL OR sensitivity <= %s)",
+            (doc_uuid, clearance, clearance),
         ).fetchone()
         if doc is None:
             raise BoardPackValidationError(f"document {document_id} not found")
@@ -478,9 +519,13 @@ def add_pack_item(
         ).fetchone()
 
         # Touch pack updated_at and bump version
-        conn.execute(
-            "UPDATE board_pack SET version = version + 1, updated_at = now() WHERE id = %s",
+        pack_row = conn.execute(
+            "UPDATE board_pack SET version = version + 1, updated_at = now() WHERE id = %s RETURNING *",
             (pack_uuid,),
+        ).fetchone()
+        _audit_pack(
+            conn, pack_row, "item_added", actor_principal_id, workspace_id,
+            item_id=str(row["id"]), document_id=str(doc_uuid), position=row["position"],
         )
 
     return _row_to_pack_item(row)
@@ -490,14 +535,24 @@ def remove_pack_item(
     pack_item_id: str,
     *,
     workspace_id: str = DEFAULT_WORKSPACE_ID,
+    actor_principal_id: str | None = None,
+    clearance: int | None = None,
 ) -> None:
-    """Removes an item from a draft board pack and shifts subsequent positions down by 1."""
+    """Removes an item from a draft board pack and shifts subsequent positions down by 1.
+
+    An item whose document is above `clearance` reads as not found, like `add_pack_item`.
+    """
     item_uuid = uuid.UUID(str(pack_item_id))
 
     with store.pg(workspace_id) as conn:
         item = conn.execute(
-            "SELECT board_pack_id, position FROM board_pack_item WHERE id = %s FOR UPDATE",
-            (item_uuid,),
+            """
+            SELECT i.board_pack_id, i.document_id, i.position
+              FROM board_pack_item i JOIN document d ON d.id = i.document_id
+             WHERE i.id = %s AND (%s::int IS NULL OR d.sensitivity <= %s)
+               FOR UPDATE OF i
+            """,
+            (item_uuid, clearance, clearance),
         ).fetchone()
         if item is None:
             raise BoardPackValidationError(f"board_pack_item {pack_item_id} not found")
@@ -523,9 +578,13 @@ def remove_pack_item(
             """,
             (pack_uuid, deleted_pos),
         )
-        conn.execute(
-            "UPDATE board_pack SET version = version + 1, updated_at = now() WHERE id = %s",
+        pack_row = conn.execute(
+            "UPDATE board_pack SET version = version + 1, updated_at = now() WHERE id = %s RETURNING *",
             (pack_uuid,),
+        ).fetchone()
+        _audit_pack(
+            conn, pack_row, "item_removed", actor_principal_id, workspace_id,
+            item_id=str(item_uuid), document_id=str(item["document_id"]), position=deleted_pos,
         )
 
 
@@ -535,6 +594,7 @@ def publish_pack(
     expected_version: int,
     workspace_id: str = DEFAULT_WORKSPACE_ID,
     clearance: int,
+    actor_principal_id: str | None = None,
 ) -> BoardPack:
     """Publishes a draft board pack, locking its contents and setting published_at."""
     pack_uuid = uuid.UUID(str(pack_id))
@@ -570,6 +630,8 @@ def publish_pack(
         if row is None:
             raise StaleBoardPackError(f"board_pack {pack_id}: concurrent modification")
 
+        _audit_pack(conn, row, "published", actor_principal_id, workspace_id)
+
         visible = _fetch_items_for_packs(conn, [pack_uuid], clearance=clearance).get(str(pack_uuid), _NO_ITEMS)
 
     return _row_to_board_pack(row, visible)
@@ -582,6 +644,7 @@ def supersede_pack(
     expected_version: int,
     workspace_id: str = DEFAULT_WORKSPACE_ID,
     clearance: int,
+    actor_principal_id: str | None = None,
 ) -> tuple[BoardPack, BoardPack]:
     """Supersedes a published board pack with a new draft board pack version."""
     if not new_title or not new_title.strip():
@@ -591,11 +654,16 @@ def supersede_pack(
 
     with store.pg(workspace_id) as conn:
         old_row = conn.execute(
-            "SELECT meeting_id, status, version, version_no FROM board_pack WHERE id = %s FOR UPDATE",
+            "SELECT meeting_id, status, version, version_no, superseded_by_id"
+            " FROM board_pack WHERE id = %s FOR UPDATE",
             (old_uuid,),
         ).fetchone()
         if old_row is None:
             raise BoardPackNotFound(str(old_pack_id))
+        # The old row stays PUBLISHED after a supersede, so the status check alone would
+        # let a second supersede fork the chain into two v(n+1) drafts (#249 finding 7).
+        if old_row["superseded_by_id"] is not None:
+            raise BoardPackLockedError(f"board_pack {old_pack_id} has already been superseded")
 
         if old_row["version"] != expected_version:
             raise StaleBoardPackError(
@@ -659,6 +727,19 @@ def supersede_pack(
             """,
             (new_uuid, old_uuid, expected_version),
         ).fetchone()
+        if updated_old is None:
+            raise StaleBoardPackError(f"board_pack {old_pack_id}: concurrent modification")
+
+        # Two events, one per row that changed: the old pack was superseded, the new
+        # one came into being. `replacement_id` / `supersedes_id` link them.
+        _audit_pack(
+            conn, updated_old, "superseded", actor_principal_id, workspace_id,
+            replacement_id=str(new_uuid),
+        )
+        _audit_pack(
+            conn, new_row, "created", actor_principal_id, workspace_id,
+            supersedes_id=str(old_uuid), items_copied=len(old_items),
+        )
 
         new_visible = _fetch_items_for_packs(conn, [new_uuid], clearance=clearance).get(str(new_uuid), _NO_ITEMS)
         old_visible = _fetch_items_for_packs(conn, [old_uuid], clearance=clearance).get(str(old_uuid), _NO_ITEMS)
@@ -672,6 +753,7 @@ def reorder_pack_items(
     *,
     workspace_id: str = DEFAULT_WORKSPACE_ID,
     clearance: int,
+    actor_principal_id: str | None = None,
 ) -> BoardPack:
     """Reorders the items of a draft board pack to match `ordered_item_ids` (1..N)."""
     if not ordered_item_ids:
@@ -722,6 +804,10 @@ def reorder_pack_items(
             "UPDATE board_pack SET version = version + 1, updated_at = now() WHERE id = %s RETURNING *",
             (pack_uuid,),
         ).fetchone()
+        _audit_pack(
+            conn, row, "reordered", actor_principal_id, workspace_id,
+            ordered_item_ids=[str(i) for i in item_uuids],
+        )
 
         visible = _fetch_items_for_packs(conn, [pack_uuid], clearance=clearance).get(str(pack_uuid), _NO_ITEMS)
 

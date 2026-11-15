@@ -1,4 +1,4 @@
-import { apiGet, apiGetOrNull, apiPost } from "@/lib/http";
+import { apiDelete, apiGet, apiGetOrNull, apiPatch, apiPost } from "@/lib/http";
 
 /**
  * Agenda items — what a meeting will actually work through.
@@ -69,6 +69,21 @@ export type AgendaItemCreate = {
   position?: number | null;
 };
 
+/**
+ * Changes to an existing item. Mirrors `AgendaItemPatch` (`extra="forbid"`).
+ *
+ * `expected_version` is required: two people editing one agenda is the ordinary case
+ * the week before a board meeting, and a 409 beats silently keeping whichever save
+ * landed last. `null` clears a field, while an omitted key leaves it untouched.
+ */
+export type AgendaItemPatch = {
+  expected_version: number;
+  title?: string;
+  description?: string | null;
+  duration_minutes?: number | null;
+  presenter?: string | null;
+};
+
 export const agendaApi = {
   /** A meeting's agenda, in the server's `position ASC` order. */
   async list(meetingId: string): Promise<AgendaItem[]> {
@@ -89,5 +104,26 @@ export const agendaApi = {
    */
   async create(input: AgendaItemCreate): Promise<AgendaItem> {
     return apiPost<AgendaItem>("/agenda", input);
+  },
+
+  async update(id: string, patch: AgendaItemPatch): Promise<AgendaItem> {
+    return apiPatch<AgendaItem>(`/agenda/${encodeURIComponent(id)}`, patch);
+  },
+
+  /** The server renumbers the items after the removed one, so callers re-list. */
+  async remove(id: string, expectedVersion: number): Promise<void> {
+    await apiDelete(`/agenda/${encodeURIComponent(id)}`, expectedVersion);
+  },
+
+  /**
+   * Re-keys positions to match `orderedIds`, which must name every item of the
+   * meeting exactly once. No `expected_version`: the full order is the guard, and
+   * the server refuses a list that does not match the agenda it holds.
+   */
+  async reorder(meetingId: string, orderedIds: string[]): Promise<AgendaItem[]> {
+    return apiPost<AgendaItem[]>("/agenda/reorder", {
+      meeting_id: meetingId,
+      ordered_item_ids: orderedIds,
+    });
   },
 };

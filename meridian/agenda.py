@@ -25,6 +25,7 @@ import psycopg.errors
 
 from callosum import store
 from callosum.store import DEFAULT_WORKSPACE_ID
+from meridian import audit
 from meridian.meetings import MeetingNotFound
 
 # Non-mutable meeting statuses where agenda modifications are locked
@@ -115,6 +116,33 @@ def _assert_meeting_mutable(conn, meeting_id_uuid: uuid.UUID) -> None:
 # Public Operations
 # ---------------------------------------------------------------------------
 
+def _audit_item(conn, row: dict, action: str, actor_principal_id, workspace_id, **extra) -> None:
+    """Records one `agenda_item` event inside the caller's transaction (P5 CP5A).
+
+    Called only after the mutation is confirmed, so a refused write (locked meeting,
+    stale version, not found) has already raised and records nothing. The payload is
+    the item's facts after the write. `description` is deliberately left out: it is
+    free text with no governance meaning, and the trail is append-only, so anything
+    written here can never be corrected.
+    """
+    audit.record_audit_event(
+        conn,
+        aggregate_type="agenda_item",
+        aggregate_id=row["id"],
+        action=action,
+        actor_principal_id=actor_principal_id,
+        payload={
+            "meeting_id": str(row["meeting_id"]),
+            "title": row["title"],
+            "duration_minutes": row["duration_minutes"],
+            "presenter": row["presenter"],
+            "position": row["position"],
+            **extra,
+        },
+        workspace_id=workspace_id,
+    )
+
+
 def create_agenda_item(
     meeting_id: str,
     title: str,
@@ -124,6 +152,7 @@ def create_agenda_item(
     duration_minutes: str | int | None = None,
     presenter: str | None = None,
     position: int | None = None,
+    actor_principal_id: str | None = None,
 ) -> AgendaItem:
     """Creates a new agenda item attached to `meeting_id`.
 
@@ -194,6 +223,8 @@ def create_agenda_item(
         except psycopg.errors.UniqueViolation:
             raise AgendaItemValidationError("position collision during concurrent insert; please retry")
 
+        _audit_item(conn, row, "created", actor_principal_id, workspace_id)
+
     return _row_to_agenda_item(row)
 
 
@@ -231,6 +262,7 @@ def update_agenda_item(
     description=_UNSET,
     duration_minutes=_UNSET,
     presenter=_UNSET,
+    actor_principal_id: str | None = None,
 ) -> AgendaItem:
     """Updates mutable text and duration fields under version-guarded optimistic concurrency.
 
@@ -271,6 +303,7 @@ def update_agenda_item(
     if not sets:
         raise AgendaItemValidationError("no fields to update")
 
+    changed_fields = [clause.split(" = ")[0] for clause in sets]
     item_uuid = uuid.UUID(str(agenda_item_id))
 
     with store.pg(workspace_id) as conn:
@@ -301,6 +334,8 @@ def update_agenda_item(
         if row is None:
             raise StaleAgendaItemError(f"agenda_item {agenda_item_id}: concurrent modification")
 
+        _audit_item(conn, row, "updated", actor_principal_id, workspace_id, changed_fields=changed_fields)
+
     return _row_to_agenda_item(row)
 
 
@@ -309,6 +344,7 @@ def delete_agenda_item(
     *,
     expected_version: int,
     workspace_id: str = DEFAULT_WORKSPACE_ID,
+    actor_principal_id: str | None = None,
 ) -> None:
     """Deletes an agenda item and automatically shifts subsequent item positions down by 1.
 
@@ -319,7 +355,7 @@ def delete_agenda_item(
 
     with store.pg(workspace_id) as conn:
         item_row = conn.execute(
-            "SELECT meeting_id, position, version FROM agenda_item WHERE id = %s FOR UPDATE",
+            "SELECT * FROM agenda_item WHERE id = %s FOR UPDATE",
             (item_uuid,),
         ).fetchone()
         if item_row is None:
@@ -351,6 +387,7 @@ def delete_agenda_item(
             """,
             (meeting_uuid, deleted_pos),
         )
+        _audit_item(conn, item_row, "deleted", actor_principal_id, workspace_id)
 
 
 def reorder_agenda_items(
@@ -358,6 +395,7 @@ def reorder_agenda_items(
     ordered_item_ids: list[str],
     *,
     workspace_id: str = DEFAULT_WORKSPACE_ID,
+    actor_principal_id: str | None = None,
 ) -> list[AgendaItem]:
     """Atomically re-keys positions (1..N) according to `ordered_item_ids`.
 
@@ -402,5 +440,18 @@ def reorder_agenda_items(
             "SELECT * FROM agenda_item WHERE meeting_id = %s ORDER BY position ASC",
             (meeting_uuid,),
         ).fetchall()
+
+        # One event for the whole reorder, on the meeting: every item's position moved
+        # at once, and N identical-looking item events would bury the one fact that
+        # matters, the new order.
+        audit.record_audit_event(
+            conn,
+            aggregate_type="meeting",
+            aggregate_id=meeting_uuid,
+            action="reordered",
+            actor_principal_id=actor_principal_id,
+            payload={"scope": "agenda", "ordered_item_ids": [str(i) for i in requested_uuids]},
+            workspace_id=workspace_id,
+        )
 
     return [_row_to_agenda_item(r) for r in rows]

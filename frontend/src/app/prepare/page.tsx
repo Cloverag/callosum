@@ -26,6 +26,7 @@ import {
   type AgendaSuggestion,
 } from "@/lib/prep";
 import { Stages } from "./stages";
+import { AgendaEditor } from "./agenda-editor";
 
 /**
  * Prepare Meeting.
@@ -194,8 +195,17 @@ export default function PreparePage() {
         id="agenda"
         step={3}
         title="Agenda"
-        note="Proposed from unfinished business. Anything already on the agenda is left out."
+        note="The agenda as it stands, then what unfinished business proposes adding. Anything already on the agenda is left out of the proposals."
       >
+        {data !== null && (
+          <div className="mb-5">
+            <AgendaEditor
+              meetingId={data.meeting.id}
+              items={data.agenda}
+              onChange={(agenda) => setData((prev) => (prev ? { ...prev, agenda } : prev))}
+            />
+          </div>
+        )}
         {suggestions === null ? (
           <SkeletonRows n={3} />
         ) : suggestions.length === 0 ? (

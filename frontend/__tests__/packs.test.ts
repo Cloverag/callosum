@@ -205,3 +205,48 @@ describe("supersession and errors", () => {
     await expect(packsApi.get("pack-q3")).rejects.toBeInstanceOf(ApiError);
   });
 });
+
+describe("pack writes (P5 CP5B) hit the existing routes and name no workspace or clearance", () => {
+  let sent: { url: string; method: string; body: unknown }[] = [];
+  function record(payload: unknown, status = 200) {
+    sent = [];
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      sent.push({
+        url: String(input),
+        method: init?.method ?? "GET",
+        body: init?.body ? JSON.parse(String(init.body)) : undefined,
+      });
+      return status === 204 ? new Response(null, { status }) : new Response(JSON.stringify(payload), { status });
+    }) as unknown as typeof fetch;
+  }
+
+  it("maps each write to its route", async () => {
+    record({});
+    await packsApi.create({ meeting_id: "m", title: "T" });
+    await packsApi.rename("p", { expected_version: 2, title: "U" });
+    await packsApi.addItem("p", { document_id: "d" });
+    await packsApi.reorder("p", ["i2", "i1"]);
+    await packsApi.publish("p", 3);
+    await packsApi.supersede("p", { new_title: "V2", expected_version: 4 });
+
+    expect(sent.map((s) => `${s.method} ${s.url}`)).toEqual([
+      "POST /api/packs",
+      "PATCH /api/packs/p",
+      "POST /api/packs/p/items",
+      "POST /api/packs/p/reorder",
+      "POST /api/packs/p/publish",
+      "POST /api/packs/p/supersede",
+    ]);
+    expect(sent[4].body).toEqual({ expected_version: 3 });
+    expect(sent[3].body).toEqual({ ordered_item_ids: ["i2", "i1"] });
+    for (const s of sent) {
+      expect(JSON.stringify(s.body)).not.toMatch(/clearance|workspace/);
+    }
+  });
+
+  it("removes an item by its own id and tolerates the 204", async () => {
+    record(null, 204);
+    await expect(packsApi.removeItem("i-1")).resolves.toBeUndefined();
+    expect(sent[0]).toMatchObject({ method: "DELETE", url: "/api/packs/items/i-1" });
+  });
+});

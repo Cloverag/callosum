@@ -393,6 +393,34 @@ class TestGrantAndRevoke:
         finally:
             _cleanup(workspace_ids=[ws], principal_ids=[founder, director, newcomer])
 
+    def test_a_lower_member_cannot_demote_a_higher_one_through_grant(self):
+        """#249 finding 1: the upsert path must cover the target's CURRENT role.
+
+        An observer may grant `observer` (it does not exceed their own clearance), but
+        aimed at the founder that grant is a demotion — refused, founder unchanged.
+        """
+        founder = _principal()
+        observer = _principal(role="observer")
+        ws = None
+        try:
+            ws = workspaces.create_workspace("Grant Demote", None, founder)
+            workspaces.grant_membership(
+                observer, "observer", workspace_id=ws, actor_principal_id=founder,
+            )
+
+            with pytest.raises(workspaces.EscalationDeniedError):
+                workspaces.grant_membership(
+                    founder, "observer", workspace_id=ws, actor_principal_id=observer,
+                )
+
+            row = _admin_fetch(
+                "SELECT role FROM membership WHERE principal_id = %s AND workspace_id = %s",
+                (founder, ws),
+            )[0]
+            assert row["role"] == "founder"
+        finally:
+            _cleanup(workspace_ids=[ws], principal_ids=[founder, observer])
+
     def test_a_cross_workspace_grant_is_denied(self):
         """G.
 

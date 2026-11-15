@@ -241,10 +241,13 @@ const insights: DashboardInsights = {
     // Wire these at P3, from store.pending() and store.failure_stats().
     pendingReview: null,
     quarantined: null,
-    entities: 38,
-    edges: 40,
-    relationTypes: 14,
-    documents: 10, // documents seeded into the graph (GOLD_GROUPS); data/demo/ holds 16 files
+    // Public portion of the gold graph: 38 / 40 / 14 / 10 minus the one restricted
+    // entity, edge, relation type and document, which this bundle must not carry
+    // (#213 C2). Counted from src/lib/graph.ts.
+    entities: 37,
+    edges: 39,
+    relationTypes: 13,
+    documents: 9, // public documents seeded into the graph; data/demo/ holds 16 files
   },
   // Every number here is measured, reproducible, and traceable to a file in the
   // repo. Nothing in this block is invented — that is the whole point of it.
@@ -302,7 +305,8 @@ const insights: DashboardInsights = {
   // Every row below was computed from the real gold graph, not estimated:
   //   .venv/bin/python -c "from callosum.evaluate import GOLD_GROUPS; ..."
   // accumulating unique entities and unique (source, relation, target) triples
-  // in GOLD_GROUPS order. Ends at 38 / 40, matching `memory` above.
+  // in GOLD_GROUPS order. Ends at 37 / 39, matching `memory` above. The confidential
+  // compensation review is omitted: this ships to every visitor (#213 C2).
   memoryGrowth: [
     { document: "board_meeting_12_transcript", label: "M12", entities: 7, edges: 6 },
     { document: "board_meeting_13_transcript", label: "M13", entities: 15, edges: 16 },
@@ -313,7 +317,6 @@ const insights: DashboardInsights = {
     { document: "board_meeting_16_transcript", label: "M16", entities: 34, edges: 37 },
     { document: "messy_board_followup_email", label: "Board email", entities: 35, edges: 38 },
     { document: "messy_audit_followup_email", label: "Audit email", entities: 37, edges: 39 },
-    { document: "compensation_review_CONFIDENTIAL", label: "Comp review", entities: 38, edges: 40 },
   ],
   // AUDITED 2026-08-01 (CP-E). Was `{decisionsToSign: 2, docsToIngest: 1}`, printed
   // in the "Needs you" list as if counted.

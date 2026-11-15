@@ -5,7 +5,6 @@ import { Network } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/vendor/skeleton";
-import { cn } from "@/lib/utils";
 import { graphApi, NODE_TYPE_LABEL, type GraphView } from "@/lib/graph";
 import { entityTypeDistribution, relationTypeDistribution } from "@/lib/graph-stats";
 import { KnowledgeGraph, EvidencePanel, type GraphFocus } from "./knowledge-graph";
@@ -16,23 +15,21 @@ import { OntologyBars } from "./ontology-bars";
  * Institutional Memory — the verified knowledge graph itself.
  *
  * Every other surface in the product reports *about* the graph. This one is the
- * graph, and it is the strongest thing the project has to show: 38 entities and
- * 40 relationships, each carrying the verbatim quote it was extracted from.
+ * graph, and it is the strongest thing the project has to show: the public portion
+ * of the gold graph, each relationship carrying the verbatim quote it came from.
  *
- * The clearance switch is not a demo toy. It exercises the same rule the backend
- * enforces in SQL and in Cypher: an investor asking about compensation is not
- * shown the node and is *told* something was withheld, as a count and never as a
- * title. Silent withholding would be the failure this project exists to prevent.
+ * There is no clearance switch. This page reads a snapshot shipped to every
+ * visitor, so it carries no restricted rows and cannot demonstrate RBAC; claiming
+ * it did was #213 C2. The withheld badge stays for the P6 endpoint (#100).
  */
 export default function MemoryPage() {
   const [view, setView] = useState<GraphView | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [focus, setFocus] = useState<GraphFocus | null>(null);
-  const [asFounder, setAsFounder] = useState(true);
 
   useEffect(() => {
     let live = true;
-    graphApi.get(asFounder).then((v) => {
+    graphApi.get().then((v) => {
       if (!live) return;
       setView(v);
       // Drop a selection that this clearance can no longer see.
@@ -54,7 +51,7 @@ export default function MemoryPage() {
     return () => {
       live = false;
     };
-  }, [asFounder]);
+  }, []);
 
   /** Selecting a node answers a more specific question than any filter, so it
    *  clears the filter rather than compounding with it. */
@@ -81,34 +78,6 @@ export default function MemoryPage() {
         title="Institutional Memory"
         description="Every relationship carries the quote it came from. No quote, no edge."
         icon={<Network />}
-        actions={
-          <div
-            className="inline-flex items-center rounded-[12px] border border-border bg-surface-raised p-0.5"
-            role="group"
-            aria-label="View the graph as"
-          >
-            {[
-              { key: true, label: "Founder", hint: "Full clearance" },
-              { key: false, label: "Investor", hint: "Restricted clearance" },
-            ].map((opt) => (
-              <button
-                key={String(opt.key)}
-                type="button"
-                onClick={() => setAsFounder(opt.key)}
-                aria-pressed={asFounder === opt.key}
-                title={opt.hint}
-                className={cn(
-                  "rounded-[10px] px-3 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised",
-                  asFounder === opt.key
-                    ? "bg-accent-subtle font-medium text-accent-emphasis"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                View as {opt.label}
-              </button>
-            ))}
-          </div>
-        }
       />
 
       <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
@@ -144,12 +113,12 @@ export default function MemoryPage() {
 
       {/* Stacked, not side-by-side. The shell already spends 248px on the sidebar
           and 368px on the AI rail, so a two-column split left the canvas about
-          215px wide — unreadable for 38 nodes. Tailwind's breakpoints measure the
+          215px wide — unreadable for 37 nodes. Tailwind's breakpoints measure the
           viewport, not this container, so the split looked fine at `lg:` and was
           broken in practice. Full width for the graph; evidence below it. */}
       <div className="mt-5 flex flex-col gap-5">
         {/* Grows with the viewport, never below the old fixed 30rem. A force layout of
-            38 labelled boxes has to be framed by fitView, so pane height sets the zoom
+            37 labelled boxes has to be framed by fitView, so pane height sets the zoom
             the graph opens at — at 30rem it settled around 0.45 and the labels were
             barely legible. */}
         <div className="h-[max(30rem,calc(100vh-18rem))] overflow-hidden rounded-[16px] border border-border bg-surface-raised shadow-card">
