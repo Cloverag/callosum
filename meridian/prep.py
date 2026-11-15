@@ -54,12 +54,13 @@ def get_meeting_readiness(
         ).fetchone()
         open_decisions_count = int(dec_row["n"]) if dec_row else 0
 
-        # Count overdue commitments
+        # Overdue = `Commitment.is_overdue`: any still-open status, due before today.
+        # DATE vs CURRENT_DATE, not NOW(): a timestamp made today's items overdue at midnight (#249).
         com_row = conn.execute(
             """
             SELECT COUNT(*) AS n
               FROM commitment
-             WHERE workspace_id = %s AND status = 'open' AND due_date < NOW()
+             WHERE workspace_id = %s AND status IN ('open', 'in_progress', 'blocked') AND due_date < CURRENT_DATE
             """,
             (workspace_id,),
         ).fetchone()
@@ -114,7 +115,7 @@ def get_agenda_suggestions(
               LEFT JOIN board_member bm
                      ON bm.id = c.owner_board_member_id
                     AND bm.workspace_id = c.workspace_id
-             WHERE c.workspace_id = %s AND c.status = 'open' AND c.due_date < NOW()
+             WHERE c.workspace_id = %s AND c.status IN ('open', 'in_progress', 'blocked') AND c.due_date < CURRENT_DATE
              ORDER BY c.due_date ASC
              LIMIT 5
             """,
