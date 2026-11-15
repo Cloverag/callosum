@@ -103,7 +103,9 @@ class _World:
         )
 
     def close(self) -> None:
-        for table in ("audit_event", "resolution_vote", "resolution", "commitment",
+        # `commitment` before `resolution`: a bridged commitment now cites its resolution
+        # (`commitment_resolution_fk`, #250), so the other order violates the key.
+        for table in ("audit_event", "resolution_vote", "commitment", "resolution",
                       "board_member", "decision", "agenda_item", "meeting", "membership"):
             _admin(f"DELETE FROM {table} WHERE workspace_id = %s", (self.ws,))
         _admin("DELETE FROM workspace WHERE id = %s", (self.ws,))

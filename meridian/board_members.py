@@ -32,7 +32,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 
-from callosum import store
+from callosum import identity, store
 from callosum.store import DEFAULT_WORKSPACE_ID
 
 from meridian import audit
@@ -97,10 +97,22 @@ def assert_may_act_for(
     Allowed when the member's login IS the actor, or the actor holds clearance
     `RECORD_FOR_OTHERS_CLEARANCE` or above. `actor_principal_id=None` is the non-HTTP
     caller (CLI, tests); every API route passes the resolved principal.
+
+    `actor_clearance=None` means "not supplied", never "none": the actor's level is then
+    derived from their active membership's `role` on this RLS-scoped connection — the
+    same rule `workspaces.grant_membership` follows, that an actor's clearance comes from
+    the database rather than the caller. Denying instead refused a director's direct
+    domain call that only passed its id for attribution.
     """
     if actor_principal_id is None:
         return
-    if actor_clearance is not None and actor_clearance >= RECORD_FOR_OTHERS_CLEARANCE:
+    if actor_clearance is None:
+        m = conn.execute(
+            "SELECT role FROM membership WHERE principal_id = %s AND active",
+            (uuid.UUID(str(actor_principal_id)),),
+        ).fetchone()
+        actor_clearance = identity.ROLE_TO_CLEARANCE.get(m["role"], -1) if m else -1
+    if actor_clearance >= RECORD_FOR_OTHERS_CLEARANCE:
         return
     row = conn.execute(
         "SELECT principal_id FROM board_member WHERE id = %s", (member_id,)
