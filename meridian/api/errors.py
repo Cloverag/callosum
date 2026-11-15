@@ -40,6 +40,7 @@ from meridian import (
     meetings,
     minutes,
     packs,
+    prep,
     resolutions,
     workspaces,
 )
@@ -150,6 +151,11 @@ _EXPLICIT: tuple[tuple[type[BaseException], int, str, str | None], ...] = (
     # class docstring, which says that is deliberate rather than incidental.)
     (workspaces.MembershipRequestAlreadyDecidedError, HTTPStatus.CONFLICT, CONFLICT, None),
     (workspaces.MembershipRequestAlreadyPendingError, HTTPStatus.CONFLICT, CONFLICT, None),
+    # 409: no pack to publish is the meeting's state refusing a correct request. Without
+    # this entry pass 3 would answer 422 and tell the client to fix its input (#239, #249).
+    (prep.MeetingPrepError, HTTPStatus.CONFLICT, CONFLICT, None),
+    # 403: recording a vote or update in another board member's name (#249).
+    (board_members.ActingForMemberDenied, HTTPStatus.FORBIDDEN, FORBIDDEN, None),
     # Infrastructure, not domain. A provider being down or a graph write failing is not
     # the caller's mistake, so 503 rather than a 4xx — see `test_api_errors.py`, which
     # asserts no *domain* exception falls through to a 500. These two are exempt by
@@ -184,6 +190,7 @@ COVERED_MODULES = (
     meetings,
     minutes,
     packs,
+    prep,
     resolutions,
     workspaces,
 )
@@ -290,6 +297,8 @@ def install_exception_handlers(app) -> None:
         packs.BoardPackError,
         resolutions.ResolutionError,
         workspaces.WorkspaceError,
+        # A `ValueError`, not a `MeetingError`, so it needs its own registration.
+        prep.MeetingPrepError,
         PrincipalNotFound,
         WorkspaceRequired,
         llm.EmbeddingProviderError,

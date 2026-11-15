@@ -3,7 +3,7 @@
 import { AlertTriangle, CalendarClock, MessageSquare, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import {
   COMMITMENT_STATUS_LABEL,
   COMMITMENT_STATUS_TONE,
@@ -26,14 +26,6 @@ function formatDay(day: string): string {
   });
 }
 
-function formatStamp(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-}
 
 /**
  * One commitment, its owner, its deadline, and the trail of what happened to it.
@@ -128,7 +120,7 @@ export function CommitmentCard({
         )}
         {commitment.completed_at && (
           <span className="text-muted-foreground">
-            Completed {formatStamp(commitment.completed_at)}
+            Completed {formatDate(commitment.completed_at)}
           </span>
         )}
       </p>
@@ -146,7 +138,7 @@ export function CommitmentCard({
                 <div className="min-w-0 flex-1">
                   <p className="text-sm text-foreground">{u.note}</p>
                   <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-subtle-foreground">
-                    <span>{formatStamp(u.created_at)}</span>
+                    <span>{formatDate(u.created_at)}</span>
                     {author && (
                       <>
                         <span aria-hidden>·</span>

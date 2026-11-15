@@ -192,7 +192,8 @@ async function send<T>(method: string, path: string, body?: unknown, params?: Pa
   const response = await fetch(`${API_BASE}${path}${query(params)}`, {
     method,
     credentials: "same-origin",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    // `X-Requested-With` is the API's CSRF check on cookie-carrying writes (#249).
+    headers: { Accept: "application/json", "Content-Type": "application/json", "X-Requested-With": "fetch" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 
