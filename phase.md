@@ -15,7 +15,7 @@ fixes — so every figure moves again when it merges.
 | Product track | **4 / 13** accepted (P0, P1, P2, P4). **P4 accepted 2026-10-08** (#224); P3 frozen, exit unclaimed; P5 in flight. |
 | Public demo | [callosum-demo.vercel.app/demo](https://callosum-demo.vercel.app/demo) |
 | Backend | gated **985 passed** / 5 llm-deselected (CI run 37816516227); ungated **399 passed**, 47 skipped |
-| Frontend | **354** tests, 27 suites, Next **16.3.8** |
+| Frontend | **354** tests, 27 suites, Next **16.4.6** |
 | API | **79 operations** / 61 paths / 14 tags (`POST /api/ask` in; `/auth/demo/*` out of schema) |
 | Migrations | 30, head `0030_document_principal_role` |
 | ADRs | 18 numbered, 001–018, no gaps |
