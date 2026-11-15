@@ -527,7 +527,11 @@ def intake_document(
                     workspace_id=str(ws_uuid),
                 )
         except psycopg.errors.UniqueViolation as exc:
-            _try_unbridge(neo_driver, chunk_ids, ws_uuid)
+            # No unbridge here (#249 finding 8). Chunk ids are derived from the content
+            # hash, so the bridge nodes this request MERGEd are the very nodes the
+            # winning intake owns; deleting them would strip its MENTIONS edges and
+            # make its graph facts unreadable for good.
+            #
             # The race: another intake committed the same content between the pre-check
             # and this INSERT. The caller receives the identical 409, so they learn the
             # identical fact — auditing only the pre-check path would leave a hole in
