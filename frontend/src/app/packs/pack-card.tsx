@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { FieldValue } from "@/components/ui/field-value";
 import { withheld as withheldState } from "@/lib/field-state";
 import { Card } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import {
   PACK_STATUS_LABEL,
   PACK_STATUS_TONE,
@@ -19,17 +19,6 @@ import {
 } from "@/lib/packs";
 import { DOC_TYPE_LABEL, SENSITIVITY_LABEL, type Document } from "@/lib/documents";
 
-function formatDate(iso: string): string {
-  // Pinned locale and zone: a date rendered from the browser's locale differs
-  // between server and client and produces a hydration mismatch. Same fix as
-  // the decisions and entity-conflicts pages.
-  return new Date(iso).toLocaleDateString("en-US", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-}
 
 /**
  * One board pack and the documents in it.

@@ -194,6 +194,7 @@ def add_pack_item(
         agenda_item_id=str(payload.agenda_item_id) if payload.agenda_item_id else None,
         position=payload.position,
         note=payload.note,
+        clearance=principal.clearance,
     )
 
 
@@ -209,6 +210,7 @@ def remove_pack_item(pack_item_id: uuid.UUID, principal: CurrentPrincipal) -> No
         str(pack_item_id),
         workspace_id=principal.workspace_id,
         actor_principal_id=str(principal.id) if principal.id else None,
+        clearance=principal.clearance,
     )
 
 
