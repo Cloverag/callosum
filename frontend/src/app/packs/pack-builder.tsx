@@ -6,15 +6,13 @@ import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { FieldValue } from "@/components/ui/field-value";
 import { withheld as withheldState } from "@/lib/field-state";
-import { ApiError } from "@/lib/http";
+import { asApiError } from "@/components/ui/load-failed";
+import type { ApiError } from "@/lib/http";
 import { serverMessage } from "@/lib/error-text";
 import { isEditable, packsApi, resolveItems, type BoardPack } from "@/lib/packs";
 import type { Document } from "@/lib/documents";
 import { meetingsApi, type Meeting } from "@/lib/meetings";
 
-function asApiError(err: unknown): ApiError {
-  return err instanceof ApiError ? err : new ApiError(0, "network", "Could not reach the server.");
-}
 
 /**
  * Builds a draft pack and publishes it.
