@@ -424,8 +424,14 @@ def add_pack_item(
     position: int | None = None,
     note: str | None = None,
     actor_principal_id: str | None = None,
+    clearance: int | None = None,
 ) -> BoardPackItem:
-    """Adds a document item to a draft board pack."""
+    """Adds a document item to a draft board pack.
+
+    A document above `clearance` reads as not found, identical to a missing one, so
+    this cannot be used to probe or file restricted documents (#249 finding 6).
+    `None` is the non-HTTP caller only.
+    """
     pack_uuid = uuid.UUID(str(pack_id))
     doc_uuid = uuid.UUID(str(document_id))
     ag_uuid = uuid.UUID(str(agenda_item_id)) if agenda_item_id else None
@@ -447,7 +453,8 @@ def add_pack_item(
 
         # Validate document exists
         doc = conn.execute(
-            "SELECT id FROM document WHERE id = %s", (doc_uuid,)
+            "SELECT id FROM document WHERE id = %s AND (%s::int IS NULL OR sensitivity <= %s)",
+            (doc_uuid, clearance, clearance),
         ).fetchone()
         if doc is None:
             raise BoardPackValidationError(f"document {document_id} not found")
@@ -529,14 +536,23 @@ def remove_pack_item(
     *,
     workspace_id: str = DEFAULT_WORKSPACE_ID,
     actor_principal_id: str | None = None,
+    clearance: int | None = None,
 ) -> None:
-    """Removes an item from a draft board pack and shifts subsequent positions down by 1."""
+    """Removes an item from a draft board pack and shifts subsequent positions down by 1.
+
+    An item whose document is above `clearance` reads as not found, like `add_pack_item`.
+    """
     item_uuid = uuid.UUID(str(pack_item_id))
 
     with store.pg(workspace_id) as conn:
         item = conn.execute(
-            "SELECT board_pack_id, document_id, position FROM board_pack_item WHERE id = %s FOR UPDATE",
-            (item_uuid,),
+            """
+            SELECT i.board_pack_id, i.document_id, i.position
+              FROM board_pack_item i JOIN document d ON d.id = i.document_id
+             WHERE i.id = %s AND (%s::int IS NULL OR d.sensitivity <= %s)
+               FOR UPDATE OF i
+            """,
+            (item_uuid, clearance, clearance),
         ).fetchone()
         if item is None:
             raise BoardPackValidationError(f"board_pack_item {pack_item_id} not found")
