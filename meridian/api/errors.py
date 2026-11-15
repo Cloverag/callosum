@@ -40,6 +40,7 @@ from meridian import (
     meetings,
     minutes,
     packs,
+    prep,
     resolutions,
     workspaces,
 )
@@ -132,6 +133,9 @@ _EXPLICIT: tuple[tuple[type[BaseException], int, str, str | None], ...] = (
     # Named to avoid `errors.py`'s own "NotFound" name-suffix pass, deliberately —
     # see the class docstring in workspaces.py.
     (workspaces.LastActiveMembershipError, HTTPStatus.CONFLICT, CONFLICT, None),
+    # 409: no pack to publish is the meeting's state refusing a correct request. Without
+    # this entry pass 3 would answer 422 and tell the client to fix its input (#239, #249).
+    (prep.MeetingPrepError, HTTPStatus.CONFLICT, CONFLICT, None),
     # 403: recording a vote or update in another board member's name (#249).
     (board_members.ActingForMemberDenied, HTTPStatus.FORBIDDEN, FORBIDDEN, None),
     # Infrastructure, not domain. A provider being down or a graph write failing is not
@@ -168,6 +172,7 @@ COVERED_MODULES = (
     meetings,
     minutes,
     packs,
+    prep,
     resolutions,
     workspaces,
 )
@@ -274,6 +279,8 @@ def install_exception_handlers(app) -> None:
         packs.BoardPackError,
         resolutions.ResolutionError,
         workspaces.WorkspaceError,
+        # A `ValueError`, not a `MeetingError`, so it needs its own registration.
+        prep.MeetingPrepError,
         PrincipalNotFound,
         WorkspaceRequired,
         llm.EmbeddingProviderError,
