@@ -240,13 +240,17 @@ class TestUnknownExceptions:
         assert mapped.detail == "Internal error."
 
 
-class TestMeetingPrepIsA400:
-    """Authorized caller, nothing to publish — not a 500 and not a swallowed Exception."""
+class TestMeetingPrepIsA409:
+    """Authorized caller, nothing to publish — not a 500 and not a swallowed Exception.
 
-    def test_missing_pack_is_400(self):
+    409, not 400: the request is right and the meeting's state refuses it (master since
+    #250, and #241). The caller's move is to build a pack, not to change their input.
+    """
+
+    def test_missing_pack_is_409(self):
         mapped = classify(prep.MeetingPrepError("No board pack exists for meeting x"))
-        assert mapped.status == 400
-        assert mapped.code == INVALID
+        assert mapped.status == 409
+        assert mapped.code == CONFLICT
 
 
 class TestWireShape:

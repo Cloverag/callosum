@@ -185,39 +185,28 @@ intake has shipped without one.
 
 | | |
 |---|---|
-| Backend tests | **987** passing, gated suite |
+| Backend tests | **995** collected, gated suite (410 ungated) |
 | Frontend tests | **355** passing, 28 suites |
 | API | **79 operations** across 61 paths, 14 tags (health is untagged) |
 | Migrations | 30, head `0030_document_principal_role`, forward and reverse tested |
 | Architecture decisions | 18 ADRs |
 | Commits | 565 (`git rev-list --count 91f0ea5`) |
 
-Measured on `91f0ea5` (2026-10-08), not carried forward — this branch, which is `master`
-`f5bcf24` plus the #213 fixes (PR #215) and this compliance stack. Both test figures are a
-**real run**: CI run [37822687882](https://github.com/Cloverag/callosum/actions/runs/37822687882), the
-gated backend tier against Postgres 16 and Neo4j service containers, and Jest with a clean
-Next build on Next 16.3.8. The API, migration, ADR and commit figures all derive at
-`91f0ea5`, and the parenthetical names the pin rather than a moving ref, so the command
-printed beside the figure reproduces it (see #159).
+Backend, API and migration figures were re-derived for #217 on its branch tip `88d0363` merged
+with master `aec9555` (2026-11-16). The backend figure is a **collection count**
+(`CALLOSUM_RUN_INTEGRATION=1 pytest --collect-only`), **not a pass count**: pass and fail come
+from this PR's CI run. The API figure is counted from `app.openapi()`, which reports tags;
+migrations from `meridian/migrations/versions/`. The frontend figure is a **real run**:
+CI run [37822687882](https://github.com/Cloverag/callosum/actions/runs/37822687882) at `91f0ea5`
+(this branch before the merge), Jest plus a clean Next build on Next 16.3.8.
 
-**This branch is stacked on PR #215**, so its delta splits two ways and both are
-reconciled by collecting every file on both commits and diffing, not by arithmetic:
-**+2 over #215** (`tests/test_init_membership_scope.py`, for #201) and **+14 over master's
-973** once #215's twelve are included. The frontend is **+1 suite / +1 test** over #215
-(`frontend/__tests__/ungated-routes.test.ts`). Merge #215 first; this one carries its
-commits as ancestors.
-
-**The API row counts tags, not routers.** The previous wording said "12 routers" and the
-number was taken from `app.openapi()`, which reports tags — `/health` carries no tag, so
-router count and tag count are not the same figure. Renamed rather than re-derived,
-because the honest fix for a mislabelled number is the label.
-
-**This block had been stale since 2026-08-24.** It advertised 786 / 290 / 75 ops / head
-`0025` at a pin of `8dd2d3d` while five weeks of merged work went by — versions, meeting
-assignment, the leak sweep, the demo deployment, the eval strata, #166's audit coverage, the
-P4 gate, and P5's agenda and pack work. None of those re-pinned it. Replaced rather than
-appended to: two pinned figures in one table is how a reader loses the ability to tell a
-stale number from a regression.
+This PR's backend delta is **+13 on master's 982**, reconciled by diffing the
+collected test ids, not by arithmetic: `tests/test_api_errors.py` +1,
+`tests/test_ask_api.py` +3,
+`tests/test_documents_api.py` +1,
+`tests/test_init_membership_scope.py` +2,
+`tests/test_migration_immutability.py` +1,
+`tests/test_public_surface.py` +5.
 
 **P3 is frozen, not accepted** — of its three exit criteria one is met, one is partial and
 one is not met, because the accessibility and error-state checkpoints were deliberately
@@ -307,6 +296,20 @@ cd /path/to/callosum/frontend
 npm install && npm run dev                    # http://localhost:3000
 ```
 
+**Calling the API yourself** (a script, `curl`, another client) — three rules the web
+app already follows:
+
+- **Writes that carry the session cookie need an `X-Requested-With` header** (any value).
+  It is the CSRF check: `SameSite=Lax` alone treats other localhost ports and sibling
+  subdomains as same-site. A cookie-carrying `POST`/`PATCH`/`PUT`/`DELETE` without it is
+  refused with 403.
+- **Document intake answers once the text is stored, before extraction finishes.** The
+  model reads it in the background, so proposals and quarantine rows show up shortly
+  after the `201`, not in it. `raw_text` is capped at 1,000,000 characters.
+- **pgvector is pinned to `0.8.0`** (`docker-compose.yml` and CI), because vector search
+  depends on its iterative index scan to fill `k` after the clearance filter. An existing
+  local volume keeps whatever image created it — `docker compose pull` and recreate it.
+
 Check the API is up before loading a page:
 
 ```bash
@@ -323,14 +326,14 @@ routes. Set `MERIDIAN_API_ORIGIN` if the API is not on `:8000`.
 ```bash
 docker compose up -d && docker compose ps               # all three healthy FIRST
 .venv/bin/callosum eval-mechanism                        # deterministic gate, no LLM
-CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 987 tests, real stores
+CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 995 tests, real stores
 cd frontend && npx jest && npm run build                 # 355 tests, 28 suites
 ```
 
 `CALLOSUM_RUN_INTEGRATION=1` runs against real Postgres and Neo4j, so the compose stack
-must be up. Without the gate the suite is **401 passed, 47 skipped**; with it,
-**987 passed**. Run it with the containers stopped and the gated tests fail on
-connection errors — the failure looks like a broken build and is a missing database.
+must be up. Without the gate the suite selects 410 tests; with it, 995. Run it with the
+containers stopped and the 585 gated tests fail on connection errors — the failure looks
+like a broken build and is a missing database.
 
 ---
 
@@ -362,6 +365,20 @@ Stated because a limitation a reader finds is worth less than one they are told.
   (#123), and the mechanism gate is **not** part of it — that figure is still a local run.
 - **Observed-tier numbers are a single run of a single model.** Multi-run stability has not
   been characterised.
+- **Open items from the #249 audit.** These are not fixed yet, and the reasons are given here:
+  - **No connection pool.** `store.pg()` still opens a fresh Postgres connection on every
+    call, so one request opens 2–4 of them. A pool belongs in `store.py`, which is frozen,
+    and it needs a new dependency.
+  - **A name shared by two entity types gets the edge twice.** `apply_relationship` matches endpoints by
+    name alone. It now refuses to mark an edge approved when it wrote nothing, but if one
+    name exists under two types, both nodes still get the edge.
+  - **The vector-search change needs an evaluation run.** It touches frozen
+    `retrieve.py`; `scripts/eval.sh` has to be run and compared before it is treated as
+    measured.
+  - **Stances are recorded by name.** A decision stance is keyed by `person_name`, which
+    has no link to a login, so stances cannot get the "your own seat only" check that
+    votes and commitment updates now have. Their audit rows do now name who recorded
+    them.
 
 ---
 

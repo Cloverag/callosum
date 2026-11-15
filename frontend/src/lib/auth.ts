@@ -37,8 +37,14 @@ export async function authFetch<T>(path: string, init?: RequestInit): Promise<T>
   try {
     response = await fetch(`/auth${path}`, {
       credentials: "same-origin",
-      headers: { Accept: "application/json" },
       ...init,
+      // Merged, not replaced by `init.headers`: `X-Requested-With` is the API's CSRF
+      // check on cookie-carrying writes such as logout (#249).
+      headers: {
+        Accept: "application/json",
+        "X-Requested-With": "fetch",
+        ...(init?.headers as Record<string, string> | undefined),
+      },
     });
   } catch {
     // A network failure rejects with a TypeError, not an ApiError. Code 0 marks

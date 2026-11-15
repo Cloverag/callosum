@@ -290,6 +290,13 @@ def vector_search(
               file=sys.stderr)
         return [], 0
 
+    # The HNSW index returns ~ef_search candidates and RLS + the clearance predicate
+    # filter them AFTER the scan, so a small tenant beside a large one, or a low
+    # clearance on a mostly confidential corpus, could get few or no hits. Iterative
+    # scan keeps walking the index until LIMIT is met; strict_order keeps the ranking
+    # exact (#249 finding 17; pgvector >= 0.8, pinned in docker-compose and CI).
+    conn.execute("SET LOCAL hnsw.iterative_scan = strict_order")
+
     hits = conn.execute(
         """
         SELECT c.id, c.text, d.title, 1 - (c.embedding <=> %s::vector) AS score
