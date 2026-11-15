@@ -182,8 +182,8 @@ def publish_preread(
             """
             SELECT id, version_no, status
               FROM board_pack
-             WHERE meeting_id = %s AND status != 'archived'
-             ORDER BY version_no DESC
+             WHERE meeting_id = %s
+             ORDER BY version_no DESC, created_at DESC
              LIMIT 1
              FOR UPDATE
             """,
@@ -208,6 +208,10 @@ def publish_preread(
                 "version_no": pack_row["version_no"],
                 "status": pack_row["status"],
             }
+
+        # The same guard `packs.publish_pack` applies: a pack for a meeting that has
+        # already happened (or was cancelled) is locked, pre-read or not (#249 finding 16).
+        packs._assert_meeting_pre_meeting(conn, m_uuid)
 
         conn.execute(
             """
