@@ -273,38 +273,52 @@ class TestANonApproverGrantIsDeferred:
     ):
         """The test that rules out the rejected design (migration `0031`'s docstring).
 
-        An investor (clearance 1) may legitimately request `observer` (0) for anybody,
-        anti-escalation permits it, and the target here is an ACTIVE DIRECTOR. Had
-        pending been a state on the `membership` row, filing this would have deactivated
-        or demoted them — turning the approval requirement into a way for the least
-        privileged role in the workspace to suspend one of the most privileged.
+        An investor (clearance 1) requests `observer` (0) for an ACTIVE PEER at their own
+        level — anti-escalation permits it, so a request is filed. Had pending been a
+        state on the `membership` row, filing this would have deactivated or demoted the
+        peer before anyone approved anything. Their row must come out byte-identical, and
+        they must still resolve at their own clearance.
 
-        The director's row must come out byte-identical, and they must still resolve at
-        their own clearance.
+        The target used to be an active director. Since #250 that request is refused
+        before it is filed — a grant may not change a membership above the actor's own
+        level (#232 part a), and anti-escalation runs before the approver branch — which
+        is the stronger answer to the same threat; the second half asserts it.
         """
         client, founder, ws = _signed_in("defer_nodos", role="founder")
         investor, investor_sub = _principal(role="investor")
         client_i = _join(investor, ws, "investor", investor_sub)
+        peer, _ = _principal(role="investor")
+        _member(peer, ws, "investor")
         director, _ = _principal(role="director")
         _member(director, ws, "director")
         try:
-            before = _memberships(director, ws)[0]
+            before = _memberships(peer, ws)[0]
 
             resp = client_i.post(
-                "/api/membership", json={"principal_id": director, "role": "observer"}
+                "/api/membership", json={"principal_id": peer, "role": "observer"}
             )
             assert resp.status_code == 202, resp.text
 
-            assert _memberships(director, ws)[0] == before
+            assert _memberships(peer, ws)[0] == before
 
             from callosum import store
 
             with store.pg(ws) as conn:
-                resolved = identity.resolve_principal_by_id(conn, director, workspace_id=ws)
-            assert resolved.role == "director"
-            assert resolved.clearance == identity.ROLE_TO_CLEARANCE["director"]
+                resolved = identity.resolve_principal_by_id(conn, peer, workspace_id=ws)
+            assert resolved.role == "investor"
+            assert resolved.clearance == identity.ROLE_TO_CLEARANCE["investor"]
+
+            # The least privileged role cannot even queue a demotion of a director.
+            director_before = _memberships(director, ws)[0]
+            filed = len(_requests(ws))
+            refused = client_i.post(
+                "/api/membership", json={"principal_id": director, "role": "observer"}
+            )
+            assert refused.status_code == 403, refused.text
+            assert _memberships(director, ws)[0] == director_before
+            assert len(_requests(ws)) == filed
         finally:
-            _cleanup([founder, investor, director], [ws])
+            _cleanup([founder, investor, peer, director], [ws])
 
     def test_anti_escalation_still_refuses_before_a_request_is_filed(self, restore_client):
         """A request that could never be approved is not filed at all.
