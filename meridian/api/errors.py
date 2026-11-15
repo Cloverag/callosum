@@ -133,10 +133,11 @@ _EXPLICIT: tuple[tuple[type[BaseException], int, str, str | None], ...] = (
     # Named to avoid `errors.py`'s own "NotFound" name-suffix pass, deliberately —
     # see the class docstring in workspaces.py.
     (workspaces.LastActiveMembershipError, HTTPStatus.CONFLICT, CONFLICT, None),
-    # Prep used to map any exception to 400/404 with `str(exc)`. The domain error
-    # for "nothing to publish" is `MeetingPrepError`; 400 keeps the authorized-but-
-    # empty contract without swallowing unexpected failures as client errors.
-    (prep.MeetingPrepError, HTTPStatus.BAD_REQUEST, INVALID, None),
+    # 409: no pack to publish is the meeting's state refusing a correct request. Without
+    # this entry pass 3 would answer 422 and tell the client to fix its input (#239, #249).
+    (prep.MeetingPrepError, HTTPStatus.CONFLICT, CONFLICT, None),
+    # 403: recording a vote or update in another board member's name (#249).
+    (board_members.ActingForMemberDenied, HTTPStatus.FORBIDDEN, FORBIDDEN, None),
     # Infrastructure, not domain. A provider being down or a graph write failing is not
     # the caller's mistake, so 503 rather than a 4xx — see `test_api_errors.py`, which
     # asserts no *domain* exception falls through to a 500. These two are exempt by
@@ -279,6 +280,8 @@ def install_exception_handlers(app) -> None:
         prep.MeetingPrepError,
         resolutions.ResolutionError,
         workspaces.WorkspaceError,
+        # A `ValueError`, not a `MeetingError`, so it needs its own registration.
+        prep.MeetingPrepError,
         PrincipalNotFound,
         WorkspaceRequired,
         llm.EmbeddingProviderError,

@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, BackgroundTasks, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from meridian import documents as domain
@@ -53,12 +53,18 @@ class QuarantineResponse(BaseModel):
     created_at: datetime
 
 
+#: Upper bound on one intake's text (#213, #249 finding 9). Every character is embedded
+#: and sent through the extractor, so without a cap one request buys unbounded model cost.
+#: 1M characters is a few hundred pages; #215 sized it for the 2-core demo host.
+MAX_RAW_TEXT_CHARS = 1_000_000
+
+
 class IntakeDocumentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    title: str
-    doc_type: str
-    raw_text: str = Field(..., min_length=1, max_length=1_000_000)
+    title: str = Field(max_length=500)
+    doc_type: str = Field(max_length=100)
+    raw_text: str = Field(min_length=1, max_length=MAX_RAW_TEXT_CHARS)
     #: Required, with no default (#143). It used to default to `0` — *public*, the
     #: widest visibility the system has — so a caller who simply omitted the field
     #: published the document to everyone. That is fail-open by default on the one
@@ -137,7 +143,7 @@ def get_document(document_id: uuid.UUID, principal: CurrentPrincipal) -> domain.
 
 @router.post("/intake", status_code=status.HTTP_201_CREATED, response_model=DocumentResponse)
 def intake_document(
-    req: IntakeDocumentRequest, principal: CurrentPrincipal
+    req: IntakeDocumentRequest, principal: CurrentPrincipal, background: BackgroundTasks
 ) -> domain.Document:
     """Intake a source document into tenant memory."""
     return domain.intake_document(
@@ -152,6 +158,8 @@ def intake_document(
         workspace_id=principal.workspace_id,
         author_principal_id=principal.id,
         source_uri=req.source_uri,
+        # Extraction runs after the 201 is sent; the document is committed either way.
+        schedule=background.add_task,
     )
 
 
@@ -179,7 +187,10 @@ def get_version_chain(document_id: uuid.UUID, principal: CurrentPrincipal) -> do
     response_model=DocumentResponse,
 )
 def supersede_document(
-    document_id: uuid.UUID, req: SupersedeDocumentRequest, principal: CurrentPrincipal
+    document_id: uuid.UUID,
+    req: SupersedeDocumentRequest,
+    principal: CurrentPrincipal,
+    background: BackgroundTasks,
 ) -> domain.Document:
     """File a corrected revision of an existing document.
 
@@ -204,5 +215,6 @@ def supersede_document(
         workspace_id=principal.workspace_id,
         author_principal_id=principal.id,
         source_uri=req.source_uri,
+        schedule=background.add_task,
     )
     return new_document
