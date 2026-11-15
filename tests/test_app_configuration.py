@@ -62,3 +62,21 @@ def test_an_unconfigured_session_is_503_not_500():
     # The message has to name the fix. "Service Unavailable" alone sends an operator
     # looking at the database.
     assert "MERIDIAN_SESSION_SECRET" in err_data["detail"]
+
+
+def test_a_cookie_carrying_write_without_the_csrf_header_is_refused():
+    """#249 finding 12: SameSite=Lax ignores ports and sibling subdomains.
+
+    A bodiless POST such as logout or conflict approval needs no preflight, so the
+    custom header is what a cross-origin form cannot forge. Without a session cookie
+    there is nothing to forge, and the request is left alone.
+    """
+    from meridian.api.config import api_settings
+    from meridian.api.main import app
+
+    cookie = {api_settings().session_cookie_name: "anything"}
+    client = TestClient(app, raise_server_exceptions=False, cookies=cookie)
+
+    assert client.post("/auth/logout").status_code == 403
+    assert client.post("/auth/logout", headers={"X-Requested-With": "fetch"}).status_code != 403
+    assert TestClient(app, raise_server_exceptions=False).post("/auth/logout").status_code != 403
