@@ -408,6 +408,11 @@ def upsert_chunk_node(driver: Driver, *, chunk_id: uuid.UUID, document_id: uuid.
         )
 
 
+#: Entity properties that are identity, not description. `SET e += $attributes` must not
+#: overwrite them: a model-emitted `workspace_id` would move the node to another tenant.
+_ENTITY_IDENTITY_KEYS = frozenset({"name", "type", "workspace_id"})
+
+
 def apply_entity(driver: Driver, payload: dict[str, Any], workspace_id: str | None = None) -> None:
     """Commit an approved entity, and wire it to the chunk that mentions it.
 
@@ -434,7 +439,9 @@ def apply_entity(driver: Driver, payload: dict[str, Any], workspace_id: str | No
             name=payload["name"],
             type=payload["type"],
             workspace_id=ws_id,
-            attributes=payload.get("attributes", {}),
+            # Extractor-written: never let it rewrite the identity or tenant key (#249).
+            attributes={k: v for k, v in (payload.get("attributes") or {}).items()
+                        if k not in _ENTITY_IDENTITY_KEYS},
             chunk_id=payload["chunk_id"],
         )
 
