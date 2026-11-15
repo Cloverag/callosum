@@ -102,6 +102,8 @@ def publish_preread(
     No `try/except` on any handler here (#239): domain errors reach the shared handlers
     in `errors.py`, and anything else is a 500 that names nothing internal.
     """
+    # No blanket `except Exception`: it mapped a database outage to 400/404 and sent raw
+    # error text to the client. Domain errors map centrally in `errors.py` (#249).
     return prep.publish_preread(
         meeting_id,
         workspace_id=principal.workspace_id,

@@ -256,29 +256,54 @@ def approve_conflict(
     driver: Driver,
     conflict_id: uuid.UUID,
     reviewer_id: uuid.UUID | None = None,
+    *,
+    clearance: int | None = None,
 ) -> uuid.UUID:
     """Approve a conflict: queue an ALIAS_OF proposal and immediately approve it.
 
     The ALIAS_OF edge goes through the normal proposed_change → store.approve() path
     so all provenance invariants are preserved (graph written first, then Postgres marked
     approved). Returns the change_id of the approved proposal.
+
+    `clearance` is the reviewer's: a conflict above it reads as absent, exactly as the
+    listing hides it. `None` is the operator CLI only; every HTTP caller passes one.
     """
     row = conn.execute(
-        "SELECT name_a, type_a, name_b, type_b, chunk_id_a, workspace_id FROM entity_conflict "
-        "WHERE id = %s AND status = 'pending'",
-        (conflict_id,),
+        "SELECT name_a, type_a, name_b, type_b, chunk_id_a, chunk_id_b, quote_a, quote_b,"
+        " workspace_id FROM entity_conflict"
+        " WHERE id = %s AND status = 'pending' AND (%s::int IS NULL OR sensitivity <= %s)"
+        " FOR UPDATE",
+        (conflict_id, clearance, clearance),
     ).fetchone()
     if not row:
         raise ValueError(f"No pending entity conflict: {conflict_id}")
 
-    # Use chunk_id_a as the provenance anchor for the ALIAS_OF edge.
-    chunk_id = str(row["chunk_id_a"]) if row["chunk_id_a"] else str(uuid.uuid4())
+    # Anchor the edge on the MORE sensitive of the two source chunks. graph_search reads
+    # an edge only if its anchor chunk is readable, so anchoring on the less sensitive
+    # side would show "A is an alias of B" to readers who may not see B (#249 finding 3).
+    # The quote is that chunk's real text, never a sentence composed here.
+    anchors = [
+        (cid, quote)
+        for cid, quote in ((row["chunk_id_a"], row["quote_a"]), (row["chunk_id_b"], row["quote_b"]))
+        if cid is not None
+    ]
+    if not anchors:
+        raise ValueError(f"Entity conflict {conflict_id} has no source chunk to anchor an alias on")
+    levels = {
+        r["id"]: r["sensitivity"]
+        for r in conn.execute(
+            "SELECT id, sensitivity FROM chunk WHERE id = ANY(%s)", ([a[0] for a in anchors],)
+        ).fetchall()
+    }
+    # A chunk Postgres no longer has is treated as the most sensitive (fail closed).
+    anchor_id, anchor_quote = max(anchors, key=lambda a: levels.get(a[0], 99))
+    chunk_id = str(anchor_id)
 
     payload = {
         "source": row["name_a"],
         "type": RelationType.ALIAS_OF.value,
         "target": row["name_b"],
-        "quote": f"{row['name_a']} is an alias of {row['name_b']}",
+        "quote": anchor_quote or "",
         "chunk_id": chunk_id,
         # Stamp the conflict's workspace so apply_relationship matches the right tenant's
         # entities, not the default workspace.
@@ -298,7 +323,7 @@ def approve_conflict(
         """,
         (
             row["workspace_id"],
-            uuid.UUID(chunk_id),   # always a valid UUID string here (uuid4() fallback above)
+            uuid.UUID(chunk_id),
             json.dumps(payload),
             ONTOLOGY_VERSION,
         ),
@@ -325,44 +350,23 @@ def reject_conflict(
     conn: psycopg.Connection,
     conflict_id: uuid.UUID,
     reviewer_id: uuid.UUID | None = None,
+    *,
+    clearance: int | None = None,
 ) -> None:
     """Reject a conflict — marks the pair as definitively distinct.
 
     The pair will never appear in the review queue again.
-    No graph change is made.
+    No graph change is made. `clearance` gates it exactly as in `approve_conflict`.
     """
     updated = conn.execute(
         """
         UPDATE entity_conflict
         SET status = 'rejected', reviewed_by = %s, reviewed_at = now()
-        WHERE id = %s AND status = 'pending'
+        WHERE id = %s AND status = 'pending' AND (%s::int IS NULL OR sensitivity <= %s)
         RETURNING id
         """,
-        (reviewer_id, conflict_id),
+        (reviewer_id, conflict_id, clearance, clearance),
     ).fetchone()
     if not updated:
         raise ValueError(f"No pending entity conflict: {conflict_id}")
 
-
-def pending_conflicts(
-    conn: psycopg.Connection,
-    *,
-    clearance: int = 4,
-    limit: int = 50,
-) -> list[dict]:
-    """Return pending conflicts the reviewer is allowed to see.
-
-    Ordered by similarity descending — high-confidence matches first,
-    because those are the most likely true aliases and the cheapest to review.
-    """
-    return conn.execute(
-        """
-        SELECT id, name_a, type_a, name_b, type_b,
-               similarity, quote_a, quote_b, sensitivity, created_at
-        FROM entity_conflict
-        WHERE status = 'pending' AND sensitivity <= %s
-        ORDER BY similarity DESC, created_at ASC
-        LIMIT %s
-        """,
-        (clearance, limit),
-    ).fetchall()

@@ -408,6 +408,11 @@ def upsert_chunk_node(driver: Driver, *, chunk_id: uuid.UUID, document_id: uuid.
         )
 
 
+#: Entity properties that are identity, not description. `SET e += $attributes` must not
+#: overwrite them: a model-emitted `workspace_id` would move the node to another tenant.
+_ENTITY_IDENTITY_KEYS = frozenset({"name", "type", "workspace_id"})
+
+
 def apply_entity(driver: Driver, payload: dict[str, Any], workspace_id: str | None = None) -> None:
     """Commit an approved entity, and wire it to the chunk that mentions it.
 
@@ -434,7 +439,9 @@ def apply_entity(driver: Driver, payload: dict[str, Any], workspace_id: str | No
             name=payload["name"],
             type=payload["type"],
             workspace_id=ws_id,
-            attributes=payload.get("attributes", {}),
+            # Extractor-written: never let it rewrite the identity or tenant key (#249).
+            attributes={k: v for k, v in (payload.get("attributes") or {}).items()
+                        if k not in _ENTITY_IDENTITY_KEYS},
             chunk_id=payload["chunk_id"],
         )
 
@@ -458,18 +465,26 @@ def apply_relationship(driver: Driver, payload: dict[str, Any], workspace_id: st
 
     ws_id = workspace_id if workspace_id is not None else payload.get("workspace_id", DEFAULT_WORKSPACE_ID)
     with driver.session() as session:
-        session.run(
+        written = session.run(
             f"""
             MATCH (s:Entity {{name: $source, workspace_id: $workspace_id}})
             MATCH (t:Entity {{name: $target, workspace_id: $workspace_id}})
             MERGE (s)-[r:{rel_type}]->(t)
             SET r.quote = $quote, r.chunk_id = $chunk_id
+            RETURN count(r) AS n
             """,
             source=payload["source"],
             target=payload["target"],
             workspace_id=ws_id,
             quote=payload.get("quote", ""),
             chunk_id=payload["chunk_id"],
+        ).single()["n"]
+    # A missing endpoint matches nothing and writes nothing. Raising here, before
+    # `approve()` marks the proposal approved, keeps "approved" meaning "in the graph" (#249).
+    if not written:
+        raise ValueError(
+            f"Relationship not written: endpoint {payload['source']!r} or {payload['target']!r}"
+            " is not in the graph yet; approve the entities first"
         )
 
 

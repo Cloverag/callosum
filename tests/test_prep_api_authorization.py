@@ -203,7 +203,7 @@ class TestAnActiveMemberIsServed:
 
         A 409 proves the request reached the domain, which is what distinguishes
         "authorized and there is nothing to publish" from "refused at the door". It was
-        a 400 from a catch-all `except Exception` until #239.
+        a 400 from a catch-all `except Exception` until #239/#249.
         """
         client, pid, ws, meeting_id = _signed_in("active_write")
         try:

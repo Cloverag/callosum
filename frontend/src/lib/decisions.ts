@@ -176,60 +176,6 @@ export function supersededBy(d: Decision, all: Decision[]): Decision | null {
   return all.find((x) => x.id === d.superseded_by_id) ?? null;
 }
 
-// --- Mock store ------------------------------------------------------------
-
-const WS = "00000000-0000-0000-0000-000000000001";
-
-/**
- * Names that resolve to the board directory in `board-members.ts`.
- *
- * Not every recorded name does, and that is the realistic case rather than an
- * oversight: `board_member_id` is nullable forever, and a stance minuted before the
- * directory existed still has to render.
- */
-const DIRECTORY: Record<string, string> = {
-  "Raj Malhotra": "bm-raj",
-  "Priya Nair": "bm-priya",
-  "Marcus Webb": "bm-marcus",
-  "Elena Fischer": "bm-elena",
-};
-
-function stance(
-  decision_id: string,
-  n: number,
-  person_name: string,
-  s: Stance,
-  comment: string | null,
-  at: string,
-): DecisionStance {
-  return {
-    id: `${decision_id}-s${n}`,
-    decision_id,
-    workspace_id: WS,
-    person_name,
-    // Resolved where the directory knows the name, null where it does not — the
-    // shape the real column has, rather than a uniformly populated one that would
-    // let an unresolved-stance bug go unnoticed.
-    board_member_id: DIRECTORY[person_name] ?? null,
-    stance: s,
-    comment,
-    created_at: at,
-    updated_at: at,
-  };
-}
-
-/**
- * Demo scenario data for the fictional Meridian board, shaped to exercise every
- * state the domain can reach: a live proposal, an approval with a full stance
- * spread, a rejection, a supersession pair, and a deferral.
- *
- * These are invented board decisions, in the same category as the meetings mock
- * — a fictional company's activity, not a claim about Callosum's measured
- * behaviour. The distinction that matters is in `insights.ts`: numbers that
- * describe the memory engine must be real or absent, while the demo company's
- * board minutes are scenario.
- */
-
 // --- API client ------------------------------------------------------------
 
 /**
