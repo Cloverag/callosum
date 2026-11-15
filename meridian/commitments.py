@@ -243,6 +243,28 @@ def create_commitment(
     due_date: date | None = None,
 ) -> Commitment:
     """Creates an `open` commitment against `decision_id`, owned by a board member."""
+    with store.pg(workspace_id) as conn:
+        return insert_commitment(
+            conn, decision_id, title, owner_board_member_id,
+            workspace_id=workspace_id, resolution_id=resolution_id,
+            accountable_team=accountable_team, detail=detail, due_date=due_date,
+        )
+
+
+def insert_commitment(
+    conn,
+    decision_id: str,
+    title: str,
+    owner_board_member_id: str,
+    *,
+    workspace_id: str,
+    resolution_id: str | None = None,
+    accountable_team: str | None = None,
+    detail: str | None = None,
+    due_date: date | None = None,
+) -> Commitment:
+    """`create_commitment` on the caller's open transaction, so a caller (the resolution
+    bridge) can lock, check and insert atomically."""
     if not title or not title.strip():
         raise CommitmentValidationError("title must not be empty")
 
@@ -250,48 +272,47 @@ def create_commitment(
     owner_uuid = uuid.UUID(str(owner_board_member_id))
     res_uuid = uuid.UUID(str(resolution_id)) if resolution_id else None
 
-    with store.pg(workspace_id) as conn:
-        # RLS-scoped existence checks. The composite FKs would also reject a
-        # cross-workspace id, but as a ForeignKeyViolation — callers should not have
-        # to catch psycopg exceptions to handle a missing parent.
-        if conn.execute("SELECT id FROM decision WHERE id = %s", (dec_uuid,)).fetchone() is None:
-            raise DecisionNotFound(str(decision_id))
+    # RLS-scoped existence checks. The composite FKs would also reject a
+    # cross-workspace id, but as a ForeignKeyViolation — callers should not have
+    # to catch psycopg exceptions to handle a missing parent.
+    if conn.execute("SELECT id FROM decision WHERE id = %s", (dec_uuid,)).fetchone() is None:
+        raise DecisionNotFound(str(decision_id))
 
-        _assert_active_member(conn, owner_uuid)
+    _assert_active_member(conn, owner_uuid)
 
-        if res_uuid is not None:
-            res = conn.execute(
-                "SELECT decision_id FROM resolution WHERE id = %s", (res_uuid,)
-            ).fetchone()
-            if res is None:
-                raise ResolutionNotFound(str(resolution_id))
-            # A commitment's evidence pointer must lead back to its own source.
-            # Nothing in the schema prevents citing an unrelated resolution, and a
-            # wrong citation is worse than none: it looks like provenance.
-            if str(res["decision_id"]) != str(dec_uuid):
-                raise CommitmentValidationError(
-                    f"resolution {resolution_id} does not belong to decision {decision_id}"
-                )
-
-        row = conn.execute(
-            """
-            INSERT INTO commitment
-                (decision_id, resolution_id, owner_board_member_id, accountable_team,
-                 title, detail, due_date, status, workspace_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, 'open', %s)
-            RETURNING *
-            """,
-            (
-                dec_uuid,
-                res_uuid,
-                owner_uuid,
-                accountable_team.strip() if accountable_team and accountable_team.strip() else None,
-                title.strip(),
-                detail.strip() if detail and detail.strip() else None,
-                due_date,
-                workspace_id,
-            ),
+    if res_uuid is not None:
+        res = conn.execute(
+            "SELECT decision_id FROM resolution WHERE id = %s", (res_uuid,)
         ).fetchone()
+        if res is None:
+            raise ResolutionNotFound(str(resolution_id))
+        # A commitment's evidence pointer must lead back to its own source.
+        # Nothing in the schema prevents citing an unrelated resolution, and a
+        # wrong citation is worse than none: it looks like provenance.
+        if str(res["decision_id"]) != str(dec_uuid):
+            raise CommitmentValidationError(
+                f"resolution {resolution_id} does not belong to decision {decision_id}"
+            )
+
+    row = conn.execute(
+        """
+        INSERT INTO commitment
+            (decision_id, resolution_id, owner_board_member_id, accountable_team,
+             title, detail, due_date, status, workspace_id)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, 'open', %s)
+        RETURNING *
+        """,
+        (
+            dec_uuid,
+            res_uuid,
+            owner_uuid,
+            accountable_team.strip() if accountable_team and accountable_team.strip() else None,
+            title.strip(),
+            detail.strip() if detail and detail.strip() else None,
+            due_date,
+            workspace_id,
+        ),
+    ).fetchone()
 
     return _row_to_commitment(row, updates=[])
 

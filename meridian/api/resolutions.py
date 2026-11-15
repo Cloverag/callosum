@@ -18,6 +18,7 @@ decide what you are allowed to read": `workspace_id` does, these do not.
 becomes 422, without this module restating either.
 """
 
+import datetime as dt
 import uuid
 
 from fastapi import APIRouter, status
@@ -196,7 +197,7 @@ class BridgeCommitmentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     owner_board_member_id: uuid.UUID
-    due_date: uuid.UUID | str | None = None
+    due_date: dt.date | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -246,7 +247,9 @@ def bridge_resolution_to_commitment(
     c = domain.bridge_resolution_to_commitment(
         str(resolution_id),
         owner_board_member_id=str(payload.owner_board_member_id),
+        due_date=payload.due_date,
         workspace_id=principal.workspace_id,
+        actor_principal_id=str(principal.id),
     )
     return {"status": "ok", "commitment_id": c.id}
 
