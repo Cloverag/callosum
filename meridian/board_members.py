@@ -76,6 +76,39 @@ class BoardMemberValidationError(BoardMemberError):
     """Requested change violates domain rules (empty name, unknown role or vote status)."""
 
 
+class ActingForMemberDenied(BoardMemberError):
+    """The caller tried to record a vote or update in another board member's name."""
+
+
+#: Lowest clearance that may record on behalf of another board member — the company
+#: secretary case, for directors with no login (`exec`/`director` and up).
+RECORD_FOR_OTHERS_CLEARANCE = 3
+
+
+def assert_may_act_for(
+    conn,
+    member_id: uuid.UUID,
+    *,
+    actor_principal_id: str | None,
+    actor_clearance: int | None,
+) -> None:
+    """Refuses a write made in a board member's name by someone who is not them (#249).
+
+    Allowed when the member's login IS the actor, or the actor holds clearance
+    `RECORD_FOR_OTHERS_CLEARANCE` or above. `actor_principal_id=None` is the non-HTTP
+    caller (CLI, tests); every API route passes the resolved principal.
+    """
+    if actor_principal_id is None:
+        return
+    if actor_clearance is not None and actor_clearance >= RECORD_FOR_OTHERS_CLEARANCE:
+        return
+    row = conn.execute(
+        "SELECT principal_id FROM board_member WHERE id = %s", (member_id,)
+    ).fetchone()
+    if row is None or row["principal_id"] is None or str(row["principal_id"]) != str(actor_principal_id):
+        raise ActingForMemberDenied("you may only record this for your own board seat")
+
+
 # ---------------------------------------------------------------------------
 # Read Model
 # ---------------------------------------------------------------------------

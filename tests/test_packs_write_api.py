@@ -342,6 +342,21 @@ class TestClearanceSurvivesTheWritePath:
         finally:
             f.close()
 
+    def test_a_document_above_clearance_reads_as_missing_on_add(self, restore_client):
+        """#249 finding 6: same answer as a nonexistent id, and nothing is filed."""
+        f = _Fixture("addabove")
+        try:
+            p = f.pack()
+            restricted_doc = _document(f.ws, "Restricted.pdf", CONFIDENTIAL)
+            investor = f.member_at("investor")
+
+            above = investor.post(f"/api/packs/{p['id']}/items", json={"document_id": restricted_doc})
+            missing = investor.post(f"/api/packs/{p['id']}/items", json={"document_id": str(uuid.uuid4())})
+            assert above.status_code == missing.status_code == 422
+            assert f.reread(p)["items"] == []
+        finally:
+            f.close()
+
     def test_publishing_does_not_widen_what_the_publisher_sees(self, restore_client):
         f = _Fixture("publishfilter")
         try:

@@ -95,7 +95,8 @@ def approve_conflict(
     try:
         with store.neo(wait=2.0) as driver, store.pg(workspace_id) as conn:
             change_id = engine_conflicts.approve_conflict(
-                conn, driver, conflict_id, reviewer_id=principal.id
+                conn, driver, conflict_id, reviewer_id=principal.id,
+                clearance=principal.clearance,
             )
             audit.record_audit_event(
                 conn,
@@ -122,7 +123,8 @@ def reject_conflict(
     try:
         with store.pg(workspace_id) as conn:
             engine_conflicts.reject_conflict(
-                conn, conflict_id, reviewer_id=principal.id
+                conn, conflict_id, reviewer_id=principal.id,
+                clearance=principal.clearance,
             )
             audit.record_audit_event(
                 conn,

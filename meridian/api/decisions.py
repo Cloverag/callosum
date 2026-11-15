@@ -168,6 +168,7 @@ def record_stance(
         body.stance,
         workspace_id=principal.workspace_id,
         comment=body.comment,
+        actor_principal_id=str(principal.id),
     )
 
 
