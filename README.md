@@ -185,24 +185,29 @@ intake has shipped without one.
 
 | | |
 |---|---|
-| Backend tests | **786** passing, gated suite |
+| Backend tests | **981** collected, gated suite (397 ungated) |
 | Frontend tests | **290** passing, 20 suites |
-| API | **75 operations** across 57 paths, 12 routers |
-| Migrations | 25, head `0025_meeting_document`, forward and reverse tested |
+| API | **80 operations** across 62 paths, 14 routers |
+| Migrations | 30, head `0030_document_principal_role`, forward and reverse tested |
 | Architecture decisions | 18 ADRs |
 | Commits | 495 (`git rev-list --count 8dd2d3d`) |
 
-Measured on `8dd2d3d` (2026-08-24), not carried forward. Both test figures are a **real
-run** on that commit — the gated suite against local Postgres 16 and Neo4j, and Jest with
-`tsc --noEmit` clean. The API, migration, ADR and commit figures all derive at `8dd2d3d`,
-and the parenthetical names the pin rather than a moving ref, so the command printed beside
-the figure reproduces it (see #159).
+**Two pins, stated separately so neither borrows the other's authority.**
 
-The backend delta is **+55 on master's 731**: 20 in `tests/test_document_versions.py`, 4 in
-`tests/test_p4_leak_sweep.py`, 15 in `tests/test_withheld_discipline.py`, 14 in
-`tests/test_meeting_material.py`, and two parametrized cases —
-`test_an_applied_migration_is_unchanged` runs once per migration file, so `0024` and `0025`
-add one each. Reconciled by **collecting each file**, not by arithmetic.
+- **Backend tests, API and migrations** were re-derived on `50dfea6` (2026-11-16, the
+  #249 audit-fix branch). The backend figure is a **collection count**
+  (`CALLOSUM_RUN_INTEGRATION=1 pytest --collect-only`), **not a pass count** — that branch
+  was not run against live stores before this was written, so the pass/fail figure comes
+  from its CI run, not from here. The API figure is counted from `app.openapi()`; the
+  migration figure from `meridian/migrations/versions/`.
+- **Frontend tests, ADRs and commits** are still the **real run** on `8dd2d3d`
+  (2026-08-24): Jest with `tsc --noEmit` clean. No frontend test was added or removed by
+  #249, and `tsc --noEmit` is clean on `50dfea6`.
+
+The backend delta on #249 is **+8 on master's 973**, reconciled by **diffing the collected
+test ids**, not by arithmetic: six new tests (one per security or integrity fix that had
+none), and two parametrized cases that `test_withheld_discipline.py` generates by itself
+because `packs.add_pack_item` and `packs.remove_pack_item` now take `clearance`.
 
 **P3 is frozen, not accepted** — of its three exit criteria one is met, one is partial and
 one is not met, because the accessibility and error-state checkpoints were deliberately
@@ -292,6 +297,20 @@ cd /path/to/callosum/frontend
 npm install && npm run dev                    # http://localhost:3000
 ```
 
+**Calling the API yourself** (a script, `curl`, another client) — three rules the web
+app already follows:
+
+- **Writes that carry the session cookie need an `X-Requested-With` header** (any value).
+  It is the CSRF check: `SameSite=Lax` alone treats other localhost ports and sibling
+  subdomains as same-site. A cookie-carrying `POST`/`PATCH`/`PUT`/`DELETE` without it is
+  refused with 403.
+- **Document intake answers once the text is stored, before extraction finishes.** The
+  model reads it in the background, so proposals and quarantine rows show up shortly
+  after the `201`, not in it. `raw_text` is capped at 2,000,000 characters.
+- **pgvector is pinned to `0.8.0`** (`docker-compose.yml` and CI), because vector search
+  depends on its iterative index scan to fill `k` after the clearance filter. An existing
+  local volume keeps whatever image created it — `docker compose pull` and recreate it.
+
 Check the API is up before loading a page:
 
 ```bash
@@ -308,13 +327,13 @@ routes. Set `MERIDIAN_API_ORIGIN` if the API is not on `:8000`.
 ```bash
 docker compose up -d && docker compose ps               # all three healthy FIRST
 .venv/bin/callosum eval-mechanism                        # deterministic gate, no LLM
-CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 786 tests, real stores
+CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 981 tests, real stores
 cd frontend && npx jest && npm run build                 # 290 tests, 20 suites
 ```
 
 `CALLOSUM_RUN_INTEGRATION=1` runs against real Postgres and Neo4j, so the compose stack
-must be up. Without the gate the suite selects 253 tests; with it, 750. Run it with the
-containers stopped and the 497 gated tests fail on connection errors — the failure looks
+must be up. Without the gate the suite selects 397 tests; with it, 981. Run it with the
+containers stopped and the 584 gated tests fail on connection errors — the failure looks
 like a broken build and is a missing database.
 
 ---
@@ -345,6 +364,20 @@ Stated because a limitation a reader finds is worth less than one they are told.
   (#123), and the mechanism gate is **not** part of it — that figure is still a local run.
 - **Observed-tier numbers are a single run of a single model.** Multi-run stability has not
   been characterised.
+- **Open items from the #249 audit.** These are not fixed yet, and the reasons are given here:
+  - **No connection pool.** `store.pg()` still opens a fresh Postgres connection on every
+    call, so one request opens 2–4 of them. A pool belongs in `store.py`, which is frozen,
+    and it needs a new dependency.
+  - **A name shared by two entity types gets the edge twice.** `apply_relationship` matches endpoints by
+    name alone. It now refuses to mark an edge approved when it wrote nothing, but if one
+    name exists under two types, both nodes still get the edge.
+  - **The vector-search change needs an evaluation run.** It touches frozen
+    `retrieve.py`; `scripts/eval.sh` has to be run and compared before it is treated as
+    measured.
+  - **Stances are recorded by name.** A decision stance is keyed by `person_name`, which
+    has no link to a login, so stances cannot get the "your own seat only" check that
+    votes and commitment updates now have. Their audit rows do now name who recorded
+    them.
 
 ---
 
