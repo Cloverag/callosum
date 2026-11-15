@@ -19,7 +19,7 @@ import datetime as dt
 import uuid
 
 from fastapi import APIRouter, status
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from meridian import commitments as domain
 from meridian.api.deps import CurrentPrincipal
@@ -48,6 +48,15 @@ class CommitmentPatch(BaseModel):
     due_date: dt.date | None = None
     accountable_team: str | None = None
     owner_board_member_id: uuid.UUID | None = None
+
+    @field_validator("owner_board_member_id")
+    @classmethod
+    def _owner_cannot_be_cleared(cls, value: uuid.UUID | None) -> uuid.UUID:
+        # Runs only when the field is sent. An explicit null used to reach the domain
+        # as uuid.UUID("None") and 500 (#249 finding 15); a commitment always has an owner.
+        if value is None:
+            raise ValueError("owner_board_member_id cannot be cleared; reassign it instead")
+        return value
 
 
 class CommitmentUpdateRecord(BaseModel):
