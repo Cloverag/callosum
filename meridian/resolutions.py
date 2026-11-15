@@ -411,6 +411,8 @@ def record_vote(
     vote: str,
     *,
     workspace_id: str = DEFAULT_WORKSPACE_ID,
+    actor_principal_id: str | None = None,
+    actor_clearance: int | None = None,
 ) -> ResolutionVote:
     """Records or changes a board member's vote on a `draft` resolution.
 
@@ -449,6 +451,11 @@ def record_vote(
             # to vote here", and distinguishing them tells a caller that a member
             # exists in a workspace whose directory they may not be reading.
             raise BoardMemberNotFound(str(board_member_id))
+
+        board_members.assert_may_act_for(
+            conn, member_uuid,
+            actor_principal_id=actor_principal_id, actor_clearance=actor_clearance,
+        )
 
         # Two standing states cannot cast a counted vote, for different reasons, and
         # `board_member.voting` is an enum rather than a boolean precisely so the
@@ -495,6 +502,7 @@ def record_vote(
             aggregate_type="resolution",
             aggregate_id=res_uuid,
             action="voted",
+            actor_principal_id=actor_principal_id,
             payload={"board_member_id": str(member_uuid), "vote": vote},
             workspace_id=workspace_id,
         )

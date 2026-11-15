@@ -158,4 +158,6 @@ def record_update(
         author_board_member_id=str(payload.author_board_member_id)
         if payload.author_board_member_id
         else None,
+        actor_principal_id=str(principal.id),
+        actor_clearance=principal.clearance,
     )

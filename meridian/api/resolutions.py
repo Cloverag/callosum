@@ -155,6 +155,8 @@ def record_vote(
         str(payload.board_member_id),
         payload.vote,
         workspace_id=principal.workspace_id,
+        actor_principal_id=str(principal.id),
+        actor_clearance=principal.clearance,
     )
 
 

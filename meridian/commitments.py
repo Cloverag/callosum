@@ -452,6 +452,8 @@ def record_update(
     workspace_id: str = DEFAULT_WORKSPACE_ID,
     new_status: str | None = None,
     author_board_member_id: str | None = None,
+    actor_principal_id: str | None = None,
+    actor_clearance: int | None = None,
 ) -> Commitment:
     """Appends a progress note, optionally moving the commitment to `new_status`.
 
@@ -494,6 +496,11 @@ def record_update(
 
         if author_uuid is not None:
             _assert_active_member(conn, author_uuid)
+            from meridian import board_members
+            board_members.assert_may_act_for(
+                conn, author_uuid,
+                actor_principal_id=actor_principal_id, actor_clearance=actor_clearance,
+            )
 
         conn.execute(
             """
@@ -537,6 +544,7 @@ def record_update(
             aggregate_type="commitment",
             aggregate_id=c_uuid,
             action="status_changed" if new_status is not None else "updated",
+            actor_principal_id=actor_principal_id,
             payload={"new_status": new_status, "note": note.strip()},
             workspace_id=workspace_id,
         )

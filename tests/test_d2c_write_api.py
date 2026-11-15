@@ -225,6 +225,25 @@ class TestResolutions:
         finally:
             f.close()
 
+    def test_a_low_clearance_member_cannot_vote_as_another_director(self, restore_client):
+        """#249 finding 4: only the seat's own login, or clearance 3+, records a vote."""
+        f = _Fixture("res-vote-as-other")
+        try:
+            r = f.resolution()
+            d = f.director()
+            _admin(
+                "UPDATE membership SET role = 'investor', clearance = 1"
+                " WHERE principal_id = %s AND workspace_id = %s",
+                (f.pid, f.ws),
+            )
+            response = f.client.post(
+                f"/api/resolutions/{r['id']}/vote",
+                json={"board_member_id": d["id"], "vote": "for"},
+            )
+            assert response.status_code == 403
+        finally:
+            f.close()
+
     def test_there_is_no_tally_endpoint(self, restore_client):
         """#58 decision 2, enforced by absence.
 

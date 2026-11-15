@@ -132,6 +132,8 @@ _EXPLICIT: tuple[tuple[type[BaseException], int, str, str | None], ...] = (
     # Named to avoid `errors.py`'s own "NotFound" name-suffix pass, deliberately —
     # see the class docstring in workspaces.py.
     (workspaces.LastActiveMembershipError, HTTPStatus.CONFLICT, CONFLICT, None),
+    # 403: recording a vote or update in another board member's name (#249).
+    (board_members.ActingForMemberDenied, HTTPStatus.FORBIDDEN, FORBIDDEN, None),
     # Infrastructure, not domain. A provider being down or a graph write failing is not
     # the caller's mistake, so 503 rather than a 4xx — see `test_api_errors.py`, which
     # asserts no *domain* exception falls through to a 500. These two are exempt by
