@@ -654,11 +654,16 @@ def supersede_pack(
 
     with store.pg(workspace_id) as conn:
         old_row = conn.execute(
-            "SELECT meeting_id, status, version, version_no FROM board_pack WHERE id = %s FOR UPDATE",
+            "SELECT meeting_id, status, version, version_no, superseded_by_id"
+            " FROM board_pack WHERE id = %s FOR UPDATE",
             (old_uuid,),
         ).fetchone()
         if old_row is None:
             raise BoardPackNotFound(str(old_pack_id))
+        # The old row stays PUBLISHED after a supersede, so the status check alone would
+        # let a second supersede fork the chain into two v(n+1) drafts (#249 finding 7).
+        if old_row["superseded_by_id"] is not None:
+            raise BoardPackLockedError(f"board_pack {old_pack_id} has already been superseded")
 
         if old_row["version"] != expected_version:
             raise StaleBoardPackError(
