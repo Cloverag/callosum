@@ -223,8 +223,8 @@ def test_the_mutator_list_is_not_hand_maintained():
     """A seventh mutation must not arrive unaudited and unnoticed.
 
     Derives the writing functions from the module and fails if they diverge from the pin
-    above. `bridge_resolution_to_commitment` writes no SQL of its own — it delegates to
-    `commitments.create_commitment` — so it is allowed to be in the pin without appearing
+    above. `bridge_resolution_to_commitment` writes no resolution SQL of its own — it delegates
+    the insert to `commitments.insert_commitment` — so it is allowed to be in the pin without appearing
     in the derived set, and that exemption is named rather than silently tolerated.
     """
     tree = _domain_tree()

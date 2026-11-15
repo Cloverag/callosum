@@ -367,11 +367,15 @@ def supersede_minutes(
 
     with store.pg(workspace_id) as conn:
         old_row = conn.execute(
-            "SELECT meeting_id, status, version, version_no FROM minutes WHERE id = %s FOR UPDATE",
+            "SELECT meeting_id, status, version, version_no, superseded_by_id"
+            " FROM minutes WHERE id = %s FOR UPDATE",
             (old_uuid,),
         ).fetchone()
         if old_row is None:
             raise MinutesNotFound(str(old_minutes_id))
+        # FINAL survives a supersede, so without this a second one forks the chain (#249).
+        if old_row["superseded_by_id"] is not None:
+            raise MinutesLockedError(f"minutes {old_minutes_id} have already been superseded")
 
         if old_row["version"] != expected_version:
             raise StaleMinutesError(

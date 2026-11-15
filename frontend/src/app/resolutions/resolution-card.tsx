@@ -3,7 +3,7 @@
 import { ArrowRight, Info, Scale } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import {
   RESOLUTION_STATUS_LABEL,
   RESOLUTION_STATUS_TONE,
@@ -16,17 +16,6 @@ import {
 import { initialsOf, nameOf, type BoardMember } from "@/lib/board-members";
 import { VoteBar } from "./vote-bar";
 
-function formatDate(iso: string): string {
-  // Pinned locale and zone: a browser-locale date differs between server and client
-  // and produces a hydration mismatch. Same fix as the decisions, packs and minutes
-  // cards.
-  return new Date(iso).toLocaleDateString("en-US", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-}
 
 /**
  * One resolution: the instrument, how the board voted, and who voted which way.

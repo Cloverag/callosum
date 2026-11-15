@@ -18,6 +18,7 @@ decide what you are allowed to read": `workspace_id` does, these do not.
 becomes 422, without this module restating either.
 """
 
+import datetime as dt
 import uuid
 
 from fastapi import APIRouter, status
@@ -142,9 +143,9 @@ def record_vote(
 ) -> domain.ResolutionVote:
     """Records one director's vote.
 
-    No `expected_version`, for the same reason as `record_stance`: this writes
-    `resolution_vote`, not the resolution, so two directors voting at once do not
-    contend.
+    No `expected_version`, for the same reason as `record_stance`: votes are keyed per
+    member, so two directors voting at once are serialized by a row lock on the
+    resolution rather than refused as stale.
 
     **The tally does not decide the outcome.** `resolutions.tally` is advisory and has
     no endpoint at all — it is a pure function, computed client-side from the votes this
@@ -157,7 +158,8 @@ def record_vote(
         str(payload.board_member_id),
         payload.vote,
         workspace_id=principal.workspace_id,
-        actor_principal_id=str(principal.id) if principal.id else None,
+        actor_principal_id=str(principal.id),
+        actor_clearance=principal.clearance,
     )
 
 
@@ -199,7 +201,7 @@ class BridgeCommitmentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     owner_board_member_id: uuid.UUID
-    due_date: uuid.UUID | str | None = None
+    due_date: dt.date | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -249,8 +251,9 @@ def bridge_resolution_to_commitment(
     c = domain.bridge_resolution_to_commitment(
         str(resolution_id),
         owner_board_member_id=str(payload.owner_board_member_id),
+        due_date=payload.due_date,
         workspace_id=principal.workspace_id,
-        actor_principal_id=str(principal.id) if principal.id else None,
+        actor_principal_id=str(principal.id),
     )
     return {"status": "ok", "commitment_id": c.id}
 

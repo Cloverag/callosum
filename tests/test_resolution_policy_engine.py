@@ -69,3 +69,9 @@ def test_bridge_adopted_resolution_to_commitment():
     assert comm.title == "Adopted Resolution"
     assert comm.decision_id == d_id
     assert comm.owner_board_member_id == member_id
+    # #249 finding 14: the commitment cites its resolution, and a second bridge is refused.
+    assert comm.resolution_id == adopted_res.id
+    with pytest.raises(resolutions.ResolutionLockedError):
+        resolutions.bridge_resolution_to_commitment(
+            adopted_res.id, owner_board_member_id=member_id, workspace_id=w_id
+        )
