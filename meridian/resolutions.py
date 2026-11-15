@@ -429,7 +429,9 @@ def record_vote(
 
     with store.pg(workspace_id) as conn:
         res = conn.execute(
-            "SELECT decision_id, status FROM resolution WHERE id = %s FOR SHARE",
+            "SELECT decision_id, status FROM resolution WHERE id = %s FOR UPDATE",
+            # FOR UPDATE, not FOR SHARE: this transaction bumps `resolution.version` below,
+            # and two voters each holding a share lock deadlock on that upgrade (#249).
             (res_uuid,),
         ).fetchone()
         if res is None:

@@ -140,9 +140,9 @@ def record_vote(
 ) -> domain.ResolutionVote:
     """Records one director's vote.
 
-    No `expected_version`, for the same reason as `record_stance`: this writes
-    `resolution_vote`, not the resolution, so two directors voting at once do not
-    contend.
+    No `expected_version`, for the same reason as `record_stance`: votes are keyed per
+    member, so two directors voting at once are serialized by a row lock on the
+    resolution rather than refused as stale.
 
     **The tally does not decide the outcome.** `resolutions.tally` is advisory and has
     no endpoint at all — it is a pure function, computed client-side from the votes this
