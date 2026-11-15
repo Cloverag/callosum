@@ -31,6 +31,7 @@ import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
+from collections.abc import Callable
 from typing import Any
 
 import psycopg
@@ -354,6 +355,7 @@ def intake_document(
     workspace_id: str = DEFAULT_WORKSPACE_ID,
     author_principal_id: str | None = None,
     source_uri: str | None = None,
+    schedule: Callable[..., Any] | None = None,
 ) -> Document:
     """Intake a source document into tenant memory.
 
@@ -527,7 +529,11 @@ def intake_document(
                     workspace_id=str(ws_uuid),
                 )
         except psycopg.errors.UniqueViolation as exc:
-            _try_unbridge(neo_driver, chunk_ids, ws_uuid)
+            # No unbridge here (#249 finding 8). Chunk ids are derived from the content
+            # hash, so the bridge nodes this request MERGEd are the very nodes the
+            # winning intake owns; deleting them would strip its MENTIONS edges and
+            # make its graph facts unreadable for good.
+            #
             # The race: another intake committed the same content between the pre-check
             # and this INSERT. The caller receives the identical 409, so they learn the
             # identical fact — auditing only the pre-check path would leave a hole in
@@ -552,8 +558,20 @@ def intake_document(
         if neo_driver is not None:
             neo_driver.close()
 
-    # --- Verified extraction, holding nothing -------------------------------------
-    #
+    # Extraction runs after the commit. An HTTP caller passes `schedule` (FastAPI's
+    # `BackgroundTasks.add_task`) so the response does not wait out up to 300s per chunk
+    # of model calls (#249 finding 9); every other caller extracts inline, as before.
+    if chunks:
+        if schedule is not None:
+            schedule(_extract_and_record, doc_uuid, chunk_ids, chunks, ws_uuid)
+        else:
+            _extract_and_record(doc_uuid, chunk_ids, chunks, ws_uuid)
+
+    return _row_to_document(row)
+
+
+def _extract_and_record(doc_uuid: uuid.UUID, chunk_ids: list[uuid.UUID], chunks: list, ws_uuid: uuid.UUID) -> None:
+    """Verified extraction for a committed document, holding no connection while it runs."""
     # Extract first, with no connection open, then write in one short transaction.
     # The previous shape called `extract.extract()` — a provider round trip with a 300s
     # timeout — *inside* an open transaction, once per chunk: a 20-chunk document could
@@ -567,54 +585,51 @@ def intake_document(
     # *raises* is now recorded too — as a quarantine row with `_EXTRACTION_ERROR` and the
     # exception in `detail` — so "nothing was extracted here" is never silently
     # indistinguishable from "nothing was found here".
-    if chunks:
-        stamp = extract.stamp()
-        extracted: list[tuple[uuid.UUID, Any, Any]] = []
-        failed: list[tuple[uuid.UUID, Any, Exception]] = []
+    stamp = extract.stamp()
+    extracted: list[tuple[uuid.UUID, Any, Any]] = []
+    failed: list[tuple[uuid.UUID, Any, Exception]] = []
 
-        for cid, c in zip(chunk_ids, chunks, strict=True):
-            try:
-                extracted.append((cid, c, extract.extract(c.text)))
-            except Exception as exc:  # noqa: BLE001 — recorded, not swallowed
-                log.exception(
-                    "extraction failed for chunk %s of document %s", cid, doc_uuid
-                )
-                failed.append((cid, c, exc))
-
+    for cid, c in zip(chunk_ids, chunks, strict=True):
         try:
-            with store.pg(str(ws_uuid)) as ext_conn:
-                for cid, c, verified in extracted:
-                    store.queue_proposals(
-                        ext_conn,
-                        document_id=doc_uuid,
-                        chunk_id=cid,
-                        chunk_start=c.start_char,
-                        chunk_text=c.text,
-                        verified=verified,
-                        stamp=stamp,
-                        workspace_id=str(ws_uuid),
-                    )
-                for cid, c, exc in failed:
-                    _record_extraction_error(
-                        ext_conn,
-                        document_id=doc_uuid,
-                        chunk_id=cid,
-                        chunk_text=c.text,
-                        exc=exc,
-                        stamp=stamp,
-                        workspace_id=ws_uuid,
-                    )
-        except Exception:
-            # The document and its chunks are committed and correct; the proposal queue
-            # is not. Logged with the exception rather than passed, so a systematically
-            # empty queue is visible instead of looking like a corpus with nothing in it.
+            extracted.append((cid, c, extract.extract(c.text)))
+        except Exception as exc:  # noqa: BLE001 — recorded, not swallowed
             log.exception(
-                "failed to record extraction results for document %s; the document is "
-                "committed but its proposals and quarantine rows are not",
-                doc_uuid,
+                "extraction failed for chunk %s of document %s", cid, doc_uuid
             )
+            failed.append((cid, c, exc))
 
-    return _row_to_document(row)
+    try:
+        with store.pg(str(ws_uuid)) as ext_conn:
+            for cid, c, verified in extracted:
+                store.queue_proposals(
+                    ext_conn,
+                    document_id=doc_uuid,
+                    chunk_id=cid,
+                    chunk_start=c.start_char,
+                    chunk_text=c.text,
+                    verified=verified,
+                    stamp=stamp,
+                    workspace_id=str(ws_uuid),
+                )
+            for cid, c, exc in failed:
+                _record_extraction_error(
+                    ext_conn,
+                    document_id=doc_uuid,
+                    chunk_id=cid,
+                    chunk_text=c.text,
+                    exc=exc,
+                    stamp=stamp,
+                    workspace_id=ws_uuid,
+                )
+    except Exception:
+        # The document and its chunks are committed and correct; the proposal queue
+        # is not. Logged with the exception rather than passed, so a systematically
+        # empty queue is visible instead of looking like a corpus with nothing in it.
+        log.exception(
+            "failed to record extraction results for document %s; the document is "
+            "committed but its proposals and quarantine rows are not",
+            doc_uuid,
+        )
 
 
 def _bridge_chunk_nodes(
@@ -912,6 +927,7 @@ def supersede_document(
     workspace_id: str = DEFAULT_WORKSPACE_ID,
     author_principal_id: str | None = None,
     source_uri: str | None = None,
+    schedule: Callable[..., Any] | None = None,
 ) -> tuple[Document, Document]:
     """File a corrected revision of an existing document. Returns `(new, old)`.
 
@@ -983,6 +999,7 @@ def supersede_document(
         workspace_id=str(ws_uuid),
         author_principal_id=author_principal_id,
         source_uri=source_uri,
+        schedule=schedule,
     )
 
     new_uuid = uuid.UUID(new_doc.id)
