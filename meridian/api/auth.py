@@ -30,6 +30,7 @@ from typing import Any
 
 from authlib.integrations.starlette_client import OAuth, OAuthError
 from fastapi import APIRouter, HTTPException, Request, status
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
@@ -136,20 +137,25 @@ async def callback(request: Request):
 
     # The issuer is taken from the VALIDATED token, not from configuration, so the
     # (provider, subject) pair stored is the one the provider actually asserted.
-    with store.pg(store.DEFAULT_WORKSPACE_ID) as conn:
+    def _resolve() -> str:
         # `principal_identity` has no tenant column and no RLS (ADR-010) — login runs
         # before a workspace exists, so the workspace passed here is incidental and
         # scopes nothing. It is required only because `store.pg` takes one.
-        try:
-            principal_id = resolve_identity(conn, issuer, subject)
-        except IdentityNotProvisioned as exc:
-            # ADR-011. The provider authenticated them; this system has no record of
-            # them, and login does not create one. Safe to be specific: they proved
-            # control of this subject, so they learn only about their own account.
-            raise HTTPException(
-                status.HTTP_403_FORBIDDEN,
-                detail="Your identity is not provisioned for this workspace. Ask an administrator.",
-            ) from exc
+        with store.pg(store.DEFAULT_WORKSPACE_ID) as conn:
+            return resolve_identity(conn, issuer, subject)
+
+    # psycopg is blocking; on the event loop a slow database would stall every
+    # request in the process, so run it on the thread pool (#249 finding 18).
+    try:
+        principal_id = await run_in_threadpool(_resolve)
+    except IdentityNotProvisioned as exc:
+        # ADR-011. The provider authenticated them; this system has no record of
+        # them, and login does not create one. Safe to be specific: they proved
+        # control of this subject, so they learn only about their own account.
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            detail="Your identity is not provisioned for this workspace. Ask an administrator.",
+        ) from exc
 
     sess.establish(request.session, principal_id=str(principal_id), provider=issuer, subject=subject)
 
@@ -253,7 +259,9 @@ async def select_workspace(request: Request, selection: WorkspaceSelection):
     started = time.monotonic()
 
     try:
-        principal = deps.verify_membership(current.principal_id, selection.workspace_id)
+        principal = await run_in_threadpool(
+            deps.verify_membership, current.principal_id, selection.workspace_id
+        )
     except WorkspaceRequired as exc:
         await _pad_to_floor(started)
         raise HTTPException(

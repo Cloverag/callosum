@@ -264,6 +264,18 @@ def grant_membership(
                 f"cannot grant role {role!r}: exceeds the acting principal's own clearance"
             )
 
+        # The upsert also CHANGES existing roles, so the target's current level must be
+        # covered too — the same rule `revoke_membership` applies. Without it an observer
+        # could "grant" observer to the founder and demote them (#249 finding 1).
+        current = conn.execute(
+            "SELECT role FROM membership WHERE principal_id = %s AND workspace_id = %s FOR UPDATE",
+            (principal_id, workspace_id),
+        ).fetchone()
+        if current is not None and _clearance_for(current["role"]) > actor.clearance:
+            raise EscalationDeniedError(
+                "cannot change a membership whose clearance exceeds the acting principal's own"
+            )
+
         row = conn.execute(
             """
             INSERT INTO membership (principal_id, workspace_id, role, clearance, active)
