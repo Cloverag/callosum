@@ -288,6 +288,26 @@ class TestRejection:
         finally:
             _cleanup([pid], [ws])
 
+    def test_a_conflict_above_the_callers_clearance_cannot_be_reviewed(self, restore_client):
+        """#249 finding 2: the write gate matches the listing — above clearance is 404."""
+        subject = f"sub-{uuid.uuid4()}"
+        pid = _principal_with_identity(subject)
+        ws = _workspace("above-clearance")
+        _member(pid, ws, role="investor")  # clearance 1
+        cid = _seed_conflict(ws, sensitivity=3)
+        try:
+            client = _client(subject, ws)
+            assert client.post(f"/api/conflicts/{cid}/reject").status_code == 404
+            assert client.post(f"/api/conflicts/{cid}/approve").status_code == 404
+
+            with psycopg.connect(settings().postgres_dsn, row_factory=psycopg.rows.dict_row) as conn:
+                row = conn.execute(
+                    "SELECT status FROM entity_conflict WHERE id = %s", (cid,)
+                ).fetchone()
+                assert row["status"] == "pending"
+        finally:
+            _cleanup([pid], [ws])
+
     def test_rejecting_an_unknown_conflict_is_404(self, restore_client):
         subject = f"sub-{uuid.uuid4()}"
         pid = _principal_with_identity(subject)
