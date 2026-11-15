@@ -190,9 +190,9 @@ intake has shipped without one.
 | API | **80 operations** across 62 paths, 14 tags (health is untagged) |
 | Migrations | 30, head `0030_document_principal_role`, forward and reverse tested |
 | Architecture decisions | 18 ADRs |
-| Commits | 561 (`git rev-list --count 74d0da3`) |
+| Commits | 561 (`git rev-list --count 9eb26c0`) |
 
-Backend, API and migration figures were re-derived for #241 on its branch tip `cecfb96` merged
+Backend, API and migration figures were re-derived for #244 on its branch tip `4fa94ac` merged
 with master `aec9555` (2026-11-16). The backend figure is a **collection count**
 (`CALLOSUM_RUN_INTEGRATION=1 pytest --collect-only`), **not a pass count**: pass and fail come
 from this PR's CI run. The API figure is counted from `app.openapi()`, which reports tags;
@@ -201,7 +201,7 @@ CI run [39314827969](https://github.com/Cloverag/callosum/actions/runs/393148279
 No frontend test has changed on master since.
 
 This PR's backend delta is **+3 on master's 982**, reconciled by diffing the
-collected test ids, not by arithmetic: `tests/test_prep_api_authorization.py` +3.
+collected test ids, not by arithmetic: `tests/test_prep_overdue.py` +3.
 
 **P3 is frozen, not accepted** — of its three exit criteria one is met, one is partial and
 one is not met, because the accessibility and error-state checkpoints were deliberately
