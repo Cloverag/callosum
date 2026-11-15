@@ -370,26 +370,3 @@ def reject_conflict(
     if not updated:
         raise ValueError(f"No pending entity conflict: {conflict_id}")
 
-
-def pending_conflicts(
-    conn: psycopg.Connection,
-    *,
-    clearance: int = 4,
-    limit: int = 50,
-) -> list[dict]:
-    """Return pending conflicts the reviewer is allowed to see.
-
-    Ordered by similarity descending — high-confidence matches first,
-    because those are the most likely true aliases and the cheapest to review.
-    """
-    return conn.execute(
-        """
-        SELECT id, name_a, type_a, name_b, type_b,
-               similarity, quote_a, quote_b, sensitivity, created_at
-        FROM entity_conflict
-        WHERE status = 'pending' AND sensitivity <= %s
-        ORDER BY similarity DESC, created_at ASC
-        LIMIT %s
-        """,
-        (clearance, limit),
-    ).fetchall()

@@ -3,7 +3,7 @@
 import { ArrowRight, ScrollText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import {
   MINUTES_STATUS_LABEL,
   MINUTES_STATUS_TONE,
@@ -11,17 +11,6 @@ import {
   type Minutes,
 } from "@/lib/minutes";
 
-function formatDate(iso: string): string {
-  // Pinned locale and zone: a date rendered from the browser's locale differs
-  // between server and client and produces a hydration mismatch. Same fix as
-  // the decisions, packs and entity-conflicts pages.
-  return new Date(iso).toLocaleDateString("en-US", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-}
 
 /**
  * One minutes record.

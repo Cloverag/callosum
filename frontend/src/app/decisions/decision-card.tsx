@@ -3,7 +3,7 @@
 import { ArrowRight, Quote } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import {
   DECISION_STATUS_LABEL,
   DECISION_STATUS_TONE,
@@ -15,17 +15,6 @@ import {
 } from "@/lib/decisions";
 import { StanceBar } from "./stance-bar";
 
-function formatDate(iso: string): string {
-  // Pinned locale and zone: a date rendered from the browser's locale differs
-  // between server and client and produces a hydration mismatch. Same fix as
-  // the entity-conflicts page.
-  return new Date(iso).toLocaleDateString("en-US", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-}
 
 /**
  * One decision, with how the board landed on it and what was actually said.
