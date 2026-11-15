@@ -229,9 +229,9 @@ def test_a_vote_now_names_the_caller_as_well_as_the_member(w):
 def test_the_commitment_bridge_now_names_the_caller(w):
     """The second pre-existing anonymous event.
 
-    The action is left as `status_changed` with a `detail` discriminator, exactly as it
-    was: it is a poor fit for an act that changes no status, but changing it would make
-    old and new events for the same act disagree. Reported in the PR, not fixed here.
+    Since #250 the bridge is one transaction and its event is recorded on the commitment
+    it creates (`created`, with `resolution_id` in the payload) rather than as a
+    `status_changed` on a resolution whose status did not change.
     """
     r = w.resolution()
     adopted = resolutions.transition_resolution(
@@ -239,17 +239,19 @@ def test_the_commitment_bridge_now_names_the_caller(w):
         workspace_id=w.ws, actor_principal_id=w.actor,
     )
     member = w.member()
-    resolutions.bridge_resolution_to_commitment(
+    commitment = resolutions.bridge_resolution_to_commitment(
         adopted.id, member, workspace_id=w.ws, actor_principal_id=w.actor,
     )
 
     bridged = [
-        e for e in w.events(r.id)
+        e for e in audit.list_audit_events(
+            aggregate_type="commitment", aggregate_id=commitment.id, workspace_id=w.ws
+        )
         if e.payload.get("detail") == "resolution_bridged_to_commitment"
     ]
     assert len(bridged) == 1
     assert str(bridged[0].actor_principal_id) == w.actor
-    assert bridged[0].payload["commitment_id"]
+    assert bridged[0].payload["resolution_id"] == adopted.id
 
 
 # ------------------------------------------------------------------ refusals

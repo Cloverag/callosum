@@ -84,6 +84,13 @@ def test_every_mutating_route_passes_the_actor_to_the_domain():
     assert seen == MUTATORS, f"routes never call: {sorted(MUTATORS - seen)}"
 
 
+#: The bridge writes its commitment AND that commitment's audit event through
+#: `commitments.insert_commitment` inside its own transaction (#249), so for the bridge
+#: that call is the audit write. `test_commitments_audit_static.py` holds
+#: `insert_commitment` to the audit rules and checks the bridge passes its actor.
+_AUDITS_VIA = {"bridge_resolution_to_commitment": "insert_commitment"}
+
+
 def test_no_domain_mutator_can_skip_the_audit():
     """Each of the six must reach an audit call and accept an actor to record."""
     checked = set()
@@ -94,7 +101,8 @@ def test_no_domain_mutator_can_skip_the_audit():
             for n in ast.walk(fn)
             if isinstance(n, ast.Call)
         }
-        assert called & {"_audit_resolution", "record_audit_event"}, (
+        accepted = {"_audit_resolution", "record_audit_event", *_AUDITS_VIA.get(fn.name, "").split()}
+        assert called & accepted, (
             f"resolutions.{fn.name} records no audit event"
         )
         assert "actor_principal_id" in {a.arg for a in fn.args.kwonlyargs}, (
@@ -138,6 +146,7 @@ def test_the_audit_write_follows_the_mutation_it_records():
             and (
                 getattr(n.func, "id", "") == "_audit_resolution"
                 or getattr(n.func, "attr", "") == "record_audit_event"
+                or getattr(n.func, "attr", "") == _AUDITS_VIA.get(fn.name)
             )
         ]
         assert audit_lines, fn.name
@@ -223,8 +232,8 @@ def test_the_mutator_list_is_not_hand_maintained():
     """A seventh mutation must not arrive unaudited and unnoticed.
 
     Derives the writing functions from the module and fails if they diverge from the pin
-    above. `bridge_resolution_to_commitment` writes no SQL of its own — it delegates to
-    `commitments.create_commitment` — so it is allowed to be in the pin without appearing
+    above. `bridge_resolution_to_commitment` writes no resolution SQL of its own — it delegates
+    the insert to `commitments.insert_commitment` — so it is allowed to be in the pin without appearing
     in the derived set, and that exemption is named rather than silently tolerated.
     """
     tree = _domain_tree()

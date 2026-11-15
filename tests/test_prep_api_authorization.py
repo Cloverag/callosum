@@ -199,15 +199,16 @@ class TestAnActiveMemberIsServed:
             _cleanup([pid], [ws])
 
     def test_the_write_is_reachable(self, restore_client):
-        """`publish-preread` 400s without a pack to publish — not 401, 403 or 500.
+        """`publish-preread` 409s without a pack to publish — not 401, 403 or 500.
 
-        A 400 proves the request reached the domain, which is what distinguishes
-        "authorized and there is nothing to publish" from "refused at the door".
+        A 409 proves the request reached the domain, which is what distinguishes
+        "authorized and there is nothing to publish" from "refused at the door". It was
+        a 400 from a catch-all `except Exception` until #239/#249.
         """
         client, pid, ws, meeting_id = _signed_in("active_write")
         try:
             res = client.post(f"/api/meetings/{meeting_id}/publish-preread")
-            assert res.status_code == 400
+            assert res.status_code == 409
         finally:
             _cleanup([pid], [ws])
 

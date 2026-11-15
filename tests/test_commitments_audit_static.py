@@ -31,6 +31,15 @@ _BRIDGE = pathlib.Path(resolutions_mod.__file__)
 #: The three audited mutations — one per route.
 MUTATORS = {"create_commitment", "update_commitment", "record_update"}
 
+#: Route-facing mutators that hand the write AND its audit to a transaction-sharing
+#: helper (#249: the resolution bridge must lock, check and insert in one transaction).
+#: The helper is held to every rule below in the route function's place, and the route
+#: function must pass its actor on — see `test_a_delegating_mutator_passes_its_actor_on`.
+DELEGATES = {"create_commitment": "insert_commitment"}
+
+#: The functions that actually write a commitment and record it.
+AUDITED = (MUTATORS - set(DELEGATES)) | set(DELEGATES.values())
+
 #: Writers deliberately left without an audit trail, each with its reason.
 EXEMPT = {
     # No route, and nothing dispatches: delivery is inert until P8, pinned by
@@ -46,7 +55,7 @@ def _tree(path: pathlib.Path) -> ast.Module:
 
 
 def _mutator_nodes(tree: ast.Module):
-    return [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in MUTATORS]
+    return [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in AUDITED]
 
 
 def _sql_text(node: ast.AST) -> str:
@@ -78,12 +87,12 @@ def test_the_resolution_bridge_passes_its_actor_to_the_commitment_it_creates():
         for node in ast.walk(_tree(_BRIDGE))
         if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "create_commitment"
+        and node.func.attr in {"create_commitment", "insert_commitment"}
     ]
-    assert calls, "resolutions.py no longer calls create_commitment — update this test"
+    assert calls, "resolutions.py no longer creates a commitment — update this test"
     for call in calls:
         assert "actor_principal_id" in {k.arg for k in call.keywords}, (
-            f"resolutions.py:{call.lineno}: create_commitment without actor_principal_id "
+            f"resolutions.py:{call.lineno}: {call.func.attr} without actor_principal_id "
             f"writes an anonymous `created` event for every bridged commitment"
         )
 
@@ -103,7 +112,24 @@ def test_no_domain_mutator_can_skip_the_audit():
         assert "actor_principal_id" in {a.arg for a in fn.args.kwonlyargs}, (
             f"commitments.{fn.name} takes no actor to record"
         )
-    assert checked == MUTATORS, f"not found in the module: {sorted(MUTATORS - checked)}"
+    assert checked == AUDITED, f"not found in the module: {sorted(AUDITED - checked)}"
+
+
+def test_a_delegating_mutator_passes_its_actor_on():
+    """`create_commitment` writes nothing itself; dropping the actor on the hand-off
+    would make every route-created commitment's `created` event anonymous."""
+    tree = _tree(_DOMAIN)
+    for outer, inner in DELEGATES.items():
+        fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == outer)
+        calls = [
+            n for n in ast.walk(fn)
+            if isinstance(n, ast.Call) and getattr(n.func, "id", "") == inner
+        ]
+        assert calls, f"commitments.{outer} no longer delegates to {inner}"
+        for call in calls:
+            assert "actor_principal_id" in {k.arg for k in call.keywords}, (
+                f"commitments.{outer} calls {inner} without actor_principal_id"
+            )
 
 
 def test_no_audit_call_in_this_module_omits_the_actor():
@@ -202,8 +228,8 @@ def test_the_mutator_list_is_not_hand_maintained():
         sql = _sql_text(fn).upper()
         if any(v in sql for v in ("INSERT INTO COMMITMENT", "UPDATE COMMITMENT", "DELETE FROM COMMITMENT")):
             writers.add(fn.name)
-    assert writers == MUTATORS | EXEMPT, (
+    assert writers == AUDITED | EXEMPT, (
         f"commitments.py's SQL-writing functions are {sorted(writers)}; this file accounts "
-        f"for {sorted(MUTATORS | EXEMPT)}. Audit the new one, or exempt it with a reason."
+        f"for {sorted(AUDITED | EXEMPT)}. Audit the new one, or exempt it with a reason."
     )
     assert not MUTATORS & EXEMPT

@@ -180,41 +180,6 @@ export function latestUpdate(c: Commitment): CommitmentUpdate | null {
   return c.updates.length > 0 ? c.updates[c.updates.length - 1] : null;
 }
 
-// --- Mock store ------------------------------------------------------------
-
-const WS = "00000000-0000-0000-0000-000000000001";
-
-function update(
-  commitment_id: string,
-  n: number,
-  note: string,
-  new_status: CommitmentStatus | null,
-  author: string | null,
-  at: string,
-): CommitmentUpdate {
-  return {
-    id: `${commitment_id}-u${n}`,
-    commitment_id,
-    note,
-    new_status,
-    author_board_member_id: author,
-    created_at: at,
-    workspace_id: WS,
-  };
-}
-
-/**
- * Demo commitments for the fictional Meridian board.
- *
- * Scenario data, like the decisions, packs, minutes and resolutions mocks. Shaped to
- * exercise every state the domain reaches **and** the two a naive surface gets wrong:
- * work that is blocked and then resumes, and work completed after its due date.
- *
- * `decision_id` and `resolution_id` match the decisions and resolutions mocks, so all
- * three surfaces describe one company. Every row is `not_dispatched`, because that is
- * the only delivery state the backend can produce before P8.
- */
-
 // --- API client ------------------------------------------------------------
 
 /**

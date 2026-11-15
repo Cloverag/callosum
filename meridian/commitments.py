@@ -286,9 +286,37 @@ def create_commitment(
 
     `actor_principal_id` is optional for the same reason it is in `minutes.py` and
     `resolutions.py` — existing call sites predate the audit write. Both production
-    callers supply it (the route, and `resolutions.bridge_resolution_to_commitment`);
-    `test_commitments_audit_static.py` is what holds that true, not the signature.
+    callers supply it (the route here, and `resolutions.bridge_resolution_to_commitment`
+    through `insert_commitment`); `test_commitments_audit_static.py` is what holds that
+    true, not the signature.
     """
+    with store.pg(workspace_id) as conn:
+        return insert_commitment(
+            conn, decision_id, title, owner_board_member_id,
+            workspace_id=workspace_id, resolution_id=resolution_id,
+            accountable_team=accountable_team, detail=detail, due_date=due_date,
+            actor_principal_id=actor_principal_id,
+        )
+
+
+def insert_commitment(
+    conn,
+    decision_id: str,
+    title: str,
+    owner_board_member_id: str,
+    *,
+    workspace_id: str,
+    resolution_id: str | None = None,
+    accountable_team: str | None = None,
+    detail: str | None = None,
+    due_date: date | None = None,
+    actor_principal_id: str | None = None,
+    audit_extra: dict | None = None,
+) -> Commitment:
+    """`create_commitment` on the caller's open transaction, so a caller (the resolution
+    bridge) can lock, check, insert and audit atomically. `audit_extra` adds keys to the
+    one `created` event's payload (the bridge marks itself there rather than writing a
+    second event for the same act)."""
     if not title or not title.strip():
         raise CommitmentValidationError("title must not be empty")
 
@@ -296,50 +324,49 @@ def create_commitment(
     owner_uuid = uuid.UUID(str(owner_board_member_id))
     res_uuid = uuid.UUID(str(resolution_id)) if resolution_id else None
 
-    with store.pg(workspace_id) as conn:
-        # RLS-scoped existence checks. The composite FKs would also reject a
-        # cross-workspace id, but as a ForeignKeyViolation — callers should not have
-        # to catch psycopg exceptions to handle a missing parent.
-        if conn.execute("SELECT id FROM decision WHERE id = %s", (dec_uuid,)).fetchone() is None:
-            raise DecisionNotFound(str(decision_id))
+    # RLS-scoped existence checks. The composite FKs would also reject a
+    # cross-workspace id, but as a ForeignKeyViolation — callers should not have
+    # to catch psycopg exceptions to handle a missing parent.
+    if conn.execute("SELECT id FROM decision WHERE id = %s", (dec_uuid,)).fetchone() is None:
+        raise DecisionNotFound(str(decision_id))
 
-        _assert_active_member(conn, owner_uuid)
+    _assert_active_member(conn, owner_uuid)
 
-        if res_uuid is not None:
-            res = conn.execute(
-                "SELECT decision_id FROM resolution WHERE id = %s", (res_uuid,)
-            ).fetchone()
-            if res is None:
-                raise ResolutionNotFound(str(resolution_id))
-            # A commitment's evidence pointer must lead back to its own source.
-            # Nothing in the schema prevents citing an unrelated resolution, and a
-            # wrong citation is worse than none: it looks like provenance.
-            if str(res["decision_id"]) != str(dec_uuid):
-                raise CommitmentValidationError(
-                    f"resolution {resolution_id} does not belong to decision {decision_id}"
-                )
-
-        row = conn.execute(
-            """
-            INSERT INTO commitment
-                (decision_id, resolution_id, owner_board_member_id, accountable_team,
-                 title, detail, due_date, status, workspace_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, 'open', %s)
-            RETURNING *
-            """,
-            (
-                dec_uuid,
-                res_uuid,
-                owner_uuid,
-                accountable_team.strip() if accountable_team and accountable_team.strip() else None,
-                title.strip(),
-                detail.strip() if detail and detail.strip() else None,
-                due_date,
-                workspace_id,
-            ),
+    if res_uuid is not None:
+        res = conn.execute(
+            "SELECT decision_id FROM resolution WHERE id = %s", (res_uuid,)
         ).fetchone()
+        if res is None:
+            raise ResolutionNotFound(str(resolution_id))
+        # A commitment's evidence pointer must lead back to its own source.
+        # Nothing in the schema prevents citing an unrelated resolution, and a
+        # wrong citation is worse than none: it looks like provenance.
+        if str(res["decision_id"]) != str(dec_uuid):
+            raise CommitmentValidationError(
+                f"resolution {resolution_id} does not belong to decision {decision_id}"
+            )
 
-        _audit_commitment(conn, row, "created", actor_principal_id, workspace_id)
+    row = conn.execute(
+        """
+        INSERT INTO commitment
+            (decision_id, resolution_id, owner_board_member_id, accountable_team,
+             title, detail, due_date, status, workspace_id)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, 'open', %s)
+        RETURNING *
+        """,
+        (
+            dec_uuid,
+            res_uuid,
+            owner_uuid,
+            accountable_team.strip() if accountable_team and accountable_team.strip() else None,
+            title.strip(),
+            detail.strip() if detail and detail.strip() else None,
+            due_date,
+            workspace_id,
+        ),
+    ).fetchone()
+
+    _audit_commitment(conn, row, "created", actor_principal_id, workspace_id, **(audit_extra or {}))
 
     return _row_to_commitment(row, updates=[])
 
@@ -526,6 +553,7 @@ def record_update(
     new_status: str | None = None,
     author_board_member_id: str | None = None,
     actor_principal_id: str | None = None,
+    actor_clearance: int | None = None,
 ) -> Commitment:
     """Appends a progress note, optionally moving the commitment to `new_status`.
 
@@ -568,6 +596,11 @@ def record_update(
 
         if author_uuid is not None:
             _assert_active_member(conn, author_uuid)
+            from meridian import board_members
+            board_members.assert_may_act_for(
+                conn, author_uuid,
+                actor_principal_id=actor_principal_id, actor_clearance=actor_clearance,
+            )
 
         conn.execute(
             """

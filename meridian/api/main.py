@@ -10,8 +10,9 @@ Run it (from the repo root, with the venv):
 Then open http://localhost:8000/health  and  http://localhost:8000/health/engine
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 
 # The proof of separation: Meridian depends ON Callosum, as an ordinary import.
@@ -68,6 +69,32 @@ if _settings.session_configured():
         same_site=_settings.session_same_site,
         https_only=_settings.session_https_only,
     )
+
+# --- CSRF (#249 finding 12) ------------------------------------------------
+#
+# `SameSite=Lax` stops cross-SITE POSTs, but "same site" ignores the port and spans
+# sibling subdomains, so a page on another localhost port or subdomain could still
+# auto-submit a bodiless form (`/api/conflicts/{id}/approve`, `/auth/logout`) with the
+# victim's cookie. A cross-origin page cannot set a custom header without a CORS
+# preflight, so requiring one on cookie-carrying writes closes that. Requests with no
+# session cookie carry no ambient authority and are left alone.
+_UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+CSRF_HEADER = "x-requested-with"
+
+
+@app.middleware("http")
+async def require_csrf_header(request: Request, call_next):
+    if (
+        request.method in _UNSAFE_METHODS
+        and _settings.session_cookie_name in request.cookies
+        and not request.headers.get(CSRF_HEADER)
+    ):
+        return JSONResponse(
+            status_code=403,
+            content={"error": {"code": "forbidden", "detail": "Missing X-Requested-With header."}},
+        )
+    return await call_next(request)
+
 
 # --- OIDC (ADR-009) --------------------------------------------------------
 #

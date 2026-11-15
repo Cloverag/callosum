@@ -27,7 +27,7 @@ are P8.
 import uuid
 from typing import Any
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 
 from callosum import store
 from callosum.store import DEFAULT_WORKSPACE_ID
@@ -471,6 +471,7 @@ def record_vote(
     *,
     workspace_id: str = DEFAULT_WORKSPACE_ID,
     actor_principal_id: str | None = None,
+    actor_clearance: int | None = None,
 ) -> ResolutionVote:
     """Records or changes a board member's vote on a `draft` resolution.
 
@@ -487,7 +488,9 @@ def record_vote(
 
     with store.pg(workspace_id) as conn:
         res = conn.execute(
-            "SELECT decision_id, status FROM resolution WHERE id = %s FOR SHARE",
+            "SELECT decision_id, status FROM resolution WHERE id = %s FOR UPDATE",
+            # FOR UPDATE, not FOR SHARE: this transaction bumps `resolution.version` below,
+            # and two voters each holding a share lock deadlock on that upgrade (#249).
             (res_uuid,),
         ).fetchone()
         if res is None:
@@ -509,6 +512,11 @@ def record_vote(
             # to vote here", and distinguishing them tells a caller that a member
             # exists in a workspace whose directory they may not be reading.
             raise BoardMemberNotFound(str(board_member_id))
+
+        board_members.assert_may_act_for(
+            conn, member_uuid,
+            actor_principal_id=actor_principal_id, actor_clearance=actor_clearance,
+        )
 
         # Two standing states cannot cast a counted vote, for different reasons, and
         # `board_member.voting` is an enum rather than a boolean precisely so the
@@ -822,15 +830,22 @@ def bridge_resolution_to_commitment(
     resolution_id: str,
     owner_board_member_id: str,
     *,
-    due_date: datetime | None = None,
+    due_date: date | None = None,
     workspace_id: str = DEFAULT_WORKSPACE_ID,
     actor_principal_id: str | None = None,
 ) -> Any:
-    """Converts an ADOPTED resolution into an actionable Commitment linked to the Decision."""
+    """Converts an ADOPTED resolution into an actionable Commitment linked to it.
+
+    One transaction, with the resolution row locked: the commitment carries
+    `resolution_id` as its provenance, a second bridge of the same resolution is
+    refused rather than duplicated, and the audit row commits with the insert (#249).
+    """
+    from meridian import commitments
+
     res_uuid = uuid.UUID(str(resolution_id))
     with store.pg(workspace_id) as conn:
         res = conn.execute(
-            "SELECT decision_id, title, status FROM resolution WHERE id = %s",
+            "SELECT decision_id, title, status FROM resolution WHERE id = %s FOR UPDATE",
             (res_uuid,),
         ).fetchone()
         if res is None:
@@ -839,33 +854,25 @@ def bridge_resolution_to_commitment(
             raise ResolutionValidationError(
                 f"only ADOPTED resolutions can be converted into commitments; current status is {res['status']!r}"
             )
-        decision_id = str(res["decision_id"])
+        if conn.execute(
+            "SELECT 1 FROM commitment WHERE resolution_id = %s", (res_uuid,)
+        ).fetchone():
+            raise ResolutionLockedError(
+                f"resolution {resolution_id} has already been converted into a commitment"
+            )
 
-    from meridian import commitments
-    commitment = commitments.create_commitment(
-        title=res["title"],
-        owner_board_member_id=owner_board_member_id,
-        decision_id=decision_id,
-        due_date=due_date,
-        workspace_id=workspace_id,
-        actor_principal_id=actor_principal_id,
-    )
-
-    with store.pg(workspace_id) as conn:
-        # Also anonymous before this change. The action and payload are left exactly as
-        # they were: `status_changed` is a poor fit for an act that changes no status —
-        # bridging creates a commitment and leaves the resolution where it is — and the
-        # `detail` discriminator is doing the work a distinct action should. Changing it
-        # would make old and new events for the same act disagree, so it is reported
-        # rather than fixed here; see the PR.
-        audit.record_audit_event(
+        commitment = commitments.insert_commitment(
             conn,
-            aggregate_type="resolution",
-            aggregate_id=res_uuid,
-            action="status_changed",
-            actor_principal_id=actor_principal_id,
-            payload={"commitment_id": commitment.id, "owner_id": owner_board_member_id, "detail": "resolution_bridged_to_commitment"},
+            str(res["decision_id"]),
+            res["title"],
+            owner_board_member_id,
             workspace_id=workspace_id,
+            resolution_id=str(res_uuid),
+            due_date=due_date,
+            # One `created` event for the commitment, in this transaction, naming the
+            # caller; `resolution_id` is already in its payload (#168, #249).
+            actor_principal_id=actor_principal_id,
+            audit_extra={"detail": "resolution_bridged_to_commitment"},
         )
 
     return commitment
