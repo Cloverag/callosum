@@ -56,6 +56,11 @@ AGGREGATE_TYPES = frozenset(
         # (not yet built — no route or record_audit_event call in this branch
         # uses this value yet). See that migration's docstring.
         "membership",
+        # A grant filed by a non-approver, awaiting a founder/admin signature (#225,
+        # migration 0031). A separate aggregate from `membership` on purpose: a request
+        # is not a membership, and the two answer different questions of the trail —
+        # "how did this person get access" versus "what happened to request X".
+        "membership_request",
     }
 )
 
@@ -79,6 +84,12 @@ ACTIONS = frozenset(
         # presence of a row would itself be the disclosure the audit exists to make
         # visible, and the audit trail would become a second copy of the oracle.
         "intake_duplicate_refused",
+        # A pending request was signed off, or refused, by a founder/admin (#225,
+        # migration 0031). Generic rather than membership-specific — `aggregate_type`
+        # already says which queue — so the `proposed_change` review queue can reuse
+        # them rather than inventing a parallel pair.
+        "approved",
+        "rejected",
     }
 )
 

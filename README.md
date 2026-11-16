@@ -174,9 +174,9 @@ implementation detail. Documentation that still names Claude or Kimi as the defa
 
 ## What is built
 
-Two tracks. The research engine is closed and frozen. The product has three phases
-accepted; P3 is frozen feature-complete with its exit gate unclaimed, and P4 source
-intake has shipped without one.
+Two tracks. The research engine is closed and frozen. The product has four phases
+accepted: P4 passed its exit gate on 2026-10-08, at the second attempt. P3 is frozen
+feature-complete with its exit gate unclaimed, and P5 is in flight.
 
 | Track | State |
 |---|---|
