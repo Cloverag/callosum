@@ -1,5 +1,11 @@
 # Callosum contributor guide
 
+> **Two agents and two humans work in this repository.** Read
+> [`COORDINATION.md`](COORDINATION.md) first: it says which lane you own, which worktree is
+> yours, and the rules that stop you from overwriting each other's work. Claim your work in
+> its ledger before you start. Ownership of the backend lane is set by
+> [`rules.md`](rules.md) §5, which `COORDINATION.md` must not contradict.
+
 ## Purpose and current state
 
 Callosum is an institutional-memory prototype for startup decisions. It ingests source
