@@ -114,6 +114,7 @@ def create_resolution(payload: ResolutionCreate, principal: CurrentPrincipal) ->
         payload.title,
         payload.body,
         workspace_id=principal.workspace_id,
+        actor_principal_id=str(principal.id) if principal.id else None,
     )
 
 
@@ -131,6 +132,7 @@ def update_resolution(
         str(resolution_id),
         expected_version=payload.expected_version,
         workspace_id=principal.workspace_id,
+        actor_principal_id=str(principal.id) if principal.id else None,
         **changes,
     )
 
@@ -171,6 +173,7 @@ def transition_resolution(
         payload.new_status,
         expected_version=payload.expected_version,
         workspace_id=principal.workspace_id,
+        actor_principal_id=str(principal.id) if principal.id else None,
     )
 
 
@@ -189,6 +192,7 @@ def supersede_resolution(
         payload.new_body,
         expected_version=payload.expected_version,
         workspace_id=principal.workspace_id,
+        actor_principal_id=str(principal.id) if principal.id else None,
     )
     return ResolutionSupersession(superseded=old, replacement=new)
 
