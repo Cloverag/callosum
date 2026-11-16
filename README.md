@@ -190,8 +190,11 @@ intake has shipped without one.
 | API | **80 operations** across 62 paths, 14 tags (health is untagged) |
 | Migrations | 30, head `0030_document_principal_role`, forward and reverse tested |
 | Architecture decisions | 18 ADRs |
-| Commits | 561 (`git rev-list --count 9eb26c0`) |
+| Commits | 582 (`git rev-list --count aec9555`) |
 
+Measured on `aec9555` (master, 2026-11-16) for the commit, migration and ADR rows;
+`tests/test_readme_pin.py` checks them against that pin. The test-count figures below
+are master's and are re-pinned once after the open PRs land.
 Backend, API and migration figures were re-derived for #244 on its branch tip `4fa94ac` merged
 with master `aec9555` (2026-11-16). The backend figure is a **collection count**
 (`CALLOSUM_RUN_INTEGRATION=1 pytest --collect-only`), **not a pass count**: pass and fail come

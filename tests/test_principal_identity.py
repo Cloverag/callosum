@@ -20,7 +20,7 @@ if os.environ.get("CALLOSUM_RUN_INTEGRATION") != "1":
 
 import psycopg
 
-from callosum import store
+from callosum import identity, store
 from callosum.config import settings
 
 pytestmark = pytest.mark.integration
@@ -37,8 +37,8 @@ def _admin(sql: str, params: tuple = ()) -> None:
 def _principal(name: str = "Identity Fixture") -> str:
     pid = str(uuid.uuid4())
     _admin(
-        "INSERT INTO principal (id, name, role, clearance) VALUES (%s, %s, 'director', 2)",
-        (pid, f"{name} {pid[:6]}"),
+        "INSERT INTO principal (id, name, role, clearance) VALUES (%s, %s, %s, %s)",
+        (pid, f"{name} {pid[:6]}", "director", identity.ROLE_TO_CLEARANCE["director"]),
     )
     return pid
 
