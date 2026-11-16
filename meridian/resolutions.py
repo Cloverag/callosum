@@ -840,7 +840,7 @@ def bridge_resolution_to_commitment(
     `resolution_id` as its provenance, a second bridge of the same resolution is
     refused rather than duplicated, and the audit row commits with the insert (#249).
     """
-    from meridian import audit, commitments
+    from meridian import commitments
 
     res_uuid = uuid.UUID(str(resolution_id))
     with store.pg(workspace_id) as conn:
@@ -869,16 +869,10 @@ def bridge_resolution_to_commitment(
             workspace_id=workspace_id,
             resolution_id=str(res_uuid),
             due_date=due_date,
-        )
-        audit.record_audit_event(
-            conn,
-            aggregate_type="commitment",
-            aggregate_id=commitment.id,
-            action="created",
+            # One `created` event for the commitment, in this transaction, naming the
+            # caller; `resolution_id` is already in its payload (#168, #249).
             actor_principal_id=actor_principal_id,
-            payload={"resolution_id": str(res_uuid), "owner_id": str(owner_board_member_id),
-                     "detail": "resolution_bridged_to_commitment"},
-            workspace_id=workspace_id,
+            audit_extra={"detail": "resolution_bridged_to_commitment"},
         )
 
     return commitment
