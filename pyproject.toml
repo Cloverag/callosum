@@ -20,7 +20,7 @@ dependencies = [
     "python-docx>=1.1",
     "typer>=0.15",
     "rich>=13.9",
-    "rapidfuzz>=3.9",   # entity name similarity for conflict detection
+    "rapidfuzz>=3.14.6",   # entity name similarity for conflict detection
     "authlib>=1.6",     # OIDC client for the P3 authenticated API (ADR-009)
     "itsdangerous>=2.2",# signs the session cookie (Starlette SessionMiddleware)
     # Floors for pip-audit: not imported directly; keep the installed graph
