@@ -1030,3 +1030,105 @@ class TestGrantAndRevoke:
                 _admin("ALTER TABLE audit_event DROP CONSTRAINT audit_event_action_check")
                 _admin(f"ALTER TABLE audit_event ADD CONSTRAINT audit_event_action_check {original_check}")
             _cleanup(workspace_ids=[ws], principal_ids=[founder, member])
+
+
+class TestClearanceFloor:
+    """#232 (d): no change may leave a workspace without an active clearance-4 member.
+
+    The #185 guard counts memberships; a demotion leaves every row active, so it could not
+    see this. Once nobody holds clearance 4, nobody can grant `founder` or `admin` again.
+    """
+
+    def _role(self, principal_id, ws):
+        return _admin_fetch(
+            "SELECT role, active FROM membership WHERE principal_id = %s AND workspace_id = %s",
+            (principal_id, ws),
+        )[0]
+
+    def test_a_grant_cannot_demote_the_last_founder_or_admin(self):
+        """An admin may demote the founder (4 > 4 is false under (a)), but not then
+        themselves: that would leave nobody at clearance 4."""
+        founder = _principal()
+        admin = _principal(role="admin")
+        ws = None
+        try:
+            ws = workspaces.create_workspace("Floor Grant", None, founder)
+            workspaces.grant_membership(admin, "admin", workspace_id=ws, actor_principal_id=founder)
+            workspaces.grant_membership(founder, "observer", workspace_id=ws, actor_principal_id=admin)
+
+            with pytest.raises(workspaces.ClearanceFloorError):
+                workspaces.grant_membership(admin, "observer", workspace_id=ws, actor_principal_id=admin)
+            assert self._role(admin, ws)["role"] == "admin"
+        finally:
+            _cleanup(workspace_ids=[ws], principal_ids=[founder, admin])
+
+    def test_a_revoke_cannot_remove_the_last_founder_while_others_remain(self):
+        """The case #185 could not see: an observer keeps its `EXISTS` true, so the sole
+        founder's self-revocation used to succeed and strand the workspace at clearance 0."""
+        founder = _principal()
+        observer = _principal(role="observer")
+        ws = None
+        try:
+            ws = workspaces.create_workspace("Floor Revoke", None, founder)
+            workspaces.grant_membership(observer, "observer", workspace_id=ws, actor_principal_id=founder)
+
+            with pytest.raises(workspaces.ClearanceFloorError):
+                workspaces.revoke_membership(founder, workspace_id=ws, actor_principal_id=founder)
+            assert self._role(founder, ws) == {"role": "founder", "active": True}
+        finally:
+            _cleanup(workspace_ids=[ws], principal_ids=[founder, observer])
+
+    def test_a_second_founder_may_still_leave(self):
+        """The floor targets the harm, not the actor: with another founder present,
+        demoting or revoking one of them is ordinary."""
+        f1, f2 = _principal(), _principal()
+        ws = None
+        try:
+            ws = workspaces.create_workspace("Floor Ordinary", None, f1)
+            workspaces.grant_membership(f2, "founder", workspace_id=ws, actor_principal_id=f1)
+            revoked = workspaces.revoke_membership(f2, workspace_id=ws, actor_principal_id=f2)
+            assert revoked.active is False
+        finally:
+            _cleanup(workspace_ids=[ws], principal_ids=[f1, f2])
+
+    def test_two_concurrent_demotions_cannot_both_strand_the_workspace(self):
+        """Two founders demote each other at once, ten times. A count-then-write floor
+        would let both through; the ordered lock in `_lock_active_memberships` must let
+        exactly one succeed, and the workspace must always keep a founder."""
+        import threading
+
+        for attempt in range(10):
+            f1, f2 = _principal(), _principal()
+            ws = None
+            try:
+                ws = workspaces.create_workspace(f"Floor Race {attempt}", None, f1)
+                workspaces.grant_membership(f2, "founder", workspace_id=ws, actor_principal_id=f1)
+                barrier = threading.Barrier(2)
+                outcomes: list = []
+
+                def demote(actor, target):
+                    barrier.wait()
+                    try:
+                        workspaces.grant_membership(target, "observer", workspace_id=ws, actor_principal_id=actor)
+                        outcomes.append("ok")
+                    except (workspaces.ClearanceFloorError, workspaces.EscalationDeniedError) as exc:
+                        outcomes.append(type(exc).__name__)
+
+                threads = [
+                    threading.Thread(target=demote, args=(f1, f2)),
+                    threading.Thread(target=demote, args=(f2, f1)),
+                ]
+                for t in threads:
+                    t.start()
+                for t in threads:
+                    t.join()
+
+                assert sorted(outcomes).count("ok") == 1, (attempt, outcomes)
+                founders = _admin_fetch(
+                    "SELECT 1 FROM membership WHERE workspace_id = %s AND active"
+                    " AND role IN ('founder', 'admin')",
+                    (ws,),
+                )
+                assert len(founders) == 1, (attempt, outcomes)
+            finally:
+                _cleanup(workspace_ids=[ws], principal_ids=[f1, f2])

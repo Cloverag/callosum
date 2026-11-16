@@ -133,6 +133,9 @@ _EXPLICIT: tuple[tuple[type[BaseException], int, str, str | None], ...] = (
     # Named to avoid `errors.py`'s own "NotFound" name-suffix pass, deliberately —
     # see the class docstring in workspaces.py.
     (workspaces.LastActiveMembershipError, HTTPStatus.CONFLICT, CONFLICT, None),
+    # 409, like the last-member guard: the change is well-formed and refused for what it
+    # would do to the workspace — leave nobody at clearance 4 (#232 (d)).
+    (workspaces.ClearanceFloorError, HTTPStatus.CONFLICT, CONFLICT, None),
     # #225's approval gate. All four need explicit entries, and for two distinct reasons.
     #
     # The 403 pair carries its detail intact rather than `_FORBIDDEN_DETAIL`, matching the

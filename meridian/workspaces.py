@@ -141,6 +141,18 @@ class LastActiveMembershipError(WorkspaceError):
     """
 
 
+class ClearanceFloorError(WorkspaceError):
+    """Refusing a change that would leave no active member at clearance 4 (#232 (d)).
+
+    The #185 guard counts memberships; this one counts clearance. A demotion leaves
+    every row `active`, so a workspace can keep members and still have nobody able to
+    grant `founder` or `admin` again — `create_workspace_with_founder` (0029) cannot
+    re-found an existing workspace, so recovery would need a superuser `UPDATE`. A
+    separate class from `LastActiveMembershipError` because the condition differs:
+    rows remain active, nobody at the top. Mapped to 409 in `errors.py`.
+    """
+
+
 class ApprovalNotAuthorizedError(WorkspaceError):
     """The actor is a member here, but not one who may sign off a membership grant (#225).
 
@@ -320,6 +332,52 @@ def _upsert_membership(conn, principal_id: str, role: str, workspace_id: str) ->
     ).fetchone()
 
 
+#: The clearance only which `founder`/`admin` can be granted. A workspace with no active
+#: member at this level can never regain one (#232).
+_TOP_CLEARANCE = 4
+
+
+def _lock_active_memberships(conn, workspace_id: str) -> dict[str, str]:
+    """Locks every active membership in the workspace, in one fixed order. Returns
+    `{principal_id: role}`.
+
+    **Called first, before any other row lock, by every mutation that can lower a
+    clearance** — grant, revoke, approve. Locking in `principal_id` order everywhere means
+    two concurrent changes queue behind each other instead of deadlocking, and a floor
+    decision is made against rows nobody else can change until this transaction ends.
+    A board is a handful of rows, so locking them all is cheaper than reasoning about
+    which subset a given change could affect.
+    """
+    rows = conn.execute(
+        "SELECT principal_id, role FROM membership"
+        " WHERE workspace_id = %s AND active ORDER BY principal_id FOR UPDATE",
+        (workspace_id,),
+    ).fetchall()
+    return {str(r["principal_id"]): r["role"] for r in rows}
+
+
+def _assert_clearance_floor(active: dict[str, str], target: str, new_role: str | None) -> None:
+    """Refuses a change that would leave no active member at clearance 4 (#232 (d)).
+
+    `new_role=None` is a revoke. Targets the harm rather than the actor — the same shape
+    #185 chose. A target who is the ONLY active member is left to the last-member guard,
+    so that refusal keeps its own, more specific error.
+    """
+    target = str(target)
+    if target not in active or len(active) == 1:
+        return
+    if _clearance_for(active[target]) < _TOP_CLEARANCE:
+        return
+    if new_role is not None and _clearance_for(new_role) >= _TOP_CLEARANCE:
+        return
+    if not any(
+        _clearance_for(role) >= _TOP_CLEARANCE for p, role in active.items() if p != target
+    ):
+        raise ClearanceFloorError(
+            "this change would leave the workspace with no active founder or admin"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Bootstrap
 # ---------------------------------------------------------------------------
@@ -416,6 +474,9 @@ def grant_membership(
     requested_clearance = _clearance_for(role)
 
     with store.pg(workspace_id) as conn:
+        # Lock first, then resolve the actor: an actor demoted by a concurrent change
+        # must not act on the clearance they held before it committed (#232).
+        active = _lock_active_memberships(conn, workspace_id)
         actor = identity.resolve_principal_by_id(conn, actor_principal_id, workspace_id=workspace_id)
 
         if requested_clearance > actor.clearance:
@@ -474,6 +535,7 @@ def grant_membership(
             )
             return _row_to_request(request_row)
 
+        _assert_clearance_floor(active, principal_id, role)
         row = _upsert_membership(conn, principal_id, role, workspace_id)
 
         audit.record_audit_event(
@@ -595,6 +657,7 @@ def revoke_membership(
     that.
     """
     with store.pg(workspace_id) as conn:
+        active = _lock_active_memberships(conn, workspace_id)
         actor = identity.resolve_principal_by_id(conn, actor_principal_id, workspace_id=workspace_id)
 
         current = conn.execute(
@@ -607,6 +670,7 @@ def revoke_membership(
             raise EscalationDeniedError(
                 "cannot revoke a membership whose clearance exceeds the acting principal's own"
             )
+        _assert_clearance_floor(active, principal_id, None)
 
         # Before the UPDATE — see the docstring above for why self-revocation
         # requires this order. Uses `current["role"]`, read moments ago, rather
@@ -727,6 +791,9 @@ def approve_membership_request(
     load-bearing and must be added with it.
     """
     with store.pg(workspace_id) as conn:
+        # First, before the actor is resolved and before the request row's lock: one lock
+        # order on every membership mutation, and no acting on a pre-demotion clearance.
+        active = _lock_active_memberships(conn, workspace_id)
         actor = identity.resolve_principal_by_id(
             conn, actor_principal_id, workspace_id=workspace_id
         )
@@ -775,6 +842,17 @@ def approve_membership_request(
             raise StaleMembershipRequestError(
                 f"the requester may no longer grant role {request_row['role']!r}"
             )
+
+        # #232 (a) and (d), re-checked at signing: a change that was safe when proposed
+        # can be unsafe by the time it is approved — the target may have been promoted
+        # above the requester, or become the last founder/admin in the meantime.
+        target_id = str(request_row["principal_id"])
+        target_role = active.get(target_id)
+        if target_role is not None and _clearance_for(target_role) > requester.clearance:
+            raise StaleMembershipRequestError(
+                "the target now holds a role above the requester's own clearance"
+            )
+        _assert_clearance_floor(active, target_id, request_row["role"])
 
         row = _upsert_membership(
             conn, str(request_row["principal_id"]), request_row["role"], workspace_id
