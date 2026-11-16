@@ -133,6 +133,24 @@ _EXPLICIT: tuple[tuple[type[BaseException], int, str, str | None], ...] = (
     # Named to avoid `errors.py`'s own "NotFound" name-suffix pass, deliberately —
     # see the class docstring in workspaces.py.
     (workspaces.LastActiveMembershipError, HTTPStatus.CONFLICT, CONFLICT, None),
+    # #225's approval gate. All four need explicit entries, and for two distinct reasons.
+    #
+    # The 403 pair carries its detail intact rather than `_FORBIDDEN_DETAIL`, matching the
+    # three clearance entries above: the message names the *rule* ("only a founder or an
+    # admin may…", "the principal who requested a membership may not approve it") and
+    # never the actor's own role, the requester's, or whether a given principal is a
+    # member here. A client that cannot read the rule cannot tell its user to ask an
+    # approver rather than retry.
+    (workspaces.ApprovalNotAuthorizedError, HTTPStatus.FORBIDDEN, FORBIDDEN, None),
+    (workspaces.SelfApprovalDeniedError, HTTPStatus.FORBIDDEN, FORBIDDEN, None),
+    # The 409 pair would otherwise fall through pass 2 — neither name carries `Stale`
+    # or `Locked` — and land on pass 3's 422, telling a caller to fix a request that was
+    # correctly formed. Both are state conflicts: re-read the queue, do not edit the
+    # input. (`StaleMembershipRequestError`, the third conflict in this flow, needs no
+    # entry: its `Stale` prefix is matched by pass 2 and maps to 409 already — see its
+    # class docstring, which says that is deliberate rather than incidental.)
+    (workspaces.MembershipRequestAlreadyDecidedError, HTTPStatus.CONFLICT, CONFLICT, None),
+    (workspaces.MembershipRequestAlreadyPendingError, HTTPStatus.CONFLICT, CONFLICT, None),
     # 409: no pack to publish is the meeting's state refusing a correct request. Without
     # this entry pass 3 would answer 422 and tell the client to fix its input (#239, #249).
     (prep.MeetingPrepError, HTTPStatus.CONFLICT, CONFLICT, None),

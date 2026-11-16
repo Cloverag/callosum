@@ -48,10 +48,16 @@ jobs:
           - 7687:7687
 
     steps:
-      - uses: actions/checkout@v4
+      # fetch-depth: 0 is a predicted requirement of tests/test_readme_pin.py
+      # (#159): `git rev-list --count <pin>` fails on the default shallow clone.
+      # The first green run does not demonstrate the depth change was necessary;
+      # the two land together.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
@@ -120,10 +126,10 @@ jobs:
           --health-retries 5
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
@@ -149,10 +155,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: 'npm'

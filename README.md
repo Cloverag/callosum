@@ -174,9 +174,9 @@ implementation detail. Documentation that still names Claude or Kimi as the defa
 
 ## What is built
 
-Two tracks. The research engine is closed and frozen. The product has three phases
-accepted; P3 is frozen feature-complete with its exit gate unclaimed, and P4 source
-intake has shipped without one.
+Two tracks. The research engine is closed and frozen. The product has four phases
+accepted: P4 passed its exit gate on 2026-10-08, at the second attempt. P3 is frozen
+feature-complete with its exit gate unclaimed, and P5 is in flight.
 
 | Track | State |
 |---|---|
@@ -185,23 +185,26 @@ intake has shipped without one.
 
 | | |
 |---|---|
-| Backend tests | **985** collected, gated suite (398 ungated) |
-| Frontend tests | **354** passing, 27 suites |
-| API | **80 operations** across 62 paths, 14 tags (health is untagged) |
+| Backend tests | **1088** passing, gated suite (0 failed; 452 collected ungated) |
+| Frontend tests | **357** passing, 29 suites |
+| API | **79 operations** across 61 paths, 14 tags (health is untagged) |
 | Migrations | 30, head `0030_document_principal_role`, forward and reverse tested |
 | Architecture decisions | 18 ADRs |
-| Commits | 561 (`git rev-list --count 9eb26c0`) |
+| Commits | 659 (`git rev-list --count ea47cbc`) |
 
-Backend, API and migration figures were re-derived for #244 on its branch tip `4fa94ac` merged
-with master `aec9555` (2026-11-16). The backend figure is a **collection count**
-(`CALLOSUM_RUN_INTEGRATION=1 pytest --collect-only`), **not a pass count**: pass and fail come
-from this PR's CI run. The API figure is counted from `app.openapi()`, which reports tags;
-migrations from `meridian/migrations/versions/`. The frontend figure is a **real run**:
-CI run [39314827969](https://github.com/Cloverag/callosum/actions/runs/39314827969) at `74d0da3`, Jest plus a clean Next build.
-No frontend test has changed on master since.
+Measured on `ea47cbc` (master, 2026-11-16, after the #249 queue landed: #215, #217, #241,
+#234–#236, #242, #243, #218). Both test figures are a **real run**: CI run
+[43833927533](https://github.com/Cloverag/callosum/actions/runs/43833927533), the gated
+backend tier against Postgres 16 and Neo4j service containers (1088 passed, 5
+llm-deselected, 0 failed), and Jest (357 tests, 29 suites) with a clean Next 16.4.6 build.
+The ungated figure is a **collection count** (`pytest --collect-only`), not a pass count —
+CI does not run that tier separately. The API figure is counted from `app.openapi()`, which
+reports tags; migrations from `meridian/migrations/versions/`. Commits, migrations and ADRs
+derive at `ea47cbc`, and `tests/test_readme_pin.py` checks them against that pin.
 
-This PR's backend delta is **+3 on master's 982**, reconciled by diffing the
-collected test ids, not by arithmetic: `tests/test_prep_overdue.py` +3.
+This is the single re-pin the open PRs deferred to: while they were merging, README
+conflicts were resolved to master's figures without re-measuring, rather than re-pinned
+(and re-conflicted) on every merge.
 
 **P3 is frozen, not accepted** — of its three exit criteria one is met, one is partial and
 one is not met, because the accessibility and error-state checkpoints were deliberately
@@ -321,13 +324,13 @@ routes. Set `MERIDIAN_API_ORIGIN` if the API is not on `:8000`.
 ```bash
 docker compose up -d && docker compose ps               # all three healthy FIRST
 .venv/bin/callosum eval-mechanism                        # deterministic gate, no LLM
-CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 985 tests, real stores
-cd frontend && npx jest && npm run build                 # 354 tests, 27 suites
+CALLOSUM_RUN_INTEGRATION=1 .venv/bin/python -m pytest    # 1088 tests, real stores
+cd frontend && npx jest && npm run build                 # 357 tests, 29 suites
 ```
 
 `CALLOSUM_RUN_INTEGRATION=1` runs against real Postgres and Neo4j, so the compose stack
-must be up. Without the gate the suite selects 398 tests; with it, 985. Run it with the
-containers stopped and the 587 gated tests fail on connection errors — the failure looks
+must be up. Without the gate the suite selects 452 tests; with it, 1088. Run it with the
+containers stopped and the 636 gated tests fail on connection errors — the failure looks
 like a broken build and is a missing database.
 
 ---

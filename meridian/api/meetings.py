@@ -121,6 +121,7 @@ def create_meeting(body: MeetingCreate, principal: CurrentPrincipal) -> domain.M
         scheduled_end=body.scheduled_end,
         location=body.location,
         created_by=str(principal.id) if principal.id else None,
+        actor_principal_id=str(principal.id) if principal.id else None,
     )
 
 
@@ -143,6 +144,7 @@ def update_meeting(
         str(meeting_id),
         expected_version=body.expected_version,
         workspace_id=principal.workspace_id,
+        actor_principal_id=str(principal.id) if principal.id else None,
         **changes,
     )
 
@@ -163,6 +165,7 @@ def transition_meeting(
         body.new_status,
         expected_version=body.expected_version,
         workspace_id=principal.workspace_id,
+        actor_principal_id=str(principal.id) if principal.id else None,
     )
 
 
