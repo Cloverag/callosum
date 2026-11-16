@@ -247,6 +247,24 @@ authorisation was also not re-derived per request on the `prep` router, includin
   The workspace is in the key because `0022` permits two tenants to hold byte-identical
   documents, and keying on the hash alone would have made `MERGE` fuse their bridge nodes.
 
+## Product P5 — Meeting, agenda, and board-pack lifecycle — 🟩 IN PROGRESS (started 2026-10-08)
+
+Plan: [#226](https://github.com/Cloverag/callosum/issues/226). Full table, ids and recorded
+exceptions: [ROADMAP.md § P5 checkpoints](./ROADMAP.md#p5-checkpoints). Ids are `P5-A` …
+`P5-E`; merged commit subjects say `CP5A`/`CP5B`/`CP5D`, which collide by case with P2's
+`CP5a`/`CP5b` (#233).
+
+| Checkpoint | State |
+|---|---|
+| P5-A — audit every `packs` / `agenda` mutation | ✅ merged (#227) |
+| P5-B — pack builder UI | ✅ merged (#229) |
+| P5-C — review: stale / missing / unresolved | ⬜ definitions awaiting the maintainer (#226) |
+| P5-D — agenda editing | ✅ merged (#228) |
+| P5-E — attendance / objectives | 🟩 measured: not modelled; proposal pending |
+| Gate | ⬜ not attempted |
+
+Sends (email/calendar) are a recorded exception for the P5 gate; P5 covers publishing.
+
 ## Measured on `feat/p4-document-versions` (2026-08-23)
 
 A real local run against Postgres 16.14 and Neo4j, not a collection. Not on `master`: the

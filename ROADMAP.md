@@ -16,12 +16,12 @@ security cases), updated docs/status, runnable verification commands, and a revi
 No checkpoint may weaken evidence verification, human approval, RBAC, provenance, or audit
 requirements.
 
-## Current progress — 2026-09-12
+## Current progress — 2026-11-16
 
 | Track | Completed | Active | Remaining |
 |---|---:|---|---:|
 | Research engine | **14 / 14** accepted (`R0`–`R13`) | — research track CLOSED 2026-07-18, baseline frozen at `6ed5ed5` | 0 |
-| Meridian product | **4 / 13** accepted (`P0`, `P1`, `P2`, `P4`) | **P3 FROZEN**, exit gate not claimed (CP-F/G/H deferred, #93) · **P4 ACCEPTED 2026-10-08** at `7f8a84b` — [packet](./docs/reviews/2026-10-08-p4-gate-packet.md) | **9** (`P3`, `P5`–`P12`) |
+| Meridian product | **4 / 13** accepted (`P0`, `P1`, `P2`, `P4`) | **P3 FROZEN**, exit gate not claimed (CP-F/G/H deferred, #93) · **P4 ACCEPTED 2026-10-08** at `7f8a84b` — [packet](./docs/reviews/2026-10-08-p4-gate-packet.md) · **P5 IN FLIGHT**: P5-A, P5-B, P5-D merged — [checkpoints](#p5-checkpoints) | **9** (`P3`, `P5`–`P12`) |
 
 The counts must not be combined into one percentage: the research track validates the
 memory engine; the product track makes it a deployable board operating system. P3 gave the
@@ -461,6 +461,39 @@ confirmed calendar/email adapters.
 
 **Exit:** a meeting reaches a versioned published pack; review identifies missing/stale
 material and unresolved commitments; publishes and sends are auditable confirmations.
+
+### P5 checkpoints
+
+Started 2026-10-08. The plan, with lanes and done-when criteria, is
+[#226](https://github.com/Cloverag/callosum/issues/226); this table records state.
+
+**Ids are `P5-A` … `P5-E`, hyphenated, never `CP5A`.** P2 already owns `CP5a` / `CP5b`
+(the `BoardMember` directory and membership wiring, above), and case alone does not tell
+them apart: `git log --grep` and GitHub search are case-insensitive (#233). The merged
+commits predate this and say `CP5A` / `CP5B` / `CP5D`; commit messages cannot change, so the
+mapping is kept here.
+
+| Checkpoint | Commit subjects say | Lane | Work | State |
+|---|---|---|---|---|
+| **P5-A** | `CP5A` | Full | Audit every mutation in `packs` and `agenda` | ✅ merged (#227, `4c217b4`) |
+| **P5-B** | `CP5B` | Fast | Pack builder UI on existing endpoints | ✅ merged (#229, `f5bcf24`) |
+| **P5-C** | — | Full | Review: stale material, missing material, unresolved commitments | ⬜ definitions of "missing", "stale" and "unresolved" proposed and reviewed on #226, **awaiting the maintainer's approval**; no code |
+| **P5-D** | `CP5D` | Fast | Agenda editing: edit, delete, reorder, timebox | ✅ merged (#228, `c495690`) |
+| **P5-E** | `CP5E` | — | Attendance / objectives | 🟩 measured on #226: neither is modelled; proposal pending |
+| Gate | — | — | P5 packet per `docs/reviews/GATE_TEMPLATE.md` (#222) | ⬜ not attempted |
+
+Also in scope but not a checkpoint: #230 (`5fe90cb`), `publish_preread` records nothing
+when the pack is already published.
+
+**Recorded exceptions** (from #226), stated here because they change how the exit
+criterion reads:
+
+- **Sends are deferred.** P5 covers *publishing*; email and calendar adapters are out of
+  scope for the P5 gate, as a recorded exception. "Publishes and sends are auditable
+  confirmations" is therefore scored on publishes; no delivery may be recorded that did
+  not happen (`rules.md` §2).
+- **Backend ownership for P5** sits with the coding session for the phase, per the
+  maintainer's 2026-10-08 decision (same pattern as the P3 interim, `rules.md` §5).
 
 ## P6 — Live meeting context and controlled capture
 
