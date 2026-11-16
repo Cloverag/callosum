@@ -22,8 +22,8 @@ between them is the whole idea.
 
 **[callosum-demo.vercel.app/demo](https://callosum-demo.vercel.app/demo)**
 
-No sign-up. Pick one of three seeded identities and watch the same request return
-different material:
+No sign-up. Pick one of three **fictional** identities and watch the same request
+return different material:
 
 | You are | Documents in the pack | Withheld |
 |---|---|---|
@@ -46,7 +46,7 @@ Vercel and proxies to it, so the browser only ever talks to one origin.
 
 > The identity selector is an impersonation endpoint, deliberately. It is safe there
 > and only there because that deployment serves fabricated board minutes and nothing
-> else. See `docs/deploy/DEMO_AUTH_SPEC.md`.
+> else. See `docs/deploy/DEMO_AUTH_SPEC.md` and the [privacy notice](docs/privacy.md).
 
 ---
 
@@ -164,11 +164,11 @@ A chunk row in Postgres and its `(:Chunk)` node in Neo4j share one UUID, so a **
 hit can traverse into the graph** and a **graph hit can pull back the passage that proves
 it**.
 
-**Stack** — Postgres 16 + pgvector · Neo4j 5 · Python 3.12 + FastAPI · Next.js 16 +
-React 19 + Tailwind v4 · Keycloak (OIDC). The LLM provider is pluggable and defaults to a
+**Stack** — Postgres 16 + pgvector · Neo4j **5.26** · Python 3.12 + FastAPI · Next.js
+**16.4.6** + React 19 + Tailwind v4 · Keycloak 26 (OIDC). The LLM provider is pluggable and defaults to a
 free tier (Ollama Cloud / `gpt-oss:120b-cloud`, bge-m3 embeddings), because *extraction quality is
 graph quality* — which model does the extracting is a research variable, not an
-implementation detail.
+implementation detail. Documentation that still names Claude or Kimi as the default is stale.
 
 ---
 
@@ -300,7 +300,7 @@ app already follows:
   refused with 403.
 - **Document intake answers once the text is stored, before extraction finishes.** The
   model reads it in the background, so proposals and quarantine rows show up shortly
-  after the `201`, not in it. `raw_text` is capped at 2,000,000 characters.
+  after the `201`, not in it. `raw_text` is capped at 1,000,000 characters.
 - **pgvector is pinned to `0.8.0`** (`docker-compose.yml` and CI), because vector search
   depends on its iterative index scan to fill `k` after the clearance filter. An existing
   local volume keeps whatever image created it — `docker compose pull` and recreate it.
@@ -351,7 +351,9 @@ Stated because a limitation a reader finds is worth less than one they are told.
 - **CI runs the gated suite, and it is younger than most of this document.**
   `.github/workflows/ci.yml` builds Postgres and Neo4j as services, applies
   `schema/postgres.sql` and the Alembic chain, and runs pytest with
-  `CALLOSUM_RUN_INTEGRATION=1`; the frontend job runs Jest and a Next build. It earned
+  `CALLOSUM_RUN_INTEGRATION=1`; the frontend job (Node **22**, this working tree)
+  runs Jest, a production-dep `npm audit` at critical, and a Next build. The backend
+  job also runs `pip-audit` on the installed graph. It earned
   its place immediately by catching that migrations `0018`–`0020` shipped with revision
   ids longer than Alembic's `varchar(32)` and could never have applied. Two caveats: for
   its first days it ran the fast suite only and reported green while 26 gated tests failed
@@ -381,13 +383,17 @@ Stated because a limitation a reader finds is worth less than one they are told.
 |---|---|
 | `src/callosum/` | the research engine — **frozen** at `eval-baseline-v3` |
 | `meridian/` | the product: domain modules, FastAPI, Alembic migrations |
-| `frontend/` | Next.js application, 12 pages |
+| `frontend/` | Next.js application, 15 routes including `/demo` and `/privacy` |
 | `eval/` | gold questions, results, the deterministic gate log |
 | `docs/TECHNICAL_OVERVIEW.md` | the full engineering write-up |
 | `docs/findings.md` | the running research log — every experiment, including the failures |
-| `docs/ARCHITECTURE_DECISIONS.md` | 16 ADRs |
+| `docs/ARCHITECTURE_DECISIONS.md` | 18 ADRs, 001–018, no gaps |
+| `docs/compliance/` | control matrix, processors, incident one-pager, GitHub settings checklist |
+| `docs/privacy.md` | public demo privacy notice (also `/privacy`) |
 | `ROADMAP.md` | phase gates and what is deliberately deferred |
 | `CONTRIBUTING.md` | the frozen-file list and the rule protecting it |
+| `SECURITY.md` | how to report a vulnerability |
+| `LICENSE` | MIT |
 
 ---
 
@@ -398,3 +404,5 @@ The product requirements originate in an assignment by
 cases and a static HTML mockup, with no backend or engineering. This repository is the
 system that document describes, plus the research engine underneath it. He is also a
 contributor here; the board-pack, decision and audit-event aggregates are among his work.
+
+Licensed under the MIT License. See `LICENSE`.

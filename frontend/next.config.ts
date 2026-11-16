@@ -13,8 +13,18 @@ import type { NextConfig } from "next";
 const API_ORIGIN = process.env.MERIDIAN_API_ORIGIN ?? "http://localhost:8000";
 
 const nextConfig: NextConfig = {
-  // Allow HMR / dev resources when the app is opened via the LAN IP, not just localhost.
-  allowedDevOrigins: ["192.168.29.45"],
+  /**
+   * LAN origin for `next dev` HMR. Unset on purpose — a machine-specific IP was
+   * committed here and broke every other network. Set `MERIDIAN_DEV_ORIGINS` to a
+   * comma-separated list if you open the app via a LAN address.
+   */
+  ...(process.env.MERIDIAN_DEV_ORIGINS
+    ? {
+        allowedDevOrigins: process.env.MERIDIAN_DEV_ORIGINS.split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
+      }
+    : {}),
 
   /**
    * Without these, nothing on this site loads data.
@@ -35,6 +45,7 @@ const nextConfig: NextConfig = {
     return [
       { source: "/api/:path*", destination: `${API_ORIGIN}/api/:path*` },
       { source: "/auth/:path*", destination: `${API_ORIGIN}/auth/:path*` },
+      { source: "/health", destination: `${API_ORIGIN}/health` },
       { source: "/health/:path*", destination: `${API_ORIGIN}/health/:path*` },
     ];
   },
@@ -53,6 +64,23 @@ const nextConfig: NextConfig = {
    */
   async redirects() {
     return [{ source: "/", destination: "/dashboard", permanent: false }];
+  },
+
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          {
+            key: "Permissions-Policy",
+            value: "camera=(), microphone=(), geolocation=()",
+          },
+        ],
+      },
+    ];
   },
 };
 

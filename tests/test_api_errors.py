@@ -22,6 +22,7 @@ from meridian import (
     meetings,
     minutes,
     packs,
+    prep,
     resolutions,
 )
 from meridian.api.errors import (
@@ -237,6 +238,19 @@ class TestUnknownExceptions:
         assert mapped.status == 500
         assert "hunter2" not in mapped.detail
         assert mapped.detail == "Internal error."
+
+
+class TestMeetingPrepIsA409:
+    """Authorized caller, nothing to publish — not a 500 and not a swallowed Exception.
+
+    409, not 400: the request is right and the meeting's state refuses it (master since
+    #250, and #241). The caller's move is to build a pack, not to change their input.
+    """
+
+    def test_missing_pack_is_409(self):
+        mapped = classify(prep.MeetingPrepError("No board pack exists for meeting x"))
+        assert mapped.status == 409
+        assert mapped.code == CONFLICT
 
 
 class TestWireShape:

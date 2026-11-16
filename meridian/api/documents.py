@@ -53,16 +53,18 @@ class QuarantineResponse(BaseModel):
     created_at: datetime
 
 
-#: Upper bound on one intake's text (#249 finding 9). Every character is embedded and
-#: sent through the extractor, so without a cap one request buys unbounded model cost.
-#: 2M characters is several hundred pages — far above any board pack seen so far.
-MAX_RAW_TEXT_CHARS = 2_000_000
+#: Upper bound on one intake's text (#213, #249 finding 9). Every character is embedded
+#: and sent through the extractor, so without a cap one request buys unbounded model cost.
+#: 1M characters is a few hundred pages; #215 sized it for the 2-core demo host.
+MAX_RAW_TEXT_CHARS = 1_000_000
 
 
 class IntakeDocumentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     title: str = Field(max_length=500)
     doc_type: str = Field(max_length=100)
-    raw_text: str = Field(max_length=MAX_RAW_TEXT_CHARS)
+    raw_text: str = Field(min_length=1, max_length=MAX_RAW_TEXT_CHARS)
     #: Required, with no default (#143). It used to default to `0` — *public*, the
     #: widest visibility the system has — so a caller who simply omitted the field
     #: published the document to everyone. That is fail-open by default on the one
