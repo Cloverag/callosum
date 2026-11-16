@@ -87,7 +87,10 @@ def create_minutes(payload: MinutesCreate, principal: CurrentPrincipal) -> domai
     a meeting has at least been scheduled.
     """
     return domain.create_minutes(
-        str(payload.meeting_id), payload.body, workspace_id=principal.workspace_id
+        str(payload.meeting_id),
+        payload.body,
+        workspace_id=principal.workspace_id,
+        actor_principal_id=str(principal.id) if principal.id else None,
     )
 
 
@@ -106,6 +109,7 @@ def update_minutes(
         str(minutes_id),
         expected_version=payload.expected_version,
         workspace_id=principal.workspace_id,
+        actor_principal_id=str(principal.id) if principal.id else None,
         **changes,
     )
 
@@ -123,6 +127,7 @@ def finalise_minutes(
         str(minutes_id),
         expected_version=payload.expected_version,
         workspace_id=principal.workspace_id,
+        actor_principal_id=str(principal.id) if principal.id else None,
     )
 
 
@@ -139,5 +144,6 @@ def supersede_minutes(
         payload.new_body,
         expected_version=payload.expected_version,
         workspace_id=principal.workspace_id,
+        actor_principal_id=str(principal.id) if principal.id else None,
     )
     return MinutesSupersession(superseded=old, replacement=new)
