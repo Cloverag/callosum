@@ -16,7 +16,7 @@ security cases), updated docs/status, runnable verification commands, and a revi
 No checkpoint may weaken evidence verification, human approval, RBAC, provenance, or audit
 requirements.
 
-## Current progress — 2026-08-22
+## Current progress — 2026-09-12
 
 | Track | Completed | Active | Remaining |
 |---|---:|---|---:|
@@ -26,8 +26,16 @@ requirements.
 The counts must not be combined into one percentage: the research track validates the
 memory engine; the product track makes it a deployable board operating system. P3 gave the
 product an authenticated API and an OIDC identity. CI has run the gated suite against real
-Postgres and Neo4j on every pull request since #120, but the mechanism gate is not part of
-it, and there is still no public deployment, no integration layer, and no pilot.
+Postgres and Neo4j on every pull request since #120. The mechanism gate is still not part
+of CI.
+
+**There is a public demo:** [callosum-demo.vercel.app/demo](https://callosum-demo.vercel.app/demo)
+(PR #202, `7c260cd`). There is still no integration layer and no pilot. Founder and exec
+see the same pack on that demo because the corpus has no sensitivity-4 document on
+`master` — that is #203 / PR #204, not a product bug.
+
+*(Previous "current progress" pin: 2026-08-22, which still said there was no public
+deployment. That sentence is false as of #202.)*
 
 ### P2 checkpoint status
 
@@ -398,6 +406,7 @@ Checkpoint detail in [phase.md](./phase.md).
 | Document intake / import · metadata / sensitivity · duplicates · quarantine state | ✅ merged (#128) |
 | Versions | ✅ built 2026-08-23 (`0024_document_version`, ADR-017) |
 | Workspace / meeting assignment | ✅ built 2026-08-24 (`0025_meeting_document`, ADR-018) |
+| Membership grant / revoke (audited) | ✅ shipped (#186); non-admin grants need founder/admin approval from 2026-10-08 (#225) |
 | Exit gate | ✅ accepted 2026-10-08 — [packet](./docs/reviews/2026-10-08-p4-gate-packet.md) |
 
 **Recorded gap — CLOSED.** Intake applied no sensitivity ceiling: a clearance-1 principal

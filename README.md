@@ -164,11 +164,11 @@ A chunk row in Postgres and its `(:Chunk)` node in Neo4j share one UUID, so a **
 hit can traverse into the graph** and a **graph hit can pull back the passage that proves
 it**.
 
-**Stack** — Postgres 16 + pgvector · Neo4j 5 · Python 3.12 + FastAPI · Next.js 16 +
-React 19 + Tailwind v4 · Keycloak (OIDC). The LLM provider is pluggable and defaults to a
+**Stack** — Postgres 16 + pgvector · Neo4j **5.26** · Python 3.12 + FastAPI · Next.js
+**16.4.6** + React 19 + Tailwind v4 · Keycloak 26 (OIDC). The LLM provider is pluggable and defaults to a
 free tier (Ollama Cloud / `gpt-oss:120b-cloud`, bge-m3 embeddings), because *extraction quality is
 graph quality* — which model does the extracting is a research variable, not an
-implementation detail.
+implementation detail. Documentation that still names Claude or Kimi as the default is stale.
 
 ---
 
@@ -300,7 +300,7 @@ app already follows:
   refused with 403.
 - **Document intake answers once the text is stored, before extraction finishes.** The
   model reads it in the background, so proposals and quarantine rows show up shortly
-  after the `201`, not in it. `raw_text` is capped at 2,000,000 characters.
+  after the `201`, not in it. `raw_text` is capped at 1,000,000 characters.
 - **pgvector is pinned to `0.8.0`** (`docker-compose.yml` and CI), because vector search
   depends on its iterative index scan to fill `k` after the clearance filter. An existing
   local volume keeps whatever image created it — `docker compose pull` and recreate it.

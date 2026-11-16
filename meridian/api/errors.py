@@ -277,6 +277,7 @@ def install_exception_handlers(app) -> None:
         meetings.MeetingError,
         minutes.MinutesError,
         packs.BoardPackError,
+        prep.MeetingPrepError,
         resolutions.ResolutionError,
         workspaces.WorkspaceError,
         # A `ValueError`, not a `MeetingError`, so it needs its own registration.

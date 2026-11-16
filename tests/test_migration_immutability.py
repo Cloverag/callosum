@@ -64,13 +64,13 @@ def _migration_files() -> list[pathlib.Path]:
 
 
 def _revision_of(path: pathlib.Path) -> str:
-    match = _REVISION.search(path.read_text())
+    match = _REVISION.search(path.read_text(encoding="utf-8"))
     assert match, f"{path.name} declares no `revision = \"...\"`"
     return match.group(1)
 
 
 def _recorded() -> dict[str, str]:
-    return json.loads(_MANIFEST.read_text())
+    return json.loads(_MANIFEST.read_text(encoding="utf-8"))
 
 
 def test_the_manifest_and_the_directory_agree():
@@ -153,13 +153,13 @@ def test_the_recorder_refuses_to_overwrite_an_upgrade():
     nobody has seen fail may not be a guard.
     """
     victim = _migration_files()[0]
-    original = victim.read_text()
-    manifest = _MANIFEST.read_text()
+    original = victim.read_text(encoding="utf-8")
+    manifest = _MANIFEST.read_text(encoding="utf-8")
     try:
         # Append a statement inside upgrade() — a real edit, not a comment.
         edited = original.replace("def upgrade() -> None:", 'def upgrade() -> None:\n    _ = "tamper"', 1)
         assert edited != original, "could not construct an upgrade edit for this file"
-        victim.write_text(edited)
+        victim.write_text(edited, encoding="utf-8", newline="\n")
 
         result = subprocess.run(
             [sys.executable, "scripts/record_migration_checksums.py"],
@@ -169,10 +169,10 @@ def test_the_recorder_refuses_to_overwrite_an_upgrade():
         assert result.returncode != 0, "the recorder accepted an edit to upgrade()"
         assert "REFUSING TO OVERWRITE" in result.stdout
         assert "[upgrade]" in result.stdout
-        assert _MANIFEST.read_text() == manifest, "the manifest was rewritten despite the refusal"
+        assert _MANIFEST.read_text(encoding="utf-8") == manifest, "the manifest was rewritten despite the refusal"
     finally:
-        victim.write_text(original)
-        _MANIFEST.write_text(manifest)
+        victim.write_text(original, encoding="utf-8", newline="\n")
+        _MANIFEST.write_text(manifest, encoding="utf-8", newline="\n")
 
 
 def test_a_downgrade_correction_is_accepted():
@@ -184,12 +184,12 @@ def test_a_downgrade_correction_is_accepted():
     once. If this test ever has to be deleted, the exception has been repealed.
     """
     victim = _migration_files()[0]
-    original = victim.read_text()
-    manifest = _MANIFEST.read_text()
+    original = victim.read_text(encoding="utf-8")
+    manifest = _MANIFEST.read_text(encoding="utf-8")
     try:
         edited = original.replace("def downgrade() -> None:", 'def downgrade() -> None:\n    _ = "fixed"', 1)
         assert edited != original, "could not construct a downgrade edit for this file"
-        victim.write_text(edited)
+        victim.write_text(edited, encoding="utf-8", newline="\n")
 
         result = subprocess.run(
             [sys.executable, "scripts/record_migration_checksums.py"],
@@ -199,8 +199,28 @@ def test_a_downgrade_correction_is_accepted():
         assert result.returncode == 0, f"the recorder refused a downgrade correction:\n{result.stdout}"
         assert "downgrade correction" in result.stdout
     finally:
-        victim.write_text(original)
-        _MANIFEST.write_text(manifest)
+        victim.write_text(original, encoding="utf-8", newline="\n")
+        _MANIFEST.write_text(manifest, encoding="utf-8", newline="\n")
+
+
+def test_crlf_and_lf_checkouts_hash_the_same(tmp_path: pathlib.Path):
+    """Windows CRLF must not look like an edit to an applied migration."""
+    source = (
+        '"""doc"""\n'
+        'revision = "t"\n'
+        "down_revision = None\n"
+        "def upgrade() -> None:\n"
+        "    pass\n"
+        "def downgrade() -> None:\n"
+        "    pass\n"
+    )
+    lf = tmp_path / "lf.py"
+    crlf = tmp_path / "crlf.py"
+    lf.write_text(source, encoding="utf-8", newline="\n")
+    crlf.write_bytes(source.encode("utf-8").replace(b"\n", b"\r\n"))
+    assert checksum.digests(lf) == checksum.digests(crlf)
+    assert checksum.verify_covers_whole_file(lf)
+    assert checksum.verify_covers_whole_file(crlf)
 
 
 def test_the_checksum_comparison_can_actually_fail():

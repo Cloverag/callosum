@@ -179,7 +179,7 @@ _ON_CONFLICT = re.compile(
 def _core_conflict_targets() -> list[tuple[str, str, frozenset[str]]]:
     found = []
     for path in sorted(CORE.glob("*.py")):
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
         for m in _ON_CONFLICT.finditer(text):
             if "INSERT INTO" in m.group("between").upper():
                 continue  # a later INSERT matched an earlier ON CONFLICT

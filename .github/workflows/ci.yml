@@ -19,11 +19,11 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      CALLOSUM_POSTGRES_DSN: postgresql://callosum:callosum@localhost:5432/callosum
-      CALLOSUM_POSTGRES_APP_DSN: postgresql://callosum_app:callosum_app@localhost:5432/callosum
-      CALLOSUM_NEO4J_URI: bolt://localhost:7687
-      CALLOSUM_NEO4J_USER: neo4j
-      CALLOSUM_NEO4J_PASSWORD: callosum123
+      POSTGRES_DSN: postgresql://callosum:callosum@localhost:5432/callosum
+      POSTGRES_APP_DSN: postgresql://callosum_app:callosum_app@localhost:5432/callosum
+      NEO4J_URI: bolt://localhost:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: callosum123
 
     services:
       postgres:
@@ -34,7 +34,6 @@ jobs:
           POSTGRES_DB: callosum
         ports:
           - 5432:5432
-          - 5433:5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -42,7 +41,7 @@ jobs:
           --health-retries 5
 
       neo4j:
-        image: neo4j:5-community
+        image: neo4j:5.26-community
         env:
           NEO4J_AUTH: neo4j/callosum123
         ports:
@@ -93,8 +92,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      # POSTGRES_DSN, not CALLOSUM_POSTGRES_DSN: src/callosum/config.py declares no
-      # env_prefix, so the CALLOSUM_-prefixed names are silently ignored (#171).
+      # `src/callosum/config.py` has no env_prefix; CALLOSUM_POSTGRES_DSN is ignored.
       POSTGRES_DSN: postgresql://callosum:callosum@localhost:5432/callosum
       POSTGRES_APP_DSN: postgresql://callosum_app:callosum_app@localhost:5432/callosum
 
@@ -145,10 +143,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Node.js 20
+      - name: Set up Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
@@ -161,6 +159,10 @@ jobs:
         run: npm test
         env:
           CI: true
+
+      - name: Audit production dependencies for critical advisories
+        working-directory: ./frontend
+        run: npm audit --omit=dev --audit-level=critical
 
       - name: Clean & Build Next.js Bundle
         working-directory: ./frontend
