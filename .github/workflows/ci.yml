@@ -60,6 +60,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
+      # Same spirit as frontend `npm audit --omit=dev --audit-level=critical`:
+      # known advisories in the installed runtime graph fail the job. There is
+      # no severity flag on pip-audit equivalent to npm's `--audit-level`.
+      - name: Audit Python dependencies for known advisories
+        run: |
+          python -m pip install pip-audit
+          pip-audit --progress-spinner off --skip-editable
+
       - name: Initialize Base Schema, Migrations & Constraints
         run: |
           PGPASSWORD=callosum psql -h localhost -U callosum -d callosum -f schema/postgres.sql

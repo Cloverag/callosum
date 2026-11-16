@@ -243,6 +243,13 @@ existing ones get migrated is an open question — see the tracking issue.
   against the baseline, not by intuition. See `docs/findings.md` for the running log and
   the freeze boundary.
 
+## GitHub settings (not in git)
+
+Branch protection, private vulnerability reporting, Dependabot alerts, and Code
+scanning are **clicks in the GitHub UI**. A green CI run does not enable them.
+The checklist is `docs/compliance/GITHUB.md`. Vulnerability reports go through
+`SECURITY.md`, not a public issue.
+
 ## Where to read more
 
 - `docs/findings.md` — the evaluation log and the project's research narrative (V1→V2→V3).
